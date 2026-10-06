@@ -191,7 +191,7 @@ const categoryEmojis = {
   'Zoom': '📹', 'iLovePDF': '📄', 'Envato': '🍃', 'Grammarly': '✍️',
   'Autodesk': '🏗', 'JetBrains': '💻', 'edX Premium': '🎓',
   'Peacock': '🦚', 'HBO MAX': '🎬', 'Paramount+': '⛰', 'Framer': '⚡',
-  'Avira': '☂️', 'HMA VPN': '🌍', 'اكسبريس VPN': '🛡️️', 'جيميل': '📧',
+  'Avira': '☂️', 'HMA VPN': '🌍', 'اكسبريس VPN': '🛡', 'جيميل': '📧',
   'ايكلاود': '☁', 'E SIM': '📱'
 };
 
@@ -897,7 +897,7 @@ bot.action(/confirm_(\d+)/, (ctx) => {
      const price = calculateRetailPrice(srv, usersDb[userId], 1);
      const srvName = srv.name_ar || srv.name || srv.title;
 
-     ctx.editMessageText('⚠️️ اختر الكمية المطلوبة لـ:\n\n🛍️ *' + srvName + '*\n💰 السعر للقطعة: ' + price + ' EGP\n🔢 الكمية الحالية: 1', 
+     ctx.editMessageText('⚠️ اختر الكمية المطلوبة لـ:\n\n🛍️ *' + srvName + '*\n💰 السعر للقطعة: ' + price + ' EGP\n🔢 الكمية الحالية: 1', 
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
@@ -995,62 +995,67 @@ bot.action(/buy_(\d+)/, async (ctx) => {
         usersDb[userId].orders.push({ name: name + ' (' + qty + 'x)', price: retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
         saveDatabase(); 
 
-        const orderIdRandom = orderResponse.data?.order?.id || orderResponse.data?.id || Math.floor(10000 + Math.random() * 90000);
-
-        await ctx.editMessageText('✅ **تم تنفيذ طلبك بنجاح!**\n\n🛍 الخدمة: ' + name + '\n🔢 الكمية: ' + qty + '\n💰 إجمالي المدفوع: ' + retailPrice + ' EGP\n💳 الرصيد المتبقي: ' + (usersDb[userId].balance.toFixed ? usersDb[userId].balance.toFixed(2) : usersDb[userId].balance) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
-
-        // استخراج بيانات التفعيل والأكواد بدقة تامة من استجابة المزود
+        // استخراج رقم الطلب وكود التفعيل من استجابة المزود بدقة تامة مطابقة للبوت الأم
         const responseData = orderResponse.data;
+        let orderId = 'غير محدد';
         let rawDetails = null;
 
         if (responseData) {
-            if (typeof responseData === 'string') {
-                rawDetails = responseData;
-            } else {
-                const targetObj = responseData.order || responseData.data || responseData;
-                if (typeof targetObj === 'object' && targetObj !== null) {
-                    rawDetails = targetObj.details || 
-                                 targetObj.account || 
-                                 targetObj.credentials || 
-                                 targetObj.code || 
-                                 targetObj.note || 
-                                 targetObj.message || 
-                                 targetObj.text || 
-                                 targetObj.answer || 
-                                 targetObj.content ||
-                                 targetObj.result;
-                    
-                    if (!rawDetails) {
-                        for (let key in targetObj) {
-                            if (typeof targetObj[key] === 'string' && targetObj[key].length > 0 && key !== 'status' && key !== 'id') {
-                                rawDetails = targetObj[key];
-                                break;
-                            }
-                        }
+            const targetObj = responseData.order || responseData.data || responseData;
+            
+            // استخراج رقم الطلب بدقة
+            orderId = targetObj.id || targetObj.order_id || responseData.id || Math.floor(10000 + Math.random() * 90000);
+
+            // استخراج البيانات والأكواد المسلمة
+            rawDetails = targetObj.details || 
+                         targetObj.credentials || 
+                         targetObj.code || 
+                         targetObj.account || 
+                         targetObj.output || 
+                         targetObj.content || 
+                         targetObj.text || 
+                         targetObj.note || 
+                         targetObj.message || 
+                         targetObj.answer;
+
+            if (!rawDetails && Array.isArray(targetObj.items)) {
+                rawDetails = targetObj.items.map(item => item.credentials || item.code || item.account || item.text || JSON.stringify(item)).join('\n');
+            }
+
+            if (!rawDetails) {
+                // تجميع أي نص صالح في الاستجابة
+                let texts = [];
+                for (let key in targetObj) {
+                    const val = targetObj[key];
+                    if (typeof val === 'string' && val.trim().length > 0 && !['id', 'order_id', 'status', 'created_at', 'updated_at', 'service_id', 'quantity', 'price', 'user_id'].includes(key)) {
+                        texts.push(val);
                     }
-                    if (!rawDetails) {
-                        rawDetails = JSON.stringify(targetObj, null, 2);
-                    }
-                } else {
-                    rawDetails = String(targetObj);
                 }
+                if (texts.length > 0) rawDetails = texts.join('\n');
+            }
+
+            if (!rawDetails) {
+                rawDetails = JSON.stringify(targetObj, null, 2);
             }
         }
 
-        let deliveryMsg = '📦 **رقم الطلب:** #' + orderIdRandom + '\n\n' +
-                          '🛍️ **الخدمة:** ' + name + '\n' +
-                          '🔢 **الكمية:** ' + qty + '\n' +
-                          '🟢 **الحالة:** مكتمل\n' +
-                          '💰 **المبلغ المدفوع:** ' + retailPrice + ' EGP\n';
+        await ctx.editMessageText('✅ **تم تنفيذ طلبك بنجاح!**\n\n🛍 الخدمة: ' + name + '\n🔢 الكمية: ' + qty + '\n💰 إجمالي المدفوع: ' + retailPrice + ' EGP\n💳 الرصيد المتبقي: ' + (usersDb[userId].balance.toFixed ? usersDb[userId].balance.toFixed(2) : usersDb[userId].balance) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
+
+        // صياغة رسالة التسليم للزبون بنفس شكل البوت الأم تماماً
+        let deliveryMsg = '📦 <b>رقم الطلب:</b> #' + orderId + '\n\n' +
+                          '🛍️ <b>الخدمة:</b> ' + name + '\n' +
+                          '🔢 <b>الكمية:</b> ' + qty + '\n' +
+                          '🟢 <b>الحالة:</b> مكتمل\n' +
+                          '💰 <b>المبلغ المدفوع:</b> ' + retailPrice + ' EGP\n';
 
         if (rawDetails && rawDetails !== '{}' && rawDetails !== 'null') {
             const safeRawText = String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            deliveryMsg += '\n📋 **العناصر المسلمة:**\n' + safeRawText + '\n\n📌 **البيانات المسلمة:**\n<code>' + safeRawText + '</code>';
+            deliveryMsg += '\n📋 <b>العناصر المسلمة:</b>\n' + safeRawText + '\n\n📌 <b>البيانات المسلمة (اضغط للنسخ):</b>\n<code>' + safeRawText + '</code>';
         } else {
             deliveryMsg += '\n✅ تم إرسال الطلب بنجاح للمزود، وجاري معالجته وتسليمه لك.';
         }
 
-        // إرسال الكود وبيانات التسليم للزبون مباشرة
+        // إرسال رسالة الكود والبيانات للزبون مباشرة
         await bot.telegram.sendMessage(userId, deliveryMsg, { 
             parse_mode: 'HTML',
             ...Markup.inlineKeyboard([
@@ -1058,9 +1063,10 @@ bot.action(/buy_(\d+)/, async (ctx) => {
             ])
         });
 
-        // إرسال إشعار شراء متطابق للبوت الأم (للأدمن 1001) حتى لو كان أوفلاين
-        const adminLogMsg = '📦 <b>رقم الطلب:</b> #' + orderIdRandom + '\n\n' +
-                            '🛍️ <b>الخدمة:</b> ' + name + '\n' +
+        // إرسال إشعار كامل للأدمن (1001) برقم الطلب وكل التفاصيل
+        const adminLogMsg = '👑 <b>إشعار شراء جديد (للأدمن):</b>\n\n' +
+                            '📦 <b>رقم الطلب:</b> #' + orderId + '\n' +
+                            '🛍 <b>الخدمة:</b> ' + name + '\n' +
                             '👤 <b>المشتري (ID):</b> <code>' + usersDb[userId].uid + '</code>\n' +
                             '🔢 <b>الكمية:</b> ' + qty + '\n' +
                             '🟢 <b>الحالة:</b> مكتمل\n' +
