@@ -35,7 +35,7 @@ server.listen(PORT, '0.0.0.0', () => {
 // 2. حماية قصوى لمنع انهيار السيرفر تحت أي ضغط
 // ----------------------------------------------------
 process.on('uncaughtException', (err) => {
-    console.error('⚠️️ Uncaught Exception Handled:', err.message);
+    console.error('⚠️ Uncaught Exception Handled:', err.message);
 });
 process.on('unhandledRejection', (reason, promise) => {
     console.error('⚠️ Unhandled Rejection Handled:', reason);
@@ -951,6 +951,33 @@ function updateQuantityPrompt(ctx, srvId, qty) {
     } catch(e){}
 }
 
+function extractUsefulData(obj) {
+    if (!obj) return null;
+    if (typeof obj === 'string') return obj;
+    let extracted = [];
+    
+    function deepExtract(currentObj) {
+        if (typeof currentObj === 'string') {
+            if (currentObj.trim().length > 5 && !/^[0-9]+(\.[0-9]+)?$/.test(currentObj)) {
+                extracted.push(currentObj);
+            }
+        } else if (Array.isArray(currentObj)) {
+            currentObj.forEach(deepExtract);
+        } else if (typeof currentObj === 'object' && currentObj !== null) {
+            for (let key in currentObj) {
+                if (['id', 'order_id', 'status', 'created_at', 'updated_at', 'service_id', 'quantity', 'price', 'user_id', 'api', 'api_id', 'api_order_id', 'api_service_id'].includes(key)) {
+                    continue;
+                }
+                deepExtract(currentObj[key]);
+            }
+        }
+    }
+    
+    deepExtract(obj);
+    if (extracted.length === 0) return null;
+    return [...new Set(extracted)].join('\n');
+}
+
 bot.action(/buy_(\d+)/, async (ctx) => {
   try {
      const userId = ctx.from.id; initUser(userId);
@@ -977,11 +1004,9 @@ bot.action(/buy_(\d+)/, async (ctx) => {
        ).catch(()=>{});
      }
 
-     // نترك رسالة التحميل لثواني حتى تكتمل العملية بالكامل
      await ctx.editMessageText('⏳ جاري تنفيذ الطلب واستخراج بيانات الخدمة...').catch(()=>{});
 
      try {
-        // 1. إجراء عملية الشراء وخصم الرصيد
         const orderResponse = await apiClient.post('/orders', { service_id: srv.id, quantity: qty }, { headers: { 'Idempotency-Key': Date.now().toString() } });
 
         usersDb[userId].balance -= retailPrice;
@@ -998,42 +1023,20 @@ bot.action(/buy_(\d+)/, async (ctx) => {
         let orderId = orderResponse.data?.order?.id || orderResponse.data?.id || orderResponse.data?.order_id || Math.floor(10000 + Math.random() * 90000);
         let rawDetails = null;
 
-        // 2. الانتظار لمدة 3 ثوانٍ للسماح لسيرفر المزود بتوليد الروابط والأكواد (مثل eSIM)
         await new Promise(resolve => setTimeout(resolve, 3000));
 
-        // 3. إجراء استعلام (GET) لجلب حالة الطلب النهائية مع الأكواد والروابط
         try {
             const getOrderRes = await apiClient.get('/orders/' + orderId);
             const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
-            
-            if (orderData) {
-                rawDetails = orderData.details || 
-                             orderData.credentials || 
-                             orderData.code || 
-                             orderData.account || 
-                             orderData.output || 
-                             orderData.content || 
-                             orderData.text || 
-                             orderData.answer;
-
-                // لو البيانات موجودة داخل مصفوفة items
-                if (!rawDetails && Array.isArray(orderData.items)) {
-                    rawDetails = orderData.items.map(item => item.credentials || item.code || item.account || item.content || item.details).filter(Boolean).join('\n\n');
-                }
-            }
+            rawDetails = extractUsefulData(orderData);
         } catch(e) {
-            console.log('تأخير بسيط في المزود لجلب الطلب: ' + orderId);
+            console.log('تأخير في المزود لجلب الطلب: ' + orderId);
         }
 
-        // 4. لو فشل استعلام GET، نحاول استخراج أي بيانات صالحة من الرد الأول، ولكن نتجاهل الأرقام والـ IDs تماماً
-        if (!rawDetails) {
-            const targetObj = orderResponse.data?.order || orderResponse.data?.data || orderResponse.data;
-            if (typeof targetObj === 'object' && targetObj !== null) {
-                rawDetails = targetObj.details || targetObj.credentials || targetObj.code || targetObj.account || targetObj.output || targetObj.content;
-            }
+        if (!rawDetails || rawDetails.trim() === '') {
+            rawDetails = extractUsefulData(orderResponse.data?.order || orderResponse.data?.data || orderResponse.data);
         }
 
-        // 5. تنسيق رسالة التسليم للزبون لتطابق البوت الأم (رسالة واحدة فقط بدون تكرار)
         let deliveryMsg = `📦 <b>رقم الطلب:</b> #${orderId}\n\n` +
                           `🛍️ <b>الخدمة:</b> ${name}\n` +
                           `🔢 <b>الكمية:</b> ${qty}\n\n` +
@@ -1045,10 +1048,9 @@ bot.action(/buy_(\d+)/, async (ctx) => {
             deliveryMsg += `📋 <b>العناصر المسلمة:</b>\n${safeRawText}\n\n` +
                            `📌 <b>البيانات المسلمة (اضغط للنسخ):</b>\n<code>${safeRawText}</code>`;
         } else {
-            deliveryMsg += `📋 <b>العناصر المسلمة:</b>\nجاري معالجة الكود من المزود، يرجى مراجعة سجل الطلبات لاحقاً.`;
+            deliveryMsg += `📋 <b>العناصر المسلمة:</b>\n✅ تم تنفيذ الطلب بنجاح.`;
         }
 
-        // 6. استبدال رسالة التحميل بالفاتورة النهائية مباشرة
         await ctx.editMessageText(deliveryMsg, { 
             parse_mode: 'HTML',
             disable_web_page_preview: true,
@@ -1057,7 +1059,6 @@ bot.action(/buy_(\d+)/, async (ctx) => {
             ])
         }).catch(()=>{});
 
-        // 7. إرسال إشعار كامل للأدمن
         const adminLogMsg = `👑 <b>إشعار شراء جديد:</b>\n\n` +
                             `📦 <b>رقم الطلب:</b> #${orderId}\n` +
                             `🛍 <b>الخدمة:</b> ${name}\n` +
