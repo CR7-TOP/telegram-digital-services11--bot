@@ -308,11 +308,18 @@ bot.hears(/^📜 سجل المحفظة$/, (ctx) => {
     } catch(e){}
 });
 
+// قسم الدعم الفني المحدث ليختار العميل بين تليجرام أو واتساب
 bot.hears(/^📞 الدعم الفني$/, (ctx) => {
     try {
       const userId = ctx.from.id; initUser(userId);
       if (usersDb[userId].isBanned) return;
-      ctx.reply('📞 **تواصل مع الدعم الفني:**\n\nيسعدنا مساعدتك في أي وقت عبر وسائل التواصل التالية:\n\n✈️ **تليجرام:** https://t.me/Ahmed_3mk_0\n📱 **واتساب:** `+201282110755`', { parse_mode: 'Markdown' }).catch(()=>{});
+      ctx.reply('📞 **تواصل مع الدعم الفني:**\n\nيرجى اختيار طريقة التواصل المناسبة لك:', {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.url('✈️ تواصل تليجرام', 'https://t.me/Ahmed_3mk_0')],
+          [Markup.button.url('📱 تواصل واتساب', 'https://wa.me/201282110755')]
+        ])
+      }).catch(()=>{});
     } catch(e){}
 });
 
@@ -819,7 +826,7 @@ async function showCategories(ctx) {
             } else if(loadingMsgId) {
                 return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, '⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
             } else {
-                return ctx.reply('⚠️️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
+                return ctx.reply('⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
             }
         }
     }
