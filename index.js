@@ -35,7 +35,7 @@ server.listen(PORT, '0.0.0.0', () => {
 // 2. حماية قصوى لمنع انهيار السيرفر تحت أي ضغط
 // ----------------------------------------------------
 process.on('uncaughtException', (err) => {
-    console.error('⚠️ Uncaught Exception Handled:', err.message);
+    console.error('⚠️️ Uncaught Exception Handled:', err.message);
 });
 process.on('unhandledRejection', (reason, promise) => {
     console.error('⚠️ Unhandled Rejection Handled:', reason);
@@ -897,7 +897,7 @@ bot.action(/confirm_(\d+)/, (ctx) => {
      const price = calculateRetailPrice(srv, usersDb[userId], 1);
      const srvName = srv.name_ar || srv.name || srv.title;
 
-     ctx.editMessageText('⚠ اختر الكمية المطلوبة لـ:\n\n🛍️ *' + srvName + '*\n💰 السعر للقطعة: ' + price + ' EGP\n🔢 الكمية الحالية: 1', 
+     ctx.editMessageText('⚠️ اختر الكمية المطلوبة لـ:\n\n🛍️ *' + srvName + '*\n💰 السعر للقطعة: ' + price + ' EGP\n🔢 الكمية الحالية: 1', 
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
@@ -977,9 +977,11 @@ bot.action(/buy_(\d+)/, async (ctx) => {
        ).catch(()=>{});
      }
 
-     await ctx.editMessageText('⏳ جاري تنفيذ الطلب وإرسال تفاصيل الخدمة...').catch(()=>{});
+     // نترك رسالة التحميل لثواني حتى تكتمل العملية بالكامل
+     await ctx.editMessageText('⏳ جاري تنفيذ الطلب واستخراج بيانات الخدمة...').catch(()=>{});
 
      try {
+        // 1. إجراء عملية الشراء وخصم الرصيد
         const orderResponse = await apiClient.post('/orders', { service_id: srv.id, quantity: qty }, { headers: { 'Idempotency-Key': Date.now().toString() } });
 
         usersDb[userId].balance -= retailPrice;
@@ -988,105 +990,85 @@ bot.action(/buy_(\d+)/, async (ctx) => {
 
         if (!usersDb[userId].isVip && usersDb[userId].totalSpent >= 500) {
             usersDb[userId].isVip = true;
-            await bot.telegram.sendMessage(userId, '👑 **تهانينا!**\nتمت ترقية حسابك إلى **VIP** لتحقيقك مشتريات بـ 500 EGP. ستحصل على أسعار مخفضة تلقائياً!').catch(()=>{});
+            bot.telegram.sendMessage(userId, '👑 **تهانينا!**\nتمت ترقية حسابك إلى **VIP** لتحقيقك مشتريات بـ 500 EGP. ستحصل على أسعار مخفضة تلقائياً!').catch(()=>{});
         }
         usersDb[userId].orders.push({ name: name + ' (' + qty + 'x)', price: retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
         saveDatabase(); 
 
-        await ctx.editMessageText('✅ **تم تنفيذ طلبك بنجاح!**\n\n🛍 الخدمة: ' + name + '\n🔢 الكمية: ' + qty + '\n💰 إجمالي المدفوع: ' + retailPrice + ' EGP\n💳 الرصيد المتبقي: ' + (usersDb[userId].balance.toFixed ? usersDb[userId].balance.toFixed(2) : usersDb[userId].balance) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
-
-        // 1. استخراج رقم الطلب الأساسي من نتيجة الدفع
-        let orderId = orderResponse.data?.order?.id || orderResponse.data?.id || orderResponse.data?.order_id;
+        let orderId = orderResponse.data?.order?.id || orderResponse.data?.id || orderResponse.data?.order_id || Math.floor(10000 + Math.random() * 90000);
         let rawDetails = null;
 
-        // 2. إذا وجدنا رقم الطلب، نعمل طلب GET جديد لاستخراج بياناته الفعلية (مثل البوت الأم)
-        if (orderId) {
-            try {
-                const getOrderRes = await apiClient.get('/orders/' + orderId);
-                const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
-                
-                if (orderData) {
-                    rawDetails = orderData.details || 
-                                 orderData.credentials || 
-                                 orderData.code || 
-                                 orderData.account || 
-                                 orderData.output || 
-                                 orderData.content || 
-                                 orderData.text || 
-                                 orderData.note || 
-                                 orderData.message || 
-                                 orderData.answer;
+        // 2. الانتظار لمدة 3 ثوانٍ للسماح لسيرفر المزود بتوليد الروابط والأكواد (مثل eSIM)
+        await new Promise(resolve => setTimeout(resolve, 3000));
 
-                    if (!rawDetails && Array.isArray(orderData.items)) {
-                        rawDetails = orderData.items.map(item => item.credentials || item.code || item.account || item.text || JSON.stringify(item)).join('\n\n');
-                    }
+        // 3. إجراء استعلام (GET) لجلب حالة الطلب النهائية مع الأكواد والروابط
+        try {
+            const getOrderRes = await apiClient.get('/orders/' + orderId);
+            const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
+            
+            if (orderData) {
+                rawDetails = orderData.details || 
+                             orderData.credentials || 
+                             orderData.code || 
+                             orderData.account || 
+                             orderData.output || 
+                             orderData.content || 
+                             orderData.text || 
+                             orderData.answer;
+
+                // لو البيانات موجودة داخل مصفوفة items
+                if (!rawDetails && Array.isArray(orderData.items)) {
+                    rawDetails = orderData.items.map(item => item.credentials || item.code || item.account || item.content || item.details).filter(Boolean).join('\n\n');
                 }
-            } catch(e) {
-                console.log('فشل جلب تفاصيل الطلب برقم: ' + orderId);
             }
-        } else {
-            orderId = Math.floor(10000 + Math.random() * 90000); // رقم عشوائي احتياطي
+        } catch(e) {
+            console.log('تأخير بسيط في المزود لجلب الطلب: ' + orderId);
         }
 
-        // 3. لو الطلب الإضافي لم ينجح في جلب بيانات، نستخرج من الرد الأول بأي شكل ممكن
+        // 4. لو فشل استعلام GET، نحاول استخراج أي بيانات صالحة من الرد الأول، ولكن نتجاهل الأرقام والـ IDs تماماً
         if (!rawDetails) {
             const targetObj = orderResponse.data?.order || orderResponse.data?.data || orderResponse.data;
             if (typeof targetObj === 'object' && targetObj !== null) {
                 rawDetails = targetObj.details || targetObj.credentials || targetObj.code || targetObj.account || targetObj.output || targetObj.content;
-                if (!rawDetails && Array.isArray(targetObj.items)) {
-                    rawDetails = targetObj.items.map(item => item.credentials || item.code || item.account || item.text || JSON.stringify(item)).join('\n\n');
-                }
-                if (!rawDetails) {
-                    let texts = [];
-                    for (let key in targetObj) {
-                        const val = targetObj[key];
-                        if (typeof val === 'string' && val.trim().length > 0 && !['id', 'order_id', 'status', 'created_at', 'updated_at', 'service_id', 'quantity', 'price', 'user_id', 'api', 'api_id', 'api_order_id', 'api_service_id'].includes(key)) {
-                            texts.push(val);
-                        }
-                    }
-                    if (texts.length > 0) rawDetails = texts.join('\n');
-                }
             }
         }
 
-        // 4. بناء وتنسيق رسالة التسليم للزبون لتطابق البوت الأم بالمسافات والأيقونات
-        let deliveryMsg = '📦 <b>رقم الطلب:</b> #' + orderId + '\n\n' +
-                          '🛍️ <b>الخدمة:</b> ' + name + '\n' +
-                          '🔢 <b>الكمية:</b> ' + qty + '\n' +
-                          '🟢 <b>الحالة:</b> مكتمل\n' +
-                          '💰 <b>المبلغ المدفوع:</b> ' + retailPrice + ' EGP\n';
+        // 5. تنسيق رسالة التسليم للزبون لتطابق البوت الأم (رسالة واحدة فقط بدون تكرار)
+        let deliveryMsg = `📦 <b>رقم الطلب:</b> #${orderId}\n\n` +
+                          `🛍️ <b>الخدمة:</b> ${name}\n` +
+                          `🔢 <b>الكمية:</b> ${qty}\n\n` +
+                          `🟢 <b>الحالة:</b> مكتمل\n\n` +
+                          `💰 <b>المبلغ المخصوم:</b> ${retailPrice} EGP\n\n`;
 
         if (rawDetails && rawDetails !== '{}' && rawDetails !== 'null' && rawDetails.trim() !== '') {
             const safeRawText = String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            deliveryMsg += '\n📋 <b>العناصر المسلمة:</b>\n' + safeRawText + '\n\n📌 <b>البيانات المسلمة (اضغط للنسخ):</b>\n<code>' + safeRawText + '</code>';
+            deliveryMsg += `📋 <b>العناصر المسلمة:</b>\n${safeRawText}\n\n` +
+                           `📌 <b>البيانات المسلمة (اضغط للنسخ):</b>\n<code>${safeRawText}</code>`;
         } else {
-            deliveryMsg += '\n✅ تم إرسال الطلب بنجاح للمزود، وجاري معالجته وتسليمه لك.';
+            deliveryMsg += `📋 <b>العناصر المسلمة:</b>\nجاري معالجة الكود من المزود، يرجى مراجعة سجل الطلبات لاحقاً.`;
         }
 
-        // إرسال رسالة الكود والبيانات للزبون مباشرة
-        await bot.telegram.sendMessage(userId, deliveryMsg, { 
+        // 6. استبدال رسالة التحميل بالفاتورة النهائية مباشرة
+        await ctx.editMessageText(deliveryMsg, { 
             parse_mode: 'HTML',
             disable_web_page_preview: true,
             ...Markup.inlineKeyboard([
                 [Markup.button.callback('🔙 العودة إلى الطلبات', 'main_menu'), Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]
             ])
-        });
+        }).catch(()=>{});
 
-        // إرسال إشعار كامل للأدمن (1001) برقم الطلب وكل التفاصيل
-        const adminLogMsg = '👑 <b>إشعار شراء جديد (للأدمن):</b>\n\n' +
-                            '📦 <b>رقم الطلب:</b> #' + orderId + '\n' +
-                            '🛍 <b>الخدمة:</b> ' + name + '\n' +
-                            '👤 <b>المشتري (ID):</b> <code>' + usersDb[userId].uid + '</code>\n' +
-                            '🔢 <b>الكمية:</b> ' + qty + '\n' +
-                            '🟢 <b>الحالة:</b> مكتمل\n' +
-                            '💰 <b>المبلغ المدفوع:</b> ' + retailPrice + ' EGP\n\n' +
-                            (rawDetails ? '📌 <b>البيانات المسلمة:</b>\n<code>' + String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</code>' : '');
-        
+        // 7. إرسال إشعار كامل للأدمن
+        const adminLogMsg = `👑 <b>إشعار شراء جديد:</b>\n\n` +
+                            `📦 <b>رقم الطلب:</b> #${orderId}\n` +
+                            `🛍 <b>الخدمة:</b> ${name}\n` +
+                            `👤 <b>المشتري (ID):</b> <code>${usersDb[userId].uid}</code>\n` +
+                            `💰 <b>المدفوع:</b> ${retailPrice} EGP\n\n` +
+                            (rawDetails ? `📌 <b>البيانات:</b>\n<code>${String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>` : '');
         notifyAdmin(adminLogMsg);
 
      } catch (error) {
         console.error('Buy API Error:', error.message);
-        await ctx.editMessageText('❌ فشل الشراء من المزود أو أن الرصيد غير كافٍ في حساب المزود. لم يتم خصم أي مبلغ من محفظتك.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]])).catch(()=>{});
+        await ctx.editMessageText('❌ فشل الشراء من المزود. لم يتم خصم أي مبلغ من محفظتك.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]])).catch(()=>{});
      }
   } catch (err){
       console.error('Buy General Error:', err.message);
