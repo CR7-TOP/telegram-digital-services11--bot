@@ -1,4 +1,4 @@
-import { Telegraf, Markup } from 'telegraf';
+mport { Telegraf, Markup } from 'telegraf';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -1026,6 +1026,11 @@ bot.hears(/^📞 الدعم$/, (ctx) => {
   } catch(e){}
 });
 
-bot.launch().then(() => console.log("Bot with Ultimate Pro Anti-Crash & Auto-Delivery Features is running!"));
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+export default async function handler(req, res) {
+  if (req.method === 'POST') {
+    await bot.handleUpdate(req.body);
+    res.status(200).send('OK');
+  } else {
+    res.status(200).send('Bot is running on Vercel webhook!');
+  }
+}
