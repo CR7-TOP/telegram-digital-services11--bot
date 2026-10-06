@@ -112,6 +112,16 @@ function logAdminAction(adminId, action) {
   } catch (e) {}
 }
 
+function notifyAdmin(text) {
+    try {
+        for (let tgId in usersDb) {
+            if (String(usersDb[tgId].uid) === '1001') {
+                bot.telegram.sendMessage(tgId, text, { parse_mode: 'HTML' }).catch(() => {});
+            }
+        }
+    } catch(e) {}
+}
+
 setInterval(() => {
   try {
     const now = new Date();
@@ -125,11 +135,7 @@ setInterval(() => {
                 });
             }
         }
-        for (let tgId in usersDb) {
-            if (String(usersDb[tgId].uid) === '1001') {
-                bot.telegram.sendMessage(tgId, '📊 التقرير المالي اليومي التلقائي:\n\n💰 إجمالي المشتريات اليوم: *' + totalDaySpent.toFixed(2) + ' EGP*\n📈 نسبة الربح العامة الحالية: ' + globalMarkupPercent + '%', { parse_mode: 'Markdown' }).catch(()=>{});
-            }
-        }
+        notifyAdmin('📊 التقرير المالي اليومي التلقائي:\n\n💰 إجمالي المشتريات اليوم: <b>' + totalDaySpent.toFixed(2) + ' EGP</b>\n📈 نسبة الربح العامة الحالية: ' + globalMarkupPercent + '%');
     }
   } catch(e) {}
 }, 60000);
@@ -181,11 +187,11 @@ const apiClient = axios.create({
 const categoryEmojis = {
   'شات GPT': '🤖', 'جيميناي': '✨', 'كاب كات': '✂', 'جروك': '🌌',
   'ادوبي': '🎨', 'كانفا': '🖌', 'نوشن': '📝', 'Leonardo.Ai': '🤖',
-  'دوولينجو': '🦉', 'تيليجرام': '✈️️', 'مايكروسوفت': '💻', 'Miro': '🗺',
+  'دوولينجو': '🦉', 'تيليجرام': '✈', 'مايكروسوفت': '💻', 'Miro': '🗺',
   'Zoom': '📹', 'iLovePDF': '📄', 'Envato': '🍃', 'Grammarly': '✍️',
   'Autodesk': '🏗', 'JetBrains': '💻', 'edX Premium': '🎓',
   'Peacock': '🦚', 'HBO MAX': '🎬', 'Paramount+': '⛰', 'Framer': '⚡',
-  'Avira': '☂️', 'HMA VPN': '🌍', 'اكسبريس VPN': '🛡️', 'جيميل': '📧',
+  'Avira': '☂️', 'HMA VPN': '🌍', 'اكسبريس VPN': '🛡️️', 'جيميل': '📧',
   'ايكلاود': '☁', 'E SIM': '📱'
 };
 
@@ -333,20 +339,8 @@ bot.hears(/^💳 شحن المحفظة \(فودافون كاش\)$/, (ctx) => {
 
 function sendDepositNotification(req) {
   try {
-    let adminNotified = false;
-    for (let tgId in usersDb) {
-      if (String(usersDb[tgId].uid) === '1001') {
-        bot.telegram.sendMessage(tgId, 
-          '🔔 **طلب شحن محفظة جديد!**\n\n👤 المستخدم (ID): `' + req.userUid + '`\n💰 المبلغ المطلوب: *' + req.amount + ' EGP*\n📱 الرقم المحول منه: `' + req.senderNumber + '`\n\nيرجى المراجعة من قسم (طلبات الشحن المعلقة):', {
-            parse_mode: 'Markdown',
-            ...Markup.inlineKeyboard([[Markup.button.callback('✅ موافقة وشحن (' + req.amount + ' جنيه)', 'approve_dep_' + req.userId + '_' + req.amount)], [Markup.button.callback('❌ رفض الطلب', 'reject_dep_' + req.userId)]])
-          }
-        ).catch(() => {});
-        adminNotified = true;
-      }
-    }
-    return adminNotified;
-  } catch(e) { return false; }
+    notifyAdmin('🔔 <b>طلب شحن محفظة جديد!</b>\n\n👤 المستخدم (ID): <code>' + req.userUid + '</code>\n💰 المبلغ المطلوب: <b>' + req.amount + ' EGP</b>\n📱 الرقم المحول منه: <code>' + req.senderNumber + '</code>\n\nيرجى المراجعة من قسم (طلبات الشحن المعلقة):');
+  } catch(e) {}
 }
 
 function showAdminPanel(ctx) {
@@ -636,17 +630,7 @@ bot.on('text', async (ctx, next) => {
     if (supportStates[userId]) {
         delete supportStates[userId];
         const userUid = usersDb[userId].uid;
-        for (let tgId in usersDb) {
-            if (String(usersDb[tgId].uid) === '1001') {
-                bot.telegram.sendMessage(tgId, 
-                    '🎫 **تذكرة دعم فني جديدة!**\n\n' +
-                    '👤 من المستخدم (ID): `' + userUid + '`\n' +
-                    '✉ النص:\n' + text + '\n\n' +
-                    'للرد، استخدم الأمر:\n`/reply ' + userUid + ' [رسالتك]`', 
-                    { parse_mode: 'Markdown' }
-                ).catch(() => {});
-            }
-        }
+        notifyAdmin('🎫 <b>تذكرة دعم فني جديدة!</b>\n\n👤 من المستخدم (ID): <code>' + userUid + '</code>\n✉ النص:\n' + text + '\n\nللرد، استخدم الأمر:\n<code>/reply ' + userUid + ' [رسالتك]</code>');
         return ctx.reply('✅ تم إرسال رسالتك إلى فريق الدعم بنجاح، سيتم الرد عليك قريباً.').catch(()=>{});
     }
 
@@ -913,7 +897,7 @@ bot.action(/confirm_(\d+)/, (ctx) => {
      const price = calculateRetailPrice(srv, usersDb[userId], 1);
      const srvName = srv.name_ar || srv.name || srv.title;
 
-     ctx.editMessageText('⚠️ اختر الكمية المطلوبة لـ:\n\n🛍️ *' + srvName + '*\n💰 السعر للقطعة: ' + price + ' EGP\n🔢 الكمية الحالية: 1', 
+     ctx.editMessageText('⚠️️ اختر الكمية المطلوبة لـ:\n\n🛍️ *' + srvName + '*\n💰 السعر للقطعة: ' + price + ' EGP\n🔢 الكمية الحالية: 1', 
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
@@ -993,7 +977,7 @@ bot.action(/buy_(\d+)/, async (ctx) => {
        ).catch(()=>{});
      }
 
-     ctx.editMessageText('⏳ جاري تنفيذ الطلب وإرسال تفاصيل الخدمة...').catch(()=>{});
+     await ctx.editMessageText('⏳ جاري تنفيذ الطلب وإرسال تفاصيل الخدمة...').catch(()=>{});
 
      try {
         const orderResponse = await apiClient.post('/orders', { service_id: srv.id, quantity: qty }, { headers: { 'Idempotency-Key': Date.now().toString() } });
@@ -1005,17 +989,17 @@ bot.action(/buy_(\d+)/, async (ctx) => {
 
         if (!usersDb[userId].isVip && usersDb[userId].totalSpent >= 500) {
             usersDb[userId].isVip = true;
-            bot.telegram.sendMessage(userId, '👑 **تهانينا!**\nتمت ترقية حسابك إلى **VIP** لتحقيقك مشتريات بـ 500 EGP. ستحصل على أسعار مخفضة تلقائياً!').catch(()=>{});
+            await bot.telegram.sendMessage(userId, '👑 **تهانينا!**\nتمت ترقية حسابك إلى **VIP** لتحقيقك مشتريات بـ 500 EGP. ستحصل على أسعار مخفضة تلقائياً!').catch(()=>{});
         }
 
         usersDb[userId].orders.push({ name: name + ' (' + qty + 'x)', price: retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
         saveDatabase(); 
 
-        const orderIdRandom = Math.floor(10000 + Math.random() * 90000);
+        const orderIdRandom = orderResponse.data?.order?.id || orderResponse.data?.id || Math.floor(10000 + Math.random() * 90000);
 
-        ctx.editMessageText('✅ **تم تنفيذ طلبك بنجاح!**\n\n🛍 الخدمة: ' + name + '\n🔢 الكمية: ' + qty + '\n💰 إجمالي المدفوع: ' + retailPrice + ' EGP\n💳 الرصيد المتبقي: ' + (usersDb[userId].balance.toFixed ? usersDb[userId].balance.toFixed(2) : usersDb[userId].balance) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
+        await ctx.editMessageText('✅ **تم تنفيذ طلبك بنجاح!**\n\n🛍 الخدمة: ' + name + '\n🔢 الكمية: ' + qty + '\n💰 إجمالي المدفوع: ' + retailPrice + ' EGP\n💳 الرصيد المتبقي: ' + (usersDb[userId].balance.toFixed ? usersDb[userId].balance.toFixed(2) : usersDb[userId].balance) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
 
-        // استخراج بيانات التفعيل والأكواد بدقة وإرسالها للزبون مباشرة
+        // استخراج بيانات التفعيل والأكواد بدقة تامة من استجابة المزود
         const responseData = orderResponse.data;
         let rawDetails = null;
 
@@ -1053,33 +1037,45 @@ bot.action(/buy_(\d+)/, async (ctx) => {
             }
         }
 
-        setTimeout(() => {
-            let deliveryMsg = '📦 **رقم الطلب:** #' + orderIdRandom + '\n\n' +
-                              '🛍️ **الخدمة:** ' + name + '\n' +
-                              '🔢 **الكمية:** ' + qty + '\n' +
-                              '🟢 **الحالة:** مكتمل\n' +
-                              '💰 **المبلغ المدفوع:** ' + retailPrice + ' EGP\n';
+        let deliveryMsg = '📦 **رقم الطلب:** #' + orderIdRandom + '\n\n' +
+                          '🛍️ **الخدمة:** ' + name + '\n' +
+                          '🔢 **الكمية:** ' + qty + '\n' +
+                          '🟢 **الحالة:** مكتمل\n' +
+                          '💰 **المبلغ المدفوع:** ' + retailPrice + ' EGP\n';
 
-            if (rawDetails && rawDetails !== '{}' && rawDetails !== 'null') {
-                const safeRawText = String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                deliveryMsg += '\n📋 **العناصر المسلمة:**\n' + safeRawText + '\n\n📌 **البيانات المسلمة:**\n<code>' + safeRawText + '</code>';
-            } else {
-                deliveryMsg += '\n✅ تم إرسال الطلب بنجاح للمزود، وجاري معالجته وتسليمه لك.';
-            }
+        if (rawDetails && rawDetails !== '{}' && rawDetails !== 'null') {
+            const safeRawText = String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            deliveryMsg += '\n📋 **العناصر المسلمة:**\n' + safeRawText + '\n\n📌 **البيانات المسلمة:**\n<code>' + safeRawText + '</code>';
+        } else {
+            deliveryMsg += '\n✅ تم إرسال الطلب بنجاح للمزود، وجاري معالجته وتسليمه لك.';
+        }
 
-            // إرسال تفاصيل الطلب وكود التفعيل للزبون حصرياً بشكل مباشر
-            bot.telegram.sendMessage(userId, deliveryMsg, { 
-                parse_mode: 'HTML',
-                ...Markup.inlineKeyboard([
-                    [Markup.button.callback('🔙 العودة إلى الطلبات', 'main_menu'), Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]
-                ])
-            }).catch(err => console.log('Delivery Error:', err.message));
-        }, 500);
+        // إرسال الكود وبيانات التسليم للزبون مباشرة
+        await bot.telegram.sendMessage(userId, deliveryMsg, { 
+            parse_mode: 'HTML',
+            ...Markup.inlineKeyboard([
+                [Markup.button.callback('🔙 العودة إلى الطلبات', 'main_menu'), Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]
+            ])
+        });
+
+        // إرسال إشعار شراء متطابق للبوت الأم (للأدمن 1001) حتى لو كان أوفلاين
+        const adminLogMsg = '📦 <b>رقم الطلب:</b> #' + orderIdRandom + '\n\n' +
+                            '🛍️ <b>الخدمة:</b> ' + name + '\n' +
+                            '👤 <b>المشتري (ID):</b> <code>' + usersDb[userId].uid + '</code>\n' +
+                            '🔢 <b>الكمية:</b> ' + qty + '\n' +
+                            '🟢 <b>الحالة:</b> مكتمل\n' +
+                            '💰 <b>المبلغ المدفوع:</b> ' + retailPrice + ' EGP\n\n' +
+                            (rawDetails ? '📌 <b>البيانات المسلمة:</b>\n<code>' + String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</code>' : '');
+        
+        notifyAdmin(adminLogMsg);
 
      } catch (error) {
-        ctx.editMessageText('❌ فشل الشراء من المزود أو أن الرصيد غير كافٍ في حساب المزود. لم يتم خصم أي مبلغ من محفظتك.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]])).catch(()=>{});
+        console.error('Buy API Error:', error.message);
+        await ctx.editMessageText('❌ فشل الشراء من المزود أو أن الرصيد غير كافٍ في حساب المزود. لم يتم خصم أي مبلغ من محفظتك.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]])).catch(()=>{});
      }
-  } catch (err){}
+  } catch (err){
+      console.error('Buy General Error:', err.message);
+  }
 });
 
 bot.hears(/^📞 الدعم$/, (ctx) => {
