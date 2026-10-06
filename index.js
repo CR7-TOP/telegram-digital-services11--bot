@@ -377,7 +377,7 @@ function showAdminPanel(ctx) {
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
         [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_voucher')],
-        [Markup.button.callback('🛠️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
+        [Markup.button.callback('🛠️️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
         [Markup.button.callback('👥 شحن رصيد بالـ ID', 'admin_charge_by_id'), Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users')],
         [Markup.button.callback('🚫 حظر مستخدم', 'admin_ban_user'), Markup.button.callback('✅ فك حظر مستخدم', 'admin_unban_user')],
         [Markup.button.callback('📢 إرسال رسالة (إذاعة)', 'admin_broadcast'), Markup.button.callback('🎟️ إنشاء كود خصم', 'admin_create_promo')],
@@ -808,9 +808,9 @@ async function showCategories(ctx) {
             if(ctx.callbackQuery) {
                 return ctx.editMessageText('⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
             } else if(loadingMsgId) {
-                return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, '⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
+                return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, '⚠️️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
             } else {
-                return ctx.reply('⚠️️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
+                return ctx.reply('⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
             }
         }
     }
@@ -985,6 +985,7 @@ bot.action(/buy_(\d+)/, async (ctx) => {
 
         ctx.editMessageText('✅ **تم تنفيذ طلبك بنجاح!**\n\n🛍 الخدمة: ' + name + '\n🔢 الكمية: ' + qty + '\n💰 إجمالي المدفوع: ' + retailPrice + ' EGP\n💳 الرصيد المتبقي: ' + (usersDb[userId].balance.toFixed ? usersDb[userId].balance.toFixed(2) : usersDb[userId].balance) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
 
+        // استخراج بيانات التسليم أو الأكواد بشكل شامل من استجابة المزود
         const responseData = orderResponse.data;
         let rawDetails = null;
 
@@ -993,8 +994,29 @@ bot.action(/buy_(\d+)/, async (ctx) => {
                 rawDetails = responseData;
             } else {
                 const targetObj = responseData.order || responseData.data || responseData;
-                if (typeof targetObj === 'object') {
-                    rawDetails = targetObj.details || targetObj.account || targetObj.note || targetObj.message || targetObj.text || targetObj.answer || JSON.stringify(targetObj, null, 2);
+                if (typeof targetObj === 'object' && targetObj !== null) {
+                    rawDetails = targetObj.details || 
+                                 targetObj.account || 
+                                 targetObj.credentials || 
+                                 targetObj.code || 
+                                 targetObj.note || 
+                                 targetObj.message || 
+                                 targetObj.text || 
+                                 targetObj.answer || 
+                                 targetObj.content ||
+                                 targetObj.result;
+                    
+                    if (!rawDetails) {
+                        for (let key in targetObj) {
+                            if (typeof targetObj[key] === 'string' && targetObj[key].length > 0 && key !== 'status' && key !== 'id') {
+                                rawDetails = targetObj[key];
+                                break;
+                            }
+                        }
+                    }
+                    if (!rawDetails) {
+                        rawDetails = JSON.stringify(targetObj, null, 2);
+                    }
                 } else {
                     rawDetails = String(targetObj);
                 }
@@ -1002,10 +1024,10 @@ bot.action(/buy_(\d+)/, async (ctx) => {
         }
 
         setTimeout(() => {
-            let deliveryMsg = '📦 <b>تفاصيل الخدمة المطلوبة:</b>\n\n🛍 <b>' + name + '</b>\n';
-            if (rawDetails && rawDetails !== '{}') {
+            let deliveryMsg = '📦 <b>تفاصيل وتسليم الخدمة:</b>\n\n🛍 <b>' + name + '</b>\n';
+            if (rawDetails && rawDetails !== '{}' && rawDetails !== 'null') {
                 const safeRawText = String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                deliveryMsg += '\n📌 <b>بيانات التسليم:</b>\n' + safeRawText;
+                deliveryMsg += '\n📌 <b>الكود أو بيانات الدخول (اضغط للنسخ):</b>\n<code>' + safeRawText + '</code>';
             } else {
                 deliveryMsg += '\n✅ تم إرسال الطلب بنجاح للمزود، وجاري معالجته وتسليمه لك.';
             }
