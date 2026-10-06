@@ -181,7 +181,7 @@ const apiClient = axios.create({
 const categoryEmojis = {
   'شات GPT': '🤖', 'جيميناي': '✨', 'كاب كات': '✂', 'جروك': '🌌',
   'ادوبي': '🎨', 'كانفا': '🖌', 'نوشن': '📝', 'Leonardo.Ai': '🤖',
-  'دوولينجو': '🦉', 'تيليجرام': '✈️', 'مايكروسوفت': '💻', 'Miro': '🗺',
+  'دوولينجو': '🦉', 'تيليجرام': '✈️️', 'مايكروسوفت': '💻', 'Miro': '🗺',
   'Zoom': '📹', 'iLovePDF': '📄', 'Envato': '🍃', 'Grammarly': '✍️',
   'Autodesk': '🏗', 'JetBrains': '💻', 'edX Premium': '🎓',
   'Peacock': '🦚', 'HBO MAX': '🎬', 'Paramount+': '⛰', 'Framer': '⚡',
@@ -337,7 +337,7 @@ function sendDepositNotification(req) {
     for (let tgId in usersDb) {
       if (String(usersDb[tgId].uid) === '1001') {
         bot.telegram.sendMessage(tgId, 
-          '🔔 **طلب شحن محفظة جديد!**\n\n👤 المستخدم (ID): `' + req.userUid + '`\n💰 المبلغ المطلوب: *' + req.amount + ' EGP*\n📱 الرقم المحول منه: `' + req.senderNumber + '`\n\nيرجى المراجعة ثم اضغط الموافقة:', {
+          '🔔 **طلب شحن محفظة جديد!**\n\n👤 المستخدم (ID): `' + req.userUid + '`\n💰 المبلغ المطلوب: *' + req.amount + ' EGP*\n📱 الرقم المحول منه: `' + req.senderNumber + '`\n\nيرجى المراجعة من قسم (طلبات الشحن المعلقة):', {
             parse_mode: 'Markdown',
             ...Markup.inlineKeyboard([[Markup.button.callback('✅ موافقة وشحن (' + req.amount + ' جنيه)', 'approve_dep_' + req.userId + '_' + req.amount)], [Markup.button.callback('❌ رفض الطلب', 'reject_dep_' + req.userId)]])
           }
@@ -374,10 +374,11 @@ function showAdminPanel(ctx) {
                  '📱 رقم الكاش: `' + vodafoneCashNumber + '`';
 
     const keyboard = Markup.inlineKeyboard([
+        [Markup.button.callback('💳 طلبات الشحن المعلقة (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
         [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_voucher')],
-        [Markup.button.callback('🛠️️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
+        [Markup.button.callback('🛠️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
         [Markup.button.callback('👥 شحن رصيد بالـ ID', 'admin_charge_by_id'), Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users')],
         [Markup.button.callback('🚫 حظر مستخدم', 'admin_ban_user'), Markup.button.callback('✅ فك حظر مستخدم', 'admin_unban_user')],
         [Markup.button.callback('📢 إرسال رسالة (إذاعة)', 'admin_broadcast'), Markup.button.callback('🎟️ إنشاء كود خصم', 'admin_create_promo')],
@@ -394,6 +395,25 @@ bot.hears(/^👑 لوحة تحكم الأدمن$/, (ctx) => {
     const userId = ctx.from.id; if (adminSession[userId]) return showAdminPanel(ctx);
     adminLoginStates[userId] = 'WAIT_EMAIL'; ctx.reply('🔐 **تسجيل دخول الأدمن**\n\nيرجى إرسال البريد الإلكتروني (Email):').catch(()=>{});
   } catch(e){}
+});
+
+bot.action('admin_pending_deposits', (ctx) => {
+    try {
+        if (!pendingDeposits || pendingDeposits.length === 0) {
+            return ctx.editMessageText('💳 **طلبات الشحن المعلقة:**\n\nلا توجد طلبات شحن معلقة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]])).catch(()=>{});
+        }
+        let msg = '💳 **طلبات الشحن المعلقة (' + pendingDeposits.length + '):**\n\n';
+        let inlineButtons = [];
+        pendingDeposits.forEach((req, idx) => {
+            msg += '👤 ID: `' + req.userUid + '`\n💰 المبلغ: *' + req.amount + ' EGP*\n📱 الرقم: `' + req.senderNumber + '`\n━━━━━━━━━━━━\n';
+            inlineButtons.push([
+                Markup.button.callback('✅ موافقة (' + req.amount + 'ج - ID: ' + req.userUid + ')', 'approve_dep_' + req.userId + '_' + req.amount),
+                Markup.button.callback('❌ رفض', 'reject_dep_' + req.userId)
+            ]);
+        });
+        inlineButtons.push([Markup.button.callback('🔙 رجوع', 'back_to_admin')]);
+        ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(inlineButtons) }).catch(()=>{});
+    } catch(e) {}
 });
 
 bot.action('admin_check_api_balance', async (ctx) => {
@@ -676,9 +696,10 @@ bot.on('text', async (ctx, next) => {
       } else if (state.step === 'WAIT_NUMBER') {
         const amount = state.amount; delete depositStates[userId]; initUser(userId);
         const reqData = { userId, userUid: usersDb[userId].uid, amount, senderNumber: text }; 
-        ctx.reply('⏳ تم إرسال الطلب للإدارة.').catch(()=>{});
-        const adminNotified = sendDepositNotification(reqData);
-        if (!adminNotified) { pendingDeposits.push(reqData); saveDatabase(); }
+        ctx.reply('⏳ تم إرسال طلب الشحن للإدارة بنجاح، سيتم المراجعة والإضافة قريباً.').catch(()=>{});
+        pendingDeposits.push(reqData);
+        saveDatabase();
+        sendDepositNotification(reqData);
         return;
       }
     }
@@ -734,6 +755,10 @@ bot.action(/approve_dep_(\d+)_([\d.]+)/, async (ctx) => {
     usersDb[targetUserId].balance += amount; 
     usersDb[targetUserId].walletHistory.push({ type: 'شحن فودافون كاش', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
 
+    // حذف الطلب نهائياً من القائمة المعلقة بمجرد الموافقة
+    pendingDeposits = pendingDeposits.filter(d => String(d.userId) !== String(targetUserId));
+    saveDatabase();
+
     const referrerTelegramId = usersDb[targetUserId].referredBy;
     if (referrerTelegramId && usersDb[referrerTelegramId]) {
         const bonus = amount * 0.02; 
@@ -747,17 +772,20 @@ bot.action(/approve_dep_(\d+)_([\d.]+)/, async (ctx) => {
         ).catch(() => {});
     }
 
-    saveDatabase(); 
-
-    ctx.editMessageText('✅ تمت الموافقة وإضافة مبلغ *' + amount + ' EGP* للمستخدم.', { parse_mode: 'Markdown' }).catch(()=>{});
+    ctx.editMessageText('✅ تمت الموافقة وإضافة مبلغ *' + amount + ' EGP* للمستخدم وحذف الطلب من المعلقات.', { parse_mode: 'Markdown' }).catch(()=>{});
     bot.telegram.sendMessage(targetUserId, '🎉 **تم شحن محفظتك بنجاح!**\n💰 تمت إضافة: *' + amount + ' EGP*', { parse_mode: 'Markdown' }).catch(() => {});
   } catch(err) {}
 });
 
 bot.action(/reject_dep_(\d+)/, async (ctx) => {
   try {
-    ctx.editMessageText('❌ تم رفض الشحن.').catch(()=>{});
-    bot.telegram.sendMessage(ctx.match[1], '❌ عذراً، تم رفض طلب الشحن لعدم صحة البيانات.').catch(() => {});
+    const targetUserId = ctx.match[1];
+    // حذف الطلب نهائياً من القائمة المعلقة بمجرد الرفض
+    pendingDeposits = pendingDeposits.filter(d => String(d.userId) !== String(targetUserId));
+    saveDatabase();
+
+    ctx.editMessageText('❌ تم رفض الطلب وإزالته من القائمة المعلقة.').catch(()=>{});
+    bot.telegram.sendMessage(targetUserId, '❌ عذراً، تم رفض طلب الشحن لعدم صحة بيانات التحويل.').catch(() => {});
   } catch(err) {}
 });
 
@@ -808,7 +836,7 @@ async function showCategories(ctx) {
             if(ctx.callbackQuery) {
                 return ctx.editMessageText('⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
             } else if(loadingMsgId) {
-                return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, '⚠️️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
+                return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, '⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
             } else {
                 return ctx.reply('⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
             }
@@ -983,9 +1011,11 @@ bot.action(/buy_(\d+)/, async (ctx) => {
         usersDb[userId].orders.push({ name: name + ' (' + qty + 'x)', price: retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
         saveDatabase(); 
 
+        const orderIdRandom = Math.floor(10000 + Math.random() * 90000);
+
         ctx.editMessageText('✅ **تم تنفيذ طلبك بنجاح!**\n\n🛍 الخدمة: ' + name + '\n🔢 الكمية: ' + qty + '\n💰 إجمالي المدفوع: ' + retailPrice + ' EGP\n💳 الرصيد المتبقي: ' + (usersDb[userId].balance.toFixed ? usersDb[userId].balance.toFixed(2) : usersDb[userId].balance) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
 
-        // استخراج بيانات التسليم أو الأكواد بشكل شامل من استجابة المزود
+        // استخراج بيانات التفعيل والأكواد بدقة وإرسالها للزبون مباشرة
         const responseData = orderResponse.data;
         let rawDetails = null;
 
@@ -1024,14 +1054,26 @@ bot.action(/buy_(\d+)/, async (ctx) => {
         }
 
         setTimeout(() => {
-            let deliveryMsg = '📦 <b>تفاصيل وتسليم الخدمة:</b>\n\n🛍 <b>' + name + '</b>\n';
+            let deliveryMsg = '📦 **رقم الطلب:** #' + orderIdRandom + '\n\n' +
+                              '🛍️ **الخدمة:** ' + name + '\n' +
+                              '🔢 **الكمية:** ' + qty + '\n' +
+                              '🟢 **الحالة:** مكتمل\n' +
+                              '💰 **المبلغ المدفوع:** ' + retailPrice + ' EGP\n';
+
             if (rawDetails && rawDetails !== '{}' && rawDetails !== 'null') {
                 const safeRawText = String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                deliveryMsg += '\n📌 <b>الكود أو بيانات الدخول (اضغط للنسخ):</b>\n<code>' + safeRawText + '</code>';
+                deliveryMsg += '\n📋 **العناصر المسلمة:**\n' + safeRawText + '\n\n📌 **البيانات المسلمة:**\n<code>' + safeRawText + '</code>';
             } else {
                 deliveryMsg += '\n✅ تم إرسال الطلب بنجاح للمزود، وجاري معالجته وتسليمه لك.';
             }
-            bot.telegram.sendMessage(userId, deliveryMsg, { parse_mode: 'HTML' }).catch(err => console.log('Delivery Error:', err.message));
+
+            // إرسال تفاصيل الطلب وكود التفعيل للزبون حصرياً بشكل مباشر
+            bot.telegram.sendMessage(userId, deliveryMsg, { 
+                parse_mode: 'HTML',
+                ...Markup.inlineKeyboard([
+                    [Markup.button.callback('🔙 العودة إلى الطلبات', 'main_menu'), Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]
+                ])
+            }).catch(err => console.log('Delivery Error:', err.message));
         }, 500);
 
      } catch (error) {
