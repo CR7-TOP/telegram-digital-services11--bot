@@ -308,7 +308,6 @@ bot.hears(/^📜 سجل المحفظة$/, (ctx) => {
     } catch(e){}
 });
 
-// قسم الدعم الفني المباشر الجديد
 bot.hears(/^📞 الدعم الفني$/, (ctx) => {
     try {
       const userId = ctx.from.id; initUser(userId);
@@ -379,7 +378,6 @@ function showAdminPanel(ctx) {
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
         [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_voucher')],
-        [Markup.button.callback('✉️ مراسلة عميل بالـ ID', 'admin_msg_by_id')], // زر مراسلة عميل بالـ ID الجديد للأدمن
         [Markup.button.callback('🛠️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
         [Markup.button.callback('👥 شحن رصيد بالـ ID', 'admin_charge_by_id'), Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users')],
         [Markup.button.callback('🚫 حظر مستخدم', 'admin_ban_user'), Markup.button.callback('✅ فك حظر مستخدم', 'admin_unban_user')],
@@ -521,14 +519,6 @@ bot.action('admin_create_voucher', (ctx) => {
     } catch(e){}
 });
 
-// تفعيل زر مراسلة مستخدم بالـ ID
-bot.action('admin_msg_by_id', (ctx) => {
-    try {
-        adminInputStates[ctx.from.id] = 'WAIT_USER_MSG';
-        ctx.editMessageText('✉️ **مراسلة عميل عبر الـ ID:**\n\nأرسل الآيدي والرسالة هكذا في سطر واحد:\n`الآيدي الرسالة`\n(مثال: `1234567890 أهلاً بك، تم حل مشكلتك`)', { parse_mode: 'Markdown' }).catch(()=>{});
-    } catch(e){}
-});
-
 bot.action('admin_ban_user', (ctx) => { ctx.editMessageText('لحظر مستخدم، أرسل الأمر:\n`/ban الـID`', { parse_mode: 'Markdown' }).catch(()=>{}); });
 bot.action('admin_unban_user', (ctx) => { ctx.editMessageText('لكسر الحظر عن مستخدم، أرسل الأمر:\n`/unban الـID`', { parse_mode: 'Markdown' }).catch(()=>{}); });
 
@@ -547,20 +537,6 @@ bot.on('text', async (ctx, next) => {
     if (adminSession[userId] && adminInputStates[userId]) {
         const state = adminInputStates[userId];
         delete adminInputStates[userId];
-
-        if (state === 'WAIT_USER_MSG') {
-            const firstSpace = text.indexOf(' ');
-            if (firstSpace === -1) return ctx.reply('❌ صيغة غير صحيحة. استخدم: `الآيدي الرسالة`').catch(()=>{});
-            const targetUid = text.substring(0, firstSpace).trim();
-            const msgText = text.substring(firstSpace + 1).trim();
-
-            const targetUser = getUserByUid(targetUid);
-            if (!targetUser) return ctx.reply('❌ عذراً، لم يتم العثور على مستخدم بهذا الـ ID.').catch(()=>{});
-
-            await bot.telegram.sendMessage(targetUser.telegramId, `📩 **رسالة من إدارة المتجر:**\n\n${msgText}`, { parse_mode: 'Markdown' }).catch(()=>{});
-            logAdminAction(userId, 'مراسلة العميل ID: ' + targetUid);
-            return ctx.reply('✅ تم إرسال الرسالة إلى العميل بنجاح!').catch(()=>{});
-        }
 
         if (state === 'WAIT_GLOBAL_MARKUP') {
             const val = parseFloat(text);
@@ -843,7 +819,7 @@ async function showCategories(ctx) {
             } else if(loadingMsgId) {
                 return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, '⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
             } else {
-                return ctx.reply('⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
+                return ctx.reply('⚠️️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
             }
         }
     }
@@ -918,7 +894,7 @@ bot.action(/confirm_(\d+)/, (ctx) => {
      const price = calculateRetailPrice(srv, usersDb[userId], 1);
      const srvName = srv.name_ar || srv.name || srv.title;
 
-     ctx.editMessageText(`⚠️️ اختر الكمية المطلوبة لـ:\n\n🛍️ *${srvName}*\n💰 السعر للقطعة: ${price} EGP\n🔢 الكمية الحالية: 1`, 
+     ctx.editMessageText(`⚠ اختر الكمية المطلوبة لـ:\n\n🛍️ *${srvName}*\n💰 السعر للقطعة: ${price} EGP\n🔢 الكمية الحالية: 1`, 
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
