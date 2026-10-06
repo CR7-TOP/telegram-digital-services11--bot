@@ -1,68 +1,18 @@
 import { Telegraf, Markup } from 'telegraf';
 import axios from 'axios';
 import dotenv from 'dotenv';
-import fs from 'fs';
 import http from 'http';
+import { MongoClient } from 'mongodb'; // استدعاء مكتبة قاعدة البيانات الجديدة
 
 dotenv.config();
 
-// ----------------------------------------------------
-// 1. خادم ويب (Web Server) ثابت ومربوط بـ 0.0.0.0 لإظهار الرابط في Replit + نظام الإيقاظ الذاتي
-// ----------------------------------------------------
-const PORT = 3000;
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.write('البوت يعمل بكفاءة ومستيقظ 24/7 🚀');
-    res.end();
-});
-
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Web server started on port ${PORT}`);
-    
-    // نظام الإيقاظ الذاتي (Self-Ping) لمنع توقف السيرفر على ريبلت
-    setInterval(() => {
-        http.get(`http://localhost:${PORT}`, (res) => {
-            // صمت إيجابي للحفاظ على النشاط
-        }).on('error', (err) => {
-            // تجاهل أخطاء الاتصال الداخلي المؤقتة
-        });
-    }, 4 * 60 * 1000); // يرسل لنفسه طلب كل 4 دقائق
-}).on('error', (err) => {
-    console.log('⚠️ خطأ في السيرفر، ولكن البوت سيستمر في العمل.');
-});
-
-// ----------------------------------------------------
-// 2. حماية قصوى لمنع انهيار السيرفر تحت أي ضغط
-// ----------------------------------------------------
-process.on('uncaughtException', (err) => {
-    console.error('⚠️ Uncaught Exception Handled:', err.message);
-});
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('⚠️ Unhandled Rejection Handled:', reason);
-});
-
-const bot = new Telegraf(process.env.BOT_TOKEN);
-
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-const ADMIN_PASS = process.env.ADMIN_PASS;
-let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
-
-const adminLoginStates = {};
-const adminSession = {}; 
-const depositStates = {};
-const broadcastStates = {}; 
-const promoCodeStates = {}; 
-const searchStates = {}; 
-const supportStates = {}; 
-const adminReplyStates = {}; 
-const userSpamControl = {}; 
-const adminInputStates = {}; 
-
-const userRequestLocks = {};
-const categoryCacheTime = 60000; 
-let lastCategoriesFetchTime = 0;
-
-const DB_FILE = './database.json';
+// ==========================================
+// إعدادات الاتصال بقاعدة بيانات MongoDB
+// ==========================================
+const MONGODB_URI = "mongodb+srv://ahmwogod24920s_db_user:LwAbx06XOKBWel9j@cluster0.sjxm2ga.mongodb.net/xprostore?retryWrites=true&w=majority&appName=Cluster0";
+const client = new MongoClient(MONGODB_URI);
+let dbCollection = null;
+let pendingSaves = []; // مصفوفة لضمان حفظ كل البيانات في Vercel قبل الإغلاق
 
 let usersDb = {};
 let globalMarkupPercent = 15;
@@ -75,34 +25,92 @@ let adminAuditLogs = [];
 let maintenanceMode = false; 
 let bulkQuantityStates = {}; 
 
-function loadDatabase() {
-  try {
-    if (fs.existsSync(DB_FILE)) {
-      const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-      usersDb = data.usersDb || {};
-      globalMarkupPercent = data.globalMarkupPercent !== undefined ? data.globalMarkupPercent : 15;
-      customMarkups = data.customMarkups || {};
-      pendingDeposits = data.pendingDeposits || [];
-      promoCodes = data.promoCodes || {};
-      flashSale = data.flashSale || { active: false, discount: 0, expiresAt: 0 };
-      vouchers = data.vouchers || {};
-      adminAuditLogs = data.adminAuditLogs || [];
-      maintenanceMode = data.maintenanceMode || false;
-      console.log('✅ تم تحميل قاعدة البيانات بنجاح!');
+// دالة الاتصال المباشر بقاعدة البيانات
+async function connectDB() {
+    if (!dbCollection) {
+        await client.connect();
+        const database = client.db("xprostore");
+        dbCollection = database.collection("botData");
+        console.log("✅ متصل بقاعدة بيانات MongoDB السحابية بنجاح!");
     }
-  } catch (error) {
-    console.error('❌ خطأ في قراءة قاعدة البيانات:', error);
-  }
 }
 
+// دالة جلب البيانات من السحابة
+async function loadDatabase() {
+    try {
+        await connectDB();
+        const data = await dbCollection.findOne({ _id: "main_data" });
+        if (data) {
+            usersDb = data.usersDb || {};
+            globalMarkupPercent = data.globalMarkupPercent !== undefined ? data.globalMarkupPercent : 15;
+            customMarkups = data.customMarkups || {};
+            pendingDeposits = data.pendingDeposits || [];
+            promoCodes = data.promoCodes || {};
+            flashSale = data.flashSale || { active: false, discount: 0, expiresAt: 0 };
+            vouchers = data.vouchers || {};
+            adminAuditLogs = data.adminAuditLogs || [];
+            maintenanceMode = data.maintenanceMode || false;
+        }
+    } catch (error) {
+        console.error('❌ خطأ في تحميل قاعدة البيانات:', error);
+    }
+}
+
+// دالة حفظ البيانات في السحابة بأمان تام
 function saveDatabase() {
-  try {
-    const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode };
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-  } catch (e) {}
+    try {
+        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode };
+        const savePromise = connectDB().then(() => {
+            return dbCollection.updateOne(
+                { _id: "main_data" },
+                { $set: data },
+                { upsert: true } // تحديث لو موجودة، أو إنشاء لو جديدة
+            );
+        }).catch(e => console.error('DB Save Error:', e));
+        
+        pendingSaves.push(savePromise); // حفظ العملية لضمان تنفيذها
+    } catch (e) {}
 }
 
-loadDatabase();
+// ----------------------------------------------------
+// 1. خادم ويب ثابت (Web Server)
+// ----------------------------------------------------
+const PORT = 3000;
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.write('البوت يعمل بكفاءة وقاعدة البيانات السحابية متصلة 🚀');
+    res.end();
+});
+
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Web server started on port ${PORT}`);
+    setInterval(() => {
+        http.get(`http://localhost:${PORT}`, (res) => {}).on('error', (err) => {});
+    }, 4 * 60 * 1000); 
+}).on('error', (err) => {});
+
+// ----------------------------------------------------
+// 2. حماية قصوى لمنع انهيار السيرفر
+// ----------------------------------------------------
+process.on('uncaughtException', (err) => {});
+process.on('unhandledRejection', (reason, promise) => {});
+
+const bot = new Telegraf(process.env.BOT_TOKEN);
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
+const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
+let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
+
+const adminLoginStates = {};
+const adminSession = {}; 
+const depositStates = {};
+const broadcastStates = {}; 
+const promoCodeStates = {}; 
+const searchStates = {}; 
+const supportStates = {}; 
+const adminInputStates = {}; 
+const userRequestLocks = {};
+const categoryCacheTime = 60000; 
+let lastCategoriesFetchTime = 0;
 
 function logAdminAction(adminId, action) {
   try {
@@ -188,7 +196,7 @@ const categoryEmojis = {
   'شات GPT': '🤖', 'جيميناي': '✨', 'كاب كات': '✂', 'جروك': '🌌',
   'ادوبي': '🎨', 'كانفا': '🖌', 'نوشن': '📝', 'Leonardo.Ai': '🤖',
   'دوولينجو': '🦉', 'تيليجرام': '✈', 'مايكروسوفت': '💻', 'Miro': '🗺',
-  'Zoom': '📹', 'iLovePDF': '📄', 'Envato': '🍃', 'Grammarly': '✍️',
+  'Zoom': '📹', 'iLovePDF': '📄', 'Envato': '🍃', 'Grammarly': '✍️️',
   'Autodesk': '🏗', 'JetBrains': '💻', 'edX Premium': '🎓',
   'Peacock': '🦚', 'HBO MAX': '🎬', 'Paramount+': '⛰', 'Framer': '⚡',
   'Avira': '☂️', 'HMA VPN': '🌍', 'اكسبريس VPN': '🛡', 'جيميل': '📧',
@@ -339,7 +347,7 @@ bot.hears(/^💳 شحن المحفظة \(فودافون كاش\)$/, (ctx) => {
 
 function sendDepositNotification(req) {
   try {
-    notifyAdmin('🔔 <b>طلب شحن محفظة جديد!</b>\n\n👤 المستخدم (ID): <code>' + req.userUid + '</code>\n💰 المبلغ المطلوب: <b>' + req.amount + ' EGP</b>\n📱 الرقم المحول منه: <code>' + req.senderNumber + '</code>\n\nيرجى المراجعة من قسم (طلبات الشحن المعلقة):');
+    notifyAdmin(`🔔 <b>طلب شحن محفظة جديد!</b>\n\n👤 المستخدم (ID): <code>${req.userUid}</code>\n💰 المبلغ المطلوب: <b>${req.amount} EGP</b>\n📱 الرقم المحول منه: <code>${req.senderNumber}</code>\n\nيرجى المراجعة من قسم (طلبات الشحن المعلقة):`);
   } catch(e) {}
 }
 
@@ -630,7 +638,7 @@ bot.on('text', async (ctx, next) => {
     if (supportStates[userId]) {
         delete supportStates[userId];
         const userUid = usersDb[userId].uid;
-        notifyAdmin('🎫 <b>تذكرة دعم فني جديدة!</b>\n\n👤 من المستخدم (ID): <code>' + userUid + '</code>\n✉ النص:\n' + text + '\n\nللرد، استخدم الأمر:\n<code>/reply ' + userUid + ' [رسالتك]</code>');
+        notifyAdmin(`🎫 <b>تذكرة دعم فني جديدة!</b>\n\n👤 من المستخدم (ID): <code>${userUid}</code>\n✉ النص:\n${text}\n\nللرد، استخدم الأمر:\n<code>/reply ${userUid} [رسالتك]</code>`);
         return ctx.reply('✅ تم إرسال رسالتك إلى فريق الدعم بنجاح، سيتم الرد عليك قريباً.').catch(()=>{});
     }
 
@@ -739,7 +747,6 @@ bot.action(/approve_dep_(\d+)_([\d.]+)/, async (ctx) => {
     usersDb[targetUserId].balance += amount; 
     usersDb[targetUserId].walletHistory.push({ type: 'شحن فودافون كاش', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
 
-    // حذف الطلب نهائياً من القائمة المعلقة بمجرد الموافقة
     pendingDeposits = pendingDeposits.filter(d => String(d.userId) !== String(targetUserId));
     saveDatabase();
 
@@ -751,20 +758,19 @@ bot.action(/approve_dep_(\d+)_([\d.]+)/, async (ctx) => {
 
         bot.telegram.sendMessage(
             referrerTelegramId, 
-            '🎉 **عمولة دعوة أصدقاء جديدة!**\n\nقام صديقك الذي دعوته بشحن محفظته بمبلغ *' + amount + ' EGP*.\n💰 حصلت على عمولة **2%** بقيمة: *' + bonus.toFixed(2) + ' EGP* أضيفت لمحفظتك!', 
+            `🎉 **عمولة دعوة أصدقاء جديدة!**\n\nقام صديقك الذي دعوته بشحن محفظته بمبلغ *${amount} EGP*.\n💰 حصلت على عمولة **2%** بقيمة: *${bonus.toFixed(2)} EGP* أضيفت لمحفظتك!`, 
             { parse_mode: 'Markdown' }
         ).catch(() => {});
     }
 
-    ctx.editMessageText('✅ تمت الموافقة وإضافة مبلغ *' + amount + ' EGP* للمستخدم وحذف الطلب من المعلقات.', { parse_mode: 'Markdown' }).catch(()=>{});
-    bot.telegram.sendMessage(targetUserId, '🎉 **تم شحن محفظتك بنجاح!**\n💰 تمت إضافة: *' + amount + ' EGP*', { parse_mode: 'Markdown' }).catch(() => {});
+    ctx.editMessageText(`✅ تمت الموافقة وإضافة مبلغ *${amount} EGP* للمستخدم وحذف الطلب من المعلقات.`, { parse_mode: 'Markdown' }).catch(()=>{});
+    bot.telegram.sendMessage(targetUserId, `🎉 **تم شحن محفظتك بنجاح!**\n💰 تمت إضافة: *${amount} EGP*`, { parse_mode: 'Markdown' }).catch(() => {});
   } catch(err) {}
 });
 
 bot.action(/reject_dep_(\d+)/, async (ctx) => {
   try {
     const targetUserId = ctx.match[1];
-    // حذف الطلب نهائياً من القائمة المعلقة بمجرد الرفض
     pendingDeposits = pendingDeposits.filter(d => String(d.userId) !== String(targetUserId));
     saveDatabase();
 
@@ -873,7 +879,7 @@ bot.action(/cat_(.+)/, async (ctx) => {
     let buttons = categoryServices.map(srv => [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ' - ' + calculateRetailPrice(srv, usersDb[userId], 1) + ' EGP', 'confirm_' + srv.id)]);
     buttons.push([Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]);
 
-    ctx.editMessageText('📦 خدمات قسم *' + selectedCategory + '*:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+    ctx.editMessageText(`📦 خدمات قسم *${selectedCategory}*:`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
   } catch(err) {}
 });
 
@@ -897,7 +903,7 @@ bot.action(/confirm_(\d+)/, (ctx) => {
      const price = calculateRetailPrice(srv, usersDb[userId], 1);
      const srvName = srv.name_ar || srv.name || srv.title;
 
-     ctx.editMessageText('⚠️ اختر الكمية المطلوبة لـ:\n\n🛍️ *' + srvName + '*\n💰 السعر للقطعة: ' + price + ' EGP\n🔢 الكمية الحالية: 1', 
+     ctx.editMessageText(`⚠️ اختر الكمية المطلوبة لـ:\n\n🛍️ *${srvName}*\n💰 السعر للقطعة: ${price} EGP\n🔢 الكمية الحالية: 1`, 
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
@@ -938,7 +944,7 @@ function updateQuantityPrompt(ctx, srvId, qty) {
       const price = calculateRetailPrice(srv, usersDb[userId], qty);
       const srvName = srv.name_ar || srv.name || srv.title;
 
-      ctx.editMessageText('⚠️ اختر الكمية المطلوبة لـ:\n\n🛍 *' + srvName + '*\n💰 السعر الإجمالي (' + qty + ' قطعة): *' + price + ' EGP*\n🔢 الكمية الحالية: ' + qty, 
+      ctx.editMessageText(`⚠️ اختر الكمية المطلوبة لـ:\n\n🛍 *${srvName}*\n💰 السعر الإجمالي (${qty} قطعة): *${price} EGP*\n🔢 الكمية الحالية: ${qty}`, 
          {
            parse_mode: 'Markdown',
            ...Markup.inlineKeyboard([
@@ -993,7 +999,7 @@ bot.action(/buy_(\d+)/, async (ctx) => {
 
      if (userBalance < retailPrice) {
        const diff = (retailPrice - userBalance).toFixed(2);
-       return ctx.editMessageText('❌ **رصيدك غير كافٍ لإتمام الطلب!**\n\n💳 رصيدك الحالي: *' + userBalance.toFixed(2) + ' EGP*\n💰 المبلغ المطلـوب: *' + retailPrice.toFixed(2) + ' EGP*\n⚠️ متبقي عليك: *' + diff + ' EGP* فقط لشراء الخدمة.\n\nاشحن الفرق الآن وتابع طلبك فوراً!',
+       return ctx.editMessageText(`❌ **رصيدك غير كافٍ لإتمام الطلب!**\n\n💳 رصيدك الحالي: *${userBalance.toFixed(2)} EGP*\n💰 المبلغ المطلـوب: *${retailPrice.toFixed(2)} EGP*\n⚠️ متبقي عليك: *${diff} EGP* فقط لشراء الخدمة.\n\nاشحن الفرق الآن وتابع طلبك فوراً!`,
          {
            parse_mode: 'Markdown',
            ...Markup.inlineKeyboard([
@@ -1011,13 +1017,13 @@ bot.action(/buy_(\d+)/, async (ctx) => {
 
         usersDb[userId].balance -= retailPrice;
         usersDb[userId].totalSpent += retailPrice;
-        usersDb[userId].walletHistory.push({ type: 'شراء (' + name + ' - ' + qty + 'x)', amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+        usersDb[userId].walletHistory.push({ type: `شراء (${name} - ${qty}x)`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
 
         if (!usersDb[userId].isVip && usersDb[userId].totalSpent >= 500) {
             usersDb[userId].isVip = true;
             bot.telegram.sendMessage(userId, '👑 **تهانينا!**\nتمت ترقية حسابك إلى **VIP** لتحقيقك مشتريات بـ 500 EGP. ستحصل على أسعار مخفضة تلقائياً!').catch(()=>{});
         }
-        usersDb[userId].orders.push({ name: name + ' (' + qty + 'x)', price: retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+        usersDb[userId].orders.push({ name: `${name} (${qty}x)`, price: retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
         saveDatabase(); 
 
         let orderId = orderResponse.data?.order?.id || orderResponse.data?.id || orderResponse.data?.order_id || Math.floor(10000 + Math.random() * 90000);
@@ -1084,11 +1090,22 @@ bot.hears(/^📞 الدعم$/, (ctx) => {
   } catch(e){}
 });
 
+// ==========================================
+// التحديث الخاص بـ Vercel لضمان عمل قاعدة البيانات
+// ==========================================
 export default async function handler(req, res) {
   if (req.method === 'POST') {
-    await bot.handleUpdate(req.body);
+    pendingSaves = []; // تصفير العمليات المعلقة
+    await loadDatabase(); // تحميل أحدث البيانات من السحابة
+
+    await bot.handleUpdate(req.body); // تنفيذ أمر البوت
+
+    // الانتظار حتى تنتهي كل عمليات الحفظ السحابية قبل قفل الاتصال
+    if (pendingSaves.length > 0) {
+        await Promise.all(pendingSaves);
+    }
     res.status(200).send('OK');
   } else {
-    res.status(200).send('Bot is running on Vercel webhook!');
+    res.status(200).send('Bot is running on Vercel with MongoDB! 🚀');
   }
 }
