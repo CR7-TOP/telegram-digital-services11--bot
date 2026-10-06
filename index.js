@@ -1,4 +1,4 @@
-mport { Telegraf, Markup } from 'telegraf';
+import { Telegraf, Markup } from 'telegraf';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -263,7 +263,7 @@ bot.hears(/^💰 حسابي$/, (ctx) => {
     const userId = ctx.from.id; initUser(userId); const user = usersDb[userId];
     if (user.isBanned) return ctx.reply('❌ تم حظرك.').catch(()=>{});
     const vipTag = user.isVip ? '👑 (VIP)' : '👤 (عادي)';
-    ctx.reply('👤 **حسابي الشخصي:**\n\n🆔 رقم الحساب: `' + user.uid + '`\n🔰 مستوى الحساب: ' + vipTag + '\n💳 الرصيد الحالي: *' + parseFloat(user.balance).toFixed(2) + ' EGP*\n🛍️️ إجمالي المشتريات: ' + user.totalSpent.toFixed(2) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
+    ctx.reply('👤 **حسابي الشخصي:**\n\n🆔 رقم الحساب: `' + user.uid + '`\n🔰 مستوى الحساب: ' + vipTag + '\n💳 الرصيد الحالي: *' + parseFloat(user.balance).toFixed(2) + ' EGP*\n🛍 إجمالي المشتريات: ' + user.totalSpent.toFixed(2) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
   } catch(e){}
 });
 
@@ -810,7 +810,7 @@ async function showCategories(ctx) {
             } else if(loadingMsgId) {
                 return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, '⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
             } else {
-                return ctx.reply('⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
+                return ctx.reply('⚠️️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
             }
         }
     }
@@ -983,7 +983,7 @@ bot.action(/buy_(\d+)/, async (ctx) => {
         usersDb[userId].orders.push({ name: name + ' (' + qty + 'x)', price: retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
         saveDatabase(); 
 
-        ctx.editMessageText('✅ **تم تنفيذ طلبك بنجاح!**\n\n🛍 الخدمة: ' + name + '\n🔢 الكمية: ' + qty + '\n💰 إجمالي المدفوع: ' + retailPrice + ' EGP\n💳 الرصيد المتبقي: ' + usersDb[userId].balance.getvalue?.() || usersDb[userId].balance.toFixed(2) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
+        ctx.editMessageText('✅ **تم تنفيذ طلبك بنجاح!**\n\n🛍 الخدمة: ' + name + '\n🔢 الكمية: ' + qty + '\n💰 إجمالي المدفوع: ' + retailPrice + ' EGP\n💳 الرصيد المتبقي: ' + (usersDb[userId].balance.toFixed ? usersDb[userId].balance.toFixed(2) : usersDb[userId].balance) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
 
         const responseData = orderResponse.data;
         let rawDetails = null;
