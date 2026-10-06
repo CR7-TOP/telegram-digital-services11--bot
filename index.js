@@ -897,7 +897,7 @@ bot.action(/confirm_(\d+)/, (ctx) => {
      const price = calculateRetailPrice(srv, usersDb[userId], 1);
      const srvName = srv.name_ar || srv.name || srv.title;
 
-     ctx.editMessageText('⚠️ اختر الكمية المطلوبة لـ:\n\n🛍️ *' + srvName + '*\n💰 السعر للقطعة: ' + price + ' EGP\n🔢 الكمية الحالية: 1', 
+     ctx.editMessageText('⚠ اختر الكمية المطلوبة لـ:\n\n🛍️ *' + srvName + '*\n💰 السعر للقطعة: ' + price + ' EGP\n🔢 الكمية الحالية: 1', 
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
@@ -984,71 +984,79 @@ bot.action(/buy_(\d+)/, async (ctx) => {
 
         usersDb[userId].balance -= retailPrice;
         usersDb[userId].totalSpent += retailPrice;
-
         usersDb[userId].walletHistory.push({ type: 'شراء (' + name + ' - ' + qty + 'x)', amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
 
         if (!usersDb[userId].isVip && usersDb[userId].totalSpent >= 500) {
             usersDb[userId].isVip = true;
             await bot.telegram.sendMessage(userId, '👑 **تهانينا!**\nتمت ترقية حسابك إلى **VIP** لتحقيقك مشتريات بـ 500 EGP. ستحصل على أسعار مخفضة تلقائياً!').catch(()=>{});
         }
-
         usersDb[userId].orders.push({ name: name + ' (' + qty + 'x)', price: retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
         saveDatabase(); 
 
-        // استخراج رقم الطلب وكود التفعيل من استجابة المزود بدقة تامة مطابقة للبوت الأم
-        const responseData = orderResponse.data;
-        let orderId = 'غير محدد';
+        await ctx.editMessageText('✅ **تم تنفيذ طلبك بنجاح!**\n\n🛍 الخدمة: ' + name + '\n🔢 الكمية: ' + qty + '\n💰 إجمالي المدفوع: ' + retailPrice + ' EGP\n💳 الرصيد المتبقي: ' + (usersDb[userId].balance.toFixed ? usersDb[userId].balance.toFixed(2) : usersDb[userId].balance) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
+
+        // 1. استخراج رقم الطلب الأساسي من نتيجة الدفع
+        let orderId = orderResponse.data?.order?.id || orderResponse.data?.id || orderResponse.data?.order_id;
         let rawDetails = null;
 
-        if (responseData) {
-            const targetObj = responseData.order || responseData.data || responseData;
-            
-            // استخراج رقم الطلب بدقة
-            orderId = targetObj.id || targetObj.order_id || responseData.id || Math.floor(10000 + Math.random() * 90000);
+        // 2. إذا وجدنا رقم الطلب، نعمل طلب GET جديد لاستخراج بياناته الفعلية (مثل البوت الأم)
+        if (orderId) {
+            try {
+                const getOrderRes = await apiClient.get('/orders/' + orderId);
+                const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
+                
+                if (orderData) {
+                    rawDetails = orderData.details || 
+                                 orderData.credentials || 
+                                 orderData.code || 
+                                 orderData.account || 
+                                 orderData.output || 
+                                 orderData.content || 
+                                 orderData.text || 
+                                 orderData.note || 
+                                 orderData.message || 
+                                 orderData.answer;
 
-            // استخراج البيانات والأكواد المسلمة
-            rawDetails = targetObj.details || 
-                         targetObj.credentials || 
-                         targetObj.code || 
-                         targetObj.account || 
-                         targetObj.output || 
-                         targetObj.content || 
-                         targetObj.text || 
-                         targetObj.note || 
-                         targetObj.message || 
-                         targetObj.answer;
-
-            if (!rawDetails && Array.isArray(targetObj.items)) {
-                rawDetails = targetObj.items.map(item => item.credentials || item.code || item.account || item.text || JSON.stringify(item)).join('\n');
-            }
-
-            if (!rawDetails) {
-                // تجميع أي نص صالح في الاستجابة
-                let texts = [];
-                for (let key in targetObj) {
-                    const val = targetObj[key];
-                    if (typeof val === 'string' && val.trim().length > 0 && !['id', 'order_id', 'status', 'created_at', 'updated_at', 'service_id', 'quantity', 'price', 'user_id'].includes(key)) {
-                        texts.push(val);
+                    if (!rawDetails && Array.isArray(orderData.items)) {
+                        rawDetails = orderData.items.map(item => item.credentials || item.code || item.account || item.text || JSON.stringify(item)).join('\n\n');
                     }
                 }
-                if (texts.length > 0) rawDetails = texts.join('\n');
+            } catch(e) {
+                console.log('فشل جلب تفاصيل الطلب برقم: ' + orderId);
             }
+        } else {
+            orderId = Math.floor(10000 + Math.random() * 90000); // رقم عشوائي احتياطي
+        }
 
-            if (!rawDetails) {
-                rawDetails = JSON.stringify(targetObj, null, 2);
+        // 3. لو الطلب الإضافي لم ينجح في جلب بيانات، نستخرج من الرد الأول بأي شكل ممكن
+        if (!rawDetails) {
+            const targetObj = orderResponse.data?.order || orderResponse.data?.data || orderResponse.data;
+            if (typeof targetObj === 'object' && targetObj !== null) {
+                rawDetails = targetObj.details || targetObj.credentials || targetObj.code || targetObj.account || targetObj.output || targetObj.content;
+                if (!rawDetails && Array.isArray(targetObj.items)) {
+                    rawDetails = targetObj.items.map(item => item.credentials || item.code || item.account || item.text || JSON.stringify(item)).join('\n\n');
+                }
+                if (!rawDetails) {
+                    let texts = [];
+                    for (let key in targetObj) {
+                        const val = targetObj[key];
+                        if (typeof val === 'string' && val.trim().length > 0 && !['id', 'order_id', 'status', 'created_at', 'updated_at', 'service_id', 'quantity', 'price', 'user_id', 'api', 'api_id', 'api_order_id', 'api_service_id'].includes(key)) {
+                            texts.push(val);
+                        }
+                    }
+                    if (texts.length > 0) rawDetails = texts.join('\n');
+                }
             }
         }
 
-        await ctx.editMessageText('✅ **تم تنفيذ طلبك بنجاح!**\n\n🛍 الخدمة: ' + name + '\n🔢 الكمية: ' + qty + '\n💰 إجمالي المدفوع: ' + retailPrice + ' EGP\n💳 الرصيد المتبقي: ' + (usersDb[userId].balance.toFixed ? usersDb[userId].balance.toFixed(2) : usersDb[userId].balance) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
-
-        // صياغة رسالة التسليم للزبون بنفس شكل البوت الأم تماماً
+        // 4. بناء وتنسيق رسالة التسليم للزبون لتطابق البوت الأم بالمسافات والأيقونات
         let deliveryMsg = '📦 <b>رقم الطلب:</b> #' + orderId + '\n\n' +
                           '🛍️ <b>الخدمة:</b> ' + name + '\n' +
                           '🔢 <b>الكمية:</b> ' + qty + '\n' +
                           '🟢 <b>الحالة:</b> مكتمل\n' +
                           '💰 <b>المبلغ المدفوع:</b> ' + retailPrice + ' EGP\n';
 
-        if (rawDetails && rawDetails !== '{}' && rawDetails !== 'null') {
+        if (rawDetails && rawDetails !== '{}' && rawDetails !== 'null' && rawDetails.trim() !== '') {
             const safeRawText = String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             deliveryMsg += '\n📋 <b>العناصر المسلمة:</b>\n' + safeRawText + '\n\n📌 <b>البيانات المسلمة (اضغط للنسخ):</b>\n<code>' + safeRawText + '</code>';
         } else {
@@ -1058,6 +1066,7 @@ bot.action(/buy_(\d+)/, async (ctx) => {
         // إرسال رسالة الكود والبيانات للزبون مباشرة
         await bot.telegram.sendMessage(userId, deliveryMsg, { 
             parse_mode: 'HTML',
+            disable_web_page_preview: true,
             ...Markup.inlineKeyboard([
                 [Markup.button.callback('🔙 العودة إلى الطلبات', 'main_menu'), Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]
             ])
