@@ -1,0 +1,335 @@
+{
+  "usersDb": {
+    "8703315450": {
+      "uid": 1001,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "8560079023": {
+      "uid": 3730712425,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "8088551125": {
+      "uid": 5167116207,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "7267968220": {
+      "uid": 4333028147,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "6871739585": {
+      "uid": 5311225967,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "5976903158": {
+      "uid": 1048347455,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "7034021726": {
+      "uid": 9953611244,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "7053479707": {
+      "uid": 2468624058,
+      "balance": 12.4,
+      "orders": [
+        {
+          "name": "🌐 شريحة Esim [ 500 ميجا ] (1x)",
+          "price": 9.6,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١٢:٤٢:٠٧ م"
+        },
+        {
+          "name": "🌐 شريحة Esim [ 500 ميجا ] (1x)",
+          "price": 9.6,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١٢:٥٤:٥٣ م"
+        },
+        {
+          "name": "🌐 شريحة Esim [ 500 ميجا ] (1x)",
+          "price": 9.6,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١:٠٠:١٩ م"
+        },
+        {
+          "name": "🌐 شريحة Esim [ 500 ميجا ] (1x)",
+          "price": 9.6,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١:٠٥:٠٣ م"
+        },
+        {
+          "name": "🌐 شريحة Esim [ 500 ميجا ] (1x)",
+          "price": 9.6,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١:١٠:٠٦ م"
+        },
+        {
+          "name": "🌐 شريحة Esim [ 500 ميجا ] (1x)",
+          "price": 9.6,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١:١٣:٤٩ م"
+        }
+      ],
+      "walletHistory": [
+        {
+          "type": "شحن فودافون كاش",
+          "amount": 10,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١٢:٤١:٥٧ م"
+        },
+        {
+          "type": "شراء (🌐 شريحة Esim [ 500 ميجا ] - 1x)",
+          "amount": -9.6,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١٢:٤٢:٠٧ م"
+        },
+        {
+          "type": "شحن فودافون كاش",
+          "amount": 10,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١٢:٥٤:٤٥ م"
+        },
+        {
+          "type": "شراء (🌐 شريحة Esim [ 500 ميجا ] - 1x)",
+          "amount": -9.6,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١٢:٥٤:٥٣ م"
+        },
+        {
+          "type": "شحن فودافون كاش",
+          "amount": 10,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١:٠٠:١٠ م"
+        },
+        {
+          "type": "شراء (🌐 شريحة Esim [ 500 ميجا ] - 1x)",
+          "amount": -9.6,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١:٠٠:١٩ م"
+        },
+        {
+          "type": "شحن فودافون كاش",
+          "amount": 10,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١:٠٤:٥٥ م"
+        },
+        {
+          "type": "شراء (🌐 شريحة Esim [ 500 ميجا ] - 1x)",
+          "amount": -9.6,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١:٠٥:٠٣ م"
+        },
+        {
+          "type": "شحن فودافون كاش",
+          "amount": 30,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١:٠٩:٥٩ م"
+        },
+        {
+          "type": "شراء (🌐 شريحة Esim [ 500 ميجا ] - 1x)",
+          "amount": -9.6,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١:١٠:٠٦ م"
+        },
+        {
+          "type": "شراء (🌐 شريحة Esim [ 500 ميجا ] - 1x)",
+          "amount": -9.6,
+          "date": "٦‏/١٠‏/٢٠٢٦، ١:١٣:٤٩ م"
+        }
+      ],
+      "isBanned": false,
+      "totalSpent": 57.6,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "8023783214": {
+      "uid": 4715609158,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "7760674145": {
+      "uid": 2571639147,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "6866373865": {
+      "uid": 7180506946,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "5663768764": {
+      "uid": 7004177126,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "8545255022": {
+      "uid": 9192075645,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "7808174868": {
+      "uid": 3529761928,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "8779194536": {
+      "uid": 7240279332,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "7644715633": {
+      "uid": 8957705745,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    },
+    "6294417264": {
+      "uid": 8301182662,
+      "balance": 0,
+      "orders": [],
+      "walletHistory": [],
+      "isBanned": false,
+      "totalSpent": 0,
+      "isVip": false,
+      "referrals": 0,
+      "referredBy": null
+    }
+  },
+  "globalMarkupPercent": 100,
+  "customMarkups": {
+    "كاب كات": 50,
+    "جروك": 50,
+    "كانفا": 60,
+    "ادوبي": 50,
+    "Leonardo.Ai": 50,
+    "نوشن": 50,
+    "Miro": 50,
+    "مايكروسوفت": 200,
+    "Zoom": 50,
+    "JetBrains": 50,
+    "edX Premium": 60,
+    "Avira": 50,
+    "Framer": 50,
+    "اكسبريس VPN": 65,
+    "HMA VPN": 50,
+    "ايكلاود": 50,
+    "جيميل": 10,
+    "شات GPT": 50
+  },
+  "pendingDeposits": [],
+  "promoCodes": {},
+  "flashSale": {
+    "active": true,
+    "discount": 25,
+    "expiresAt": 1791390005591
+  },
+  "vouchers": {},
+  "adminAuditLogs": [
+    {
+      "adminId": 8703315450,
+      "action": "تعديل النسبة العامة إلى: 100%",
+      "date": "٦‏/١٠‏/٢٠٢٦، ١١:٠٥:٥٣ ص"
+    },
+    {
+      "adminId": 8703315450,
+      "action": "تعديل نسب عدة أقسام دفعة واحدة",
+      "date": "٦‏/١٠‏/٢٠٢٦، ١١:٠٦:٥٦ ص"
+    },
+    {
+      "adminId": 8703315450,
+      "action": "تعديل نسب عدة أقسام دفعة واحدة",
+      "date": "٦‏/١٠‏/٢٠٢٦، ١١:٢٥:٥٤ ص"
+    },
+    {
+      "adminId": 8703315450,
+      "action": "تعديل نسب عدة أقسام دفعة واحدة",
+      "date": "٦‏/١٠‏/٢٠٢٦، ١١:٣٢:٢٩ ص"
+    },
+    {
+      "adminId": 8703315450,
+      "action": "تفعيل خصم مؤقت بقيمة 25% لمدة 24 ساعة",
+      "date": "٦‏/١٠‏/٢٠٢٦، ٧:٢٠:٠٥ م"
+    }
+  ],
+  "maintenanceMode": false
+}
