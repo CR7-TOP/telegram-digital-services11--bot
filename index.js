@@ -209,8 +209,7 @@ function getMainMenu() {
     ['🛍 الخدمات', '🔍 بحث عن خدمة'],
     ['🛒 طلباتي', '💰 حسابي', '📜 سجل المحفظة'],
     ['💳 شحن المحفظة (فودافون كاش)', '🎟 استخدام كود خصم'],
-    ['🔗 دعوة الأصدقاء (اربح 2%)', '📞 الدعم الفني'],
-    ['👑 لوحة تحكم الأدمن']
+    ['🔗 دعوة الأصدقاء (اربح 2%)', '📞 الدعم الفني']
   ];
   return Markup.keyboard(keyboard).resize();
 }
@@ -308,7 +307,7 @@ bot.hears(/^📜 سجل المحفظة$/, (ctx) => {
     } catch(e){}
 });
 
-// قسم الدعم الفني المحدث ليختار العميل بين تليجرام أو واتساب
+// قسم الدعم الفني المباشر
 bot.hears(/^📞 الدعم الفني$/, (ctx) => {
     try {
       const userId = ctx.from.id; initUser(userId);
@@ -337,7 +336,7 @@ bot.hears(/^🔍 بحث عن خدمة$/, (ctx) => {
       const userId = ctx.from.id; initUser(userId);
       if (usersDb[userId].isBanned) return;
       searchStates[userId] = true;
-      ctx.reply('🔍 أرسل اسم الخدمة التي تبحث عنها (مثال: Canva أو نتفلكس):').catch(()=>{});
+      ctx.reply('🔍 أرسل اسم الخدمة التي تبحث عنها (مثال: Canva أو نتفلكس) أو اكتب `Ahmed/` لتسجيل دخول الأدمن:').catch(()=>{});
     } catch(e){}
 });
 
@@ -385,6 +384,7 @@ function showAdminPanel(ctx) {
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
         [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_voucher')],
+        [Markup.button.callback('✉️ مراسلة عميل بالـ ID', 'admin_msg_by_id')], // زر إرسال رسالة للزبون عبر الـ ID
         [Markup.button.callback('🛠️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
         [Markup.button.callback('👥 شحن رصيد بالـ ID', 'admin_charge_by_id'), Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users')],
         [Markup.button.callback('🚫 حظر مستخدم', 'admin_ban_user'), Markup.button.callback('✅ فك حظر مستخدم', 'admin_unban_user')],
@@ -396,13 +396,6 @@ function showAdminPanel(ctx) {
     else { ctx.reply(text, { parse_mode: 'Markdown', ...keyboard }).catch(()=>{}); }
   } catch(e){}
 }
-
-bot.hears(/^👑 لوحة تحكم الأدمن$/, (ctx) => {
-  try {
-    const userId = ctx.from.id; if (adminSession[userId]) return showAdminPanel(ctx);
-    adminLoginStates[userId] = 'WAIT_EMAIL'; ctx.reply('🔐 **تسجيل دخول الأدمن**\n\nيرجى إرسال البريد الإلكتروني (Email):').catch(()=>{});
-  } catch(e){}
-});
 
 bot.action('admin_pending_deposits', (ctx) => {
     try {
@@ -526,6 +519,14 @@ bot.action('admin_create_voucher', (ctx) => {
     } catch(e){}
 });
 
+// تفعيل زر مراسلة عميل بالـ ID من لوحة الأدمن
+bot.action('admin_msg_by_id', (ctx) => {
+    try {
+        adminInputStates[ctx.from.id] = 'WAIT_USER_MSG';
+        ctx.editMessageText('✉️ **مراسلة عميل عبر الـ ID:**\n\nأرسل الآيدي والرسالة هكذا في سطر واحد:\n`الآيدي الرسالة`\n(مثال: `1234567890 أهلاً بك، تم حل مشكلتك`)', { parse_mode: 'Markdown' }).catch(()=>{});
+    } catch(e){}
+});
+
 bot.action('admin_ban_user', (ctx) => { ctx.editMessageText('لحظر مستخدم، أرسل الأمر:\n`/ban الـID`', { parse_mode: 'Markdown' }).catch(()=>{}); });
 bot.action('admin_unban_user', (ctx) => { ctx.editMessageText('لكسر الحظر عن مستخدم، أرسل الأمر:\n`/unban الـID`', { parse_mode: 'Markdown' }).catch(()=>{}); });
 
@@ -541,9 +542,29 @@ bot.on('text', async (ctx, next) => {
 
     const text = ctx.message.text;
 
+    // تفعيل دخول الأدمن عند كتابة Ahmed/
+    if (text.trim() === 'Ahmed/') {
+        adminLoginStates[userId] = 'WAIT_EMAIL';
+        return ctx.reply('🔐 **تسجيل دخول الأدمن**\n\nيرجى إرسال البريد الإلكتروني (Email):').catch(()=>{});
+    }
+
     if (adminSession[userId] && adminInputStates[userId]) {
         const state = adminInputStates[userId];
         delete adminInputStates[userId];
+
+        if (state === 'WAIT_USER_MSG') {
+            const firstSpace = text.indexOf(' ');
+            if (firstSpace === -1) return ctx.reply('❌ صيغة غير صحيحة. استخدم: `الآيدي الرسالة`').catch(()=>{});
+            const targetUid = text.substring(0, firstSpace).trim();
+            const msgText = text.substring(firstSpace + 1).trim();
+
+            const targetUser = getUserByUid(targetUid);
+            if (!targetUser) return ctx.reply('❌ عذراً، لم يتم العثور على مستخدم بهذا الـ ID.').catch(()=>{});
+
+            await bot.telegram.sendMessage(targetUser.telegramId, `📩 **رسالة من إدارة المتجر:**\n\n${msgText}`, { parse_mode: 'Markdown' }).catch(()=>{});
+            logAdminAction(userId, 'مراسلة العميل ID: ' + targetUid);
+            return ctx.reply('✅ تم إرسال الرسالة إلى العميل بنجاح!').catch(()=>{});
+        }
 
         if (state === 'WAIT_GLOBAL_MARKUP') {
             const val = parseFloat(text);
