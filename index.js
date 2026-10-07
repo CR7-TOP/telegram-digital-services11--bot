@@ -30,7 +30,6 @@ let adminAuditLogs = [];
 let maintenanceMode = false; 
 let bulkQuantityStates = {}; 
 
-// المتغيرات الجديدة (المخزن المحلي + نسب الربح المخصصة للمنتجات)
 let customProductMarkups = {}; 
 let localInventory = {}; 
 
@@ -187,7 +186,6 @@ const apiClient2 = axios.create({
   timeout: 8000
 });
 
-// دالة ذكية لتوليد ID ثابت لكل منتج لمنع خطأ (الخدمة غير موجودة) في Vercel
 function generateStableId(nameStr) {
     let hash = 0;
     for (let i = 0; i < nameStr.length; i++) {
@@ -244,16 +242,13 @@ async function fetchAllServices() {
             s2.forEach(item => { 
                 item.providerSource = 'api2'; 
                 item.name = item.name || item.title || item.name_ar || "خدمة بدون اسم";
-                
-                // توحيد المعرفات بشكل قاطع لمنع أي أخطاء من Vercel
                 item.id = String(item.id || item.product_id || item.service_id || item.uuid || item.code || generateStableId(item.name));
-                
                 item.category = item.category || item.category_name || detectCategoryFromName(item.name);
 
                 let rawPriceUSD = parseFloat(item.price || item.rate || item.price_amount || 0);
                 let egpPrice = (rawPriceUSD * USD_TO_EGP_RATE).toFixed(2);
                 item.price = egpPrice;
-                item.price_amount = egpPrice; // توحيد مفاتيح التسعير لضمان قراءتها بشكل صحيح
+                item.price_amount = egpPrice; 
             });
             services.push(...s2);
         }
@@ -318,19 +313,25 @@ function calculateRetailPrice(service, user, quantity = 1) {
     const originalPrice = parseFloat(service.price_amount || service.price || 0);
     const cat = getServiceCategory(service);
 
-    let markup = globalMarkupPercent; // النسبة العامة الافتراضية
+    // 1. نبدأ بالنسبة العامة كإفتراضي
+    let markup = parseFloat(globalMarkupPercent) || 0;
 
-    // 1. لو القسم ليه نسبة مخصصة، نستخدمها
-    if (customMarkups[cat] !== undefined) markup = customMarkups[cat];
-
-    // 2. 🎯 لو المنتج نفسه ليه نسبة ربح مخصصة (دي أقوى من الكل وتغطي عليهم)
-    if (customProductMarkups && customProductMarkups[service.id] !== undefined) {
-        markup = customProductMarkups[service.id];
+    // 2. لو القسم ليه نسبة مخصصة، تاخد الأولوية
+    if (customMarkups && customMarkups[cat] !== undefined) {
+        markup = parseFloat(customMarkups[cat]);
     }
 
+    // 3. 🎯 لو المنتج نفسه ليه نسبة ربح مخصصة (تغطي على الكل)
+    const srvIdStr = String(service.id);
+    if (customProductMarkups && customProductMarkups[srvIdStr] !== undefined) {
+        markup = parseFloat(customProductMarkups[srvIdStr]);
+    }
+
+    // خصومات الـ VIP
     if (user && user.isVip) markup = Math.max(0, markup - 5);
 
-    let finalPrice = originalPrice * (1 + markup / 100);
+    // حساب السعر النهائي بضرب السعر الأصلي في النسبة
+    let finalPrice = originalPrice * (1 + (markup / 100));
 
     if (flashSale.active && Date.now() < flashSale.expiresAt) {
         finalPrice = finalPrice - (finalPrice * (flashSale.discount / 100));
@@ -465,9 +466,6 @@ function showAdminPanel(ctx) {
   } catch(e){}
 }
 
-// ----------------------------------------------------
-// أزرار البحث الخاصة بالأدمن للتسعير بنسبة والمخزون
-// ----------------------------------------------------
 bot.action('admin_search_markup', (ctx) => {
     adminInputStates[ctx.from.id] = 'WAIT_SEARCH_MARKUP';
     ctx.editMessageText('🔍 أرسل اسم المنتج الذي تريد تحديد **نسبة ربح مخصصة** له:').catch(()=>{});
@@ -479,7 +477,7 @@ bot.action('admin_search_stock', (ctx) => {
 
 bot.action(/setmarkup_(.+)/, (ctx) => {
     adminInputStates[ctx.from.id] = 'WAIT_SET_MARKUP_' + ctx.match[1];
-    ctx.editMessageText('📈 أرسل النسبة المئوية للربح لهذا المنتج فقط (مثال: اكتب 50 لربح 50%):').catch(()=>{});
+    ctx.editMessageText('📈 أرسل النسبة المئوية للربح لهذا المنتج فقط (مثال: اكتب 50 لربح 50%).\n\n🗑️ لإلغاء النسبة المخصصة وجعل المنتج يتبع النسبة العامة، اكتب كلمة: `حذف`', {parse_mode: 'Markdown'}).catch(()=>{});
 });
 bot.action(/addstock_(.+)/, (ctx) => {
     adminInputStates[ctx.from.id] = 'WAIT_ADD_STOCK_' + ctx.match[1];
@@ -553,6 +551,7 @@ bot.action('admin_view_users', (ctx) => {
     if (count === 0) userList = 'لا يوجد عملاء.';
     if (userList.length > 4000) userList = userList.substring(0, 4000) + '\n...';
     ctx.editMessageText(userList, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{}); 
+    ctx.answerCbQuery().catch(()=>{});
   } catch(e){}
 });
 
@@ -602,7 +601,6 @@ bot.on('text', async (ctx, next) => {
         const state = adminInputStates[userId];
         delete adminInputStates[userId];
 
-        // 🔍 بحث الأدمن عن منتج للتسعير بالنسبة المئوية أو إضافة المخزون
         if (state === 'WAIT_SEARCH_MARKUP' || state === 'WAIT_SEARCH_STOCK') {
             const query = text.toLowerCase();
             if (!cachedServices || cachedServices.length === 0) cachedServices = await fetchAllServices();
@@ -615,20 +613,27 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply('🔍 اختر المنتج من القائمة:', Markup.inlineKeyboard(buttons));
         }
 
-        // 📈 تحديد نسبة ربح للمنتج المختار
         if (state.startsWith('WAIT_SET_MARKUP_')) {
-            const srvId = state.split('WAIT_SET_MARKUP_')[1];
+            const srvId = String(state.split('WAIT_SET_MARKUP_')[1]);
+
+            // ميزة حذف النسبة المخصصة للرجوع للعامة
+            if (text.trim() === 'حذف') {
+                delete customProductMarkups[srvId];
+                saveDatabase();
+                return ctx.reply('✅ تم مسح النسبة المخصصة! المنتج سيعود لاستخدام النسبة العامة للمتجر.', {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+            }
+
             const percent = parseFloat(text);
-            if (isNaN(percent)) return ctx.reply('❌ يرجى إدخال رقم صحيح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            if (isNaN(percent)) return ctx.reply('❌ يرجى إدخال رقم صحيح أو كلمة "حذف".', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            
             customProductMarkups[srvId] = percent;
             saveDatabase();
             logAdminAction(userId, `تحديد نسبة ربح للمنتج ${srvId} بـ ${percent}%`);
             return ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: *${percent}%*\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
-        // 📦 إضافة مخزون للمنتج
         if (state.startsWith('WAIT_ADD_STOCK_')) {
-            const srvId = state.split('WAIT_ADD_STOCK_')[1];
+            const srvId = String(state.split('WAIT_ADD_STOCK_')[1]);
             const items = text.split('\n').map(i => i.trim()).filter(i => i !== '');
             if (!localInventory[srvId]) localInventory[srvId] = [];
             localInventory[srvId].push(...items);
@@ -878,7 +883,6 @@ bot.action(/cat_(.+)/, async (ctx) => {
 
     const selectedCategory = decodeURIComponent(ctx.match[1]);
     
-    // ⚠️ استدعاء الخدمات فوراً لتجنب مسح الذاكرة المؤقتة (يمنع خطأ الخدمة غير موجودة)
     if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
 
     const categoryServices = cachedServices.filter(s => {
@@ -908,14 +912,13 @@ bot.action(/confirm_(.+)/, async (ctx) => {
      const userId = ctx.from.id; initUser(userId);
      if (usersDb[userId].isBanned) return;
 
-     // ⚠️ استدعاء الخدمات فوراً لتجنب مسح الذاكرة المؤقتة (يمنع خطأ الخدمة غير موجودة)
      if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
 
      const srvId = ctx.match[1];
      const srv = cachedServices.find(s => String(s.id) === String(srvId));
      if(!srv) return ctx.answerCbQuery('الخدمة غير موجودة').catch(()=>{});
 
-     bulkQuantityStates[userId] = { srvId: srv.id, qty: 1 };
+     bulkQuantityStates[userId] = { srvId: String(srv.id), qty: 1 };
      const price = calculateRetailPrice(srv, usersDb[userId], 1);
      const srvName = srv.name_ar || srv.name || srv.title;
 
@@ -1004,7 +1007,6 @@ bot.action(/buy_(.+)/, async (ctx) => {
      const userId = ctx.from.id; initUser(userId);
      if (usersDb[userId].isBanned) return;
 
-     // ⚠️ استدعاء الخدمات فوراً لتجنب مسح الذاكرة المؤقتة
      if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
 
      const srvId = ctx.match[1];
@@ -1031,11 +1033,10 @@ bot.action(/buy_(.+)/, async (ctx) => {
 
      await ctx.editMessageText('⏳ جاري تنفيذ الطلب واستخراج بيانات الخدمة...').catch(()=>{});
 
-     // 📦 التحقق من المخزون المحلي أولاً قبل إرسال الطلب للمزود 📦
-     const hasLocalStock = localInventory[srv.id] && localInventory[srv.id].length >= qty;
+     const hasLocalStock = localInventory[String(srv.id)] && localInventory[String(srv.id)].length >= qty;
 
      if (hasLocalStock) {
-         const deliveredItems = localInventory[srv.id].splice(0, qty);
+         const deliveredItems = localInventory[String(srv.id)].splice(0, qty);
          
          usersDb[userId].balance -= retailPrice;
          usersDb[userId].totalSpent += retailPrice;
@@ -1048,11 +1049,10 @@ bot.action(/buy_(.+)/, async (ctx) => {
                            `📋 <b>العناصر المسلمة:</b>\n<code>${deliveredItems.join('\n\n')}</code>`;
 
          await ctx.editMessageText(deliveryMsg, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]])}).catch(()=>{});
-         notifyAdmin(`👑 <b>عملية بيع من المخزن المحلي:</b>\n🛍 ${name}\n💰 ${retailPrice} EGP\n📦 متبقي في المخزن لهذا المنتج: ${localInventory[srv.id].length}`);
+         notifyAdmin(`👑 <b>عملية بيع من المخزن المحلي:</b>\n🛍 ${name}\n💰 ${retailPrice} EGP\n📦 متبقي في المخزن لهذا المنتج: ${localInventory[String(srv.id)].length}`);
          return; 
      }
 
-     // 🌐 لو المخزن المحلي فاضي، البوت هيكمل طبيعي ويشتري من المزود (API) 🌐
      try {
         const orderResponse = await placeOrderWithBestProvider(srv, qty);
 
