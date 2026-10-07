@@ -211,6 +211,7 @@ function detectCategoryFromName(name) {
     if (n.includes('coursera')) return 'edX Premium';
     if (n.includes('prime')) return 'Prime Video';
     if (n.includes('notion')) return 'نوشن';
+    if (n.includes('api')) return 'خدمات API';
     return 'أخرى';
 }
 
@@ -266,11 +267,13 @@ async function placeOrderWithBestProvider(srv, qty) {
     }
 }
 
+// ⚠️ تمت إضافة إيموجي لقسم 'أخرى' عشان يظهر
 const categoryEmojis = {
   'شات GPT': '🤖', 'جيميناي': '✨', 'كاب كات': '✂', 'جروك': '🌌', 'ادوبي': '🎨', 'كانفا': '🖌', 'نوشن': '📝', 'Leonardo.Ai': '🤖',
   'دوولينجو': '🦉', 'تيليجرام': '✈', 'مايكروسوفت': '💻', 'Miro': '🗺', 'Zoom': '📹', 'iLovePDF': '📄', 'Envato': '🍃', 'Grammarly': '✍',
   'Autodesk': '🏗', 'JetBrains': '💻', 'edX Premium': '🎓', 'Peacock': '🦚', 'HBO MAX': '🎬', 'Paramount+': '⛰', 'Framer': '⚡',
-  'Avira': '☂️', 'HMA VPN': '🌍', 'اكسبريس VPN': '🛡', 'جيميل': '📧', 'ايكلاود': '☁', 'E SIM': '📱', 'Spotify': '🎧', 'Netflix': '🍿', 'Crunchyroll': '🍘', 'Prime Video': '🎬'
+  'Avira': '☂️', 'HMA VPN': '🌍', 'اكسبريس VPN': '🛡', 'جيميل': '📧', 'ايكلاود': '☁', 'E SIM': '📱', 'Spotify': '🎧', 'Netflix': '🍿', 'Crunchyroll': '🍘', 'Prime Video': '🎬',
+  'خدمات API': '🔌', 'أخرى': '📦'
 };
 
 let cachedServices = [];
@@ -626,7 +629,6 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: *${percent}%*\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
-        // 📦 التحكم الكامل في المخزن المحلي
         if (state.startsWith('WAIT_ADD_STOCK_')) {
             const srvId = String(state.split('WAIT_ADD_STOCK_')[1]);
 
@@ -645,7 +647,6 @@ bot.on('text', async (ctx, next) => {
                 return ctx.reply('✅ تم تفريغ المخزن لهذا المنتج بنجاح!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
             }
 
-            // الإضافة: الرسالة بالكامل تعتبر عنصر واحد مهما كان فيها من سطور
             const item = text.trim();
             if (!localInventory[srvId]) localInventory[srvId] = [];
             localInventory[srvId].push(item);
@@ -869,10 +870,10 @@ async function showCategories(ctx) {
         else return ctx.reply(errorMsg).catch(()=>{});
     }
 
-    let categories = Object.keys(categoryEmojis);
+    let categories = [];
     cachedServices.forEach(s => {
       let catStr = getServiceCategory(s);
-      if (catStr && !categories.includes(catStr) && catStr !== 'أخرى') categories.push(catStr);
+      if (catStr && !categories.includes(catStr)) categories.push(catStr);
     });
 
     let buttons = [];
