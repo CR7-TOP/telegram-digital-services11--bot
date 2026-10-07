@@ -243,7 +243,6 @@ async function fetchAllServices() {
             s2.forEach(item => { 
                 item.providerSource = 'api2'; 
                 item.name = item.name || item.title || item.name_ar || "خدمة بدون اسم";
-                // نأخذ الـ ID الأصلي لو موجود عشان الطلب ينجح
                 item.id = String(item.id || item.product_id || item.service_id || item.uuid || item.code || generateStableId(item.name));
                 item.category = item.category || item.category_name || detectCategoryFromName(item.name);
 
@@ -259,17 +258,14 @@ async function fetchAllServices() {
     return services;
 }
 
-// ⚠️ تعديل ذكي لدالة الشراء عشان نضمن إنها تقبل المسميات المختلفة للمزود الثاني
 async function placeOrderWithBestProvider(srv, qty) {
     const source = srv.providerSource || 'api1';
-    // التأكد إن الكمية رقم صحيح
     const parsedQty = parseInt(qty) || 1;
 
     if (source === 'api2') {
-         // نرسل service_id و product_id لتجنب أي مشاكل مع المزود الثاني
          return await apiClient2.post('/order', { 
              service_id: srv.id, 
-             product_id: srv.id, // تم الإضافة لأن المزود قد يطلب هذا المسمى
+             product_id: srv.id, 
              quantity: parsedQty 
          });
     } else {
@@ -1173,8 +1169,11 @@ bot.action(/buy_(.+)/, async (ctx) => {
         notifyAdmin(adminLogMsg);
 
      } catch (error) {
-        // ⚠️ تعديل ذكي لمعرفة سبب الرفض بالتحديد من المزود
-        const apiErrorMsg = error.response?.data?.message || error.response?.data?.error || error.message || "عطل غير معروف";
+        // ⚠️ تعديل ذكي لقراءة الخطأ حتى لو كان Object
+        let apiErrorMsg = error.response?.data?.message || error.response?.data?.error || error.response?.data || error.message || "عطل غير معروف";
+        if (typeof apiErrorMsg === 'object') {
+            apiErrorMsg = JSON.stringify(apiErrorMsg);
+        }
         await ctx.editMessageText(`❌ فشل الشراء من المزود الأساسي.\n\n⚠️ السبب: ${apiErrorMsg}\n\nلم يتم خصم أي مبلغ من محفظتك.`, Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]])).catch(()=>{});
      }
   } catch (err){
