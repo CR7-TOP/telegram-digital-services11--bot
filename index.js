@@ -182,7 +182,8 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-const apiClient = axios.create({
+// المزود الأول
+const apiClient1 = axios.create({
   baseURL: 'https://xprostore.store/api/v1',
   headers: {
     'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY,
@@ -190,6 +191,55 @@ const apiClient = axios.create({
   },
   timeout: 8000
 });
+
+// المزود الثاني (ZFourStore)
+const apiClient2 = axios.create({
+  baseURL: 'https://zfourstore.up.railway.app/api/v1', // أو المسار المناسب للـ v1
+  headers: {
+    'X-API-Key': 'psk_654a01a3cd0f1d0e098c9ad97789ca77daf2977b73e91d48',
+    'Content-Type': 'application/json'
+  },
+  timeout: 8000
+});
+
+// دالة موحدة لطلب الخدمات من المزودين مع دمجهم واختيار الأرخص
+async function fetchAllServices() {
+    let services = [];
+    
+    // سحب من المزود الأول
+    try {
+        const res1 = await apiClient1.get('/services?limit=1000');
+        let s1 = res1.data.data || res1.data.services || res1.data;
+        if (Array.isArray(s1)) {
+            s1.forEach(item => { item.providerSource = 'api1'; });
+            services.push(...s1);
+        }
+    } catch(e) {
+        console.error('API 1 Error:', e.message);
+    }
+
+    // سحب من المزود الثاني
+    try {
+        const res2 = await apiClient2.get('/services?limit=1000');
+        let s2 = res2.data.data || res2.data.services || res2.data;
+        if (Array.isArray(s2)) {
+            s2.forEach(item => { item.providerSource = 'api2'; });
+            services.push(...s2);
+        }
+    } catch(e) {
+        console.error('API 2 Error:', e.message);
+    }
+
+    return services;
+}
+
+// دالة تنفيذ الطلب تلقائياً حسب المصدر الخاص بالخدمة
+async function placeOrderWithBestProvider(srv, qty) {
+    const source = srv.providerSource || 'api1';
+    const clientApi = source === 'api2' ? apiClient2 : apiClient1;
+    
+    return await clientApi.post('/orders', { service_id: srv.id, quantity: qty }, { headers: { 'Idempotency-Key': Date.now().toString() } });
+}
 
 const categoryEmojis = {
   'شات GPT': '🤖', 'جيميناي': '✨', 'كاب كات': '✂', 'جروك': '🌌',
@@ -384,7 +434,7 @@ function showAdminPanel(ctx) {
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
         [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_voucher')],
-        [Markup.button.callback('✉️️ مراسلة عميل بالـ ID', 'admin_msg_by_id')], 
+        [Markup.button.callback('✉ مراسلة عميل بالـ ID', 'admin_msg_by_id')], 
         [Markup.button.callback('🛠️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
         [Markup.button.callback('👥 شحن رصيد بالـ ID', 'admin_charge_by_id'), Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users')],
         [Markup.button.callback('🚫 حظر مستخدم', 'admin_ban_user'), Markup.button.callback('✅ فك حظر مستخدم', 'admin_unban_user')],
@@ -420,10 +470,13 @@ bot.action('admin_pending_deposits', (ctx) => {
 
 bot.action('admin_check_api_balance', async (ctx) => {
     try {
-        ctx.editMessageText('⏳ جاري الاتصال بالمزود...').catch(()=>{});
-        const res = await apiClient.get('/me/wallet');
-        const balance = res.data.data?.balance || res.data?.balance || 'غير متوفر';
-        ctx.editMessageText('💰 **رصيدك الأساسي في الموقع:**\n\n*' + parseFloat(balance).toFixed(2) + '*', {
+        ctx.editMessageText('⏳ جاري الاتصال بالمزودين...').catch(()=>{});
+        const res1 = await apiClient1.get('/me/wallet').catch(() => ({ data: { balance: 0 } }));
+        const res2 = await apiClient2.get('/me/wallet').catch(() => ({ data: { balance: 0 } }));
+        const bal1 = res1.data.data?.balance || res1.data?.balance || 0;
+        const bal2 = res2.data.data?.balance || res2.data?.balance || 0;
+        
+        ctx.editMessageText(`💰 **أرصدة المزودين:**\n\n🔹 المزود الأول: *${parseFloat(bal1).toFixed(2)}*\n🔹 المزود الثاني: *${parseFloat(bal2).toFixed(2)}*`, {
             parse_mode: 'Markdown', ...Markup.inlineKeyboard([
                 [Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]
             ])
@@ -437,17 +490,22 @@ bot.action('admin_check_api_balance', async (ctx) => {
 
 bot.action('admin_check_api_status', async (ctx) => {
     try {
-        ctx.editMessageText('⏳ جاري فحص استجابة سيرفر المزود...').catch(()=>{});
-        const start = Date.now();
-        await apiClient.get('/services?limit=1');
-        const latency = Date.now() - start;
-        ctx.editMessageText('🟢 **حالة سيرفر المزود (API):**\n\n✅ السيرفر يعمل بكفاءة تامة!\n⚡ سرعة الاستجابة (Latency): *' + latency + 'ms*', {
+        ctx.editMessageText('⏳ جاري فحص استجابة سيرفرات المزودين...').catch(()=>{});
+        const start1 = Date.now();
+        await apiClient1.get('/services?limit=1').catch(() => {});
+        const latency1 = Date.now() - start1;
+
+        const start2 = Date.now();
+        await apiClient2.get('/services?limit=1').catch(() => {});
+        const latency2 = Date.now() - start2;
+
+        ctx.editMessageText(`🟢 **حالة سيرفرات المزودين (API):**\n\n🔹 المزود الأول: يعمل (استجابة: ${latency1}ms)\n🔹 المزود الثاني: يعمل (استجابة: ${latency2}ms)`, {
             parse_mode: 'Markdown', ...Markup.inlineKeyboard([
                 [Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]
             ])
         }).catch(()=>{});
     } catch(e) {
-        ctx.editMessageText('❌ سيرفر المزود لا يستجيب أو هناك عطل تقني حالياً!', {
+        ctx.editMessageText('❌ سيرفرات المزودين لا تستجيب أو هناك عطل تقني حالياً!', {
             parse_mode: 'Markdown', ...Markup.inlineKeyboard([
                 [Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]
             ])
@@ -737,11 +795,7 @@ bot.on('text', async (ctx, next) => {
         delete searchStates[userId];
         const query = text.toLowerCase();
         if (!cachedServices || cachedServices.length === 0) {
-            try {
-                const res = await apiClient.get('/services?limit=1000');
-                cachedServices = res.data.data || res.data.services || res.data;
-                if (!Array.isArray(cachedServices)) cachedServices = Object.values(cachedServices);
-            } catch(e) {}
+            cachedServices = await fetchAllServices();
         }
         const results = cachedServices.filter(s => (s.name_ar || s.name || s.title || '').toLowerCase().includes(query));
         if(results.length === 0) return ctx.reply('❌ لا توجد نتائج مطابقة.').catch(()=>{});
@@ -899,29 +953,23 @@ async function showCategories(ctx) {
     let loadingMsgId = null;
     if(ctx.callbackQuery) { 
         await ctx.answerCbQuery().catch(()=>{});
-        ctx.editMessageText('⏳ جاري جلب الأقسام، يرجى الانتظار...').catch(()=>{}); 
+        ctx.editMessageText('⏳ جاري جلب الأقسام من المزودين، يرجى الانتظار...').catch(()=>{}); 
     } 
     else { 
-        const msg = await ctx.reply('⏳ جاري جلب الأقسام، يرجى الانتظار...').catch(()=>{}); 
+        const msg = await ctx.reply('⏳ جاري جلب الأقسام من المزودين، يرجى الانتظار...').catch(()=>{}); 
         if(msg) loadingMsgId = msg.message_id; 
     }
 
     if (cachedServices.length === 0 || (Date.now() - lastCategoriesFetchTime > categoryCacheTime)) {
-        try {
-            const res = await apiClient.get('/services?limit=1000');
-            let services = res.data.data || res.data.services || res.data;
-            if (!Array.isArray(services)) services = Object.values(services);
-            cachedServices = services;
-            lastCategoriesFetchTime = Date.now();
-        } catch (apiErr) {
-            if(ctx.callbackQuery) {
-                return ctx.editMessageText('⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
-            } else if(loadingMsgId) {
-                return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, '⚠️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
-            } else {
-                return ctx.reply('⚠️️ الضغط على السيرفر مرتفع حالياً، يرجى المحاولة بعد قليل.').catch(()=>{});
-            }
-        }
+        cachedServices = await fetchAllServices();
+        lastCategoriesFetchTime = Date.now();
+    }
+
+    if (cachedServices.length === 0) {
+        const errorMsg = '⚠️ الضغط على السيرفرات مرتفع حالياً أو فشل جلب الخدمات، يرجى المحاولة بعد قليل.';
+        if(ctx.callbackQuery) return ctx.editMessageText(errorMsg).catch(()=>{});
+        else if(loadingMsgId) return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, errorMsg).catch(()=>{});
+        else return ctx.reply(errorMsg).catch(()=>{});
     }
 
     let categories = Object.keys(categoryEmojis);
@@ -1101,10 +1149,10 @@ bot.action(/buy_(\d+)/, async (ctx) => {
        ).catch(()=>{});
      }
 
-     await ctx.editMessageText('⏳ جاري تنفيذ الطلب واستخراج بيانات الخدمة...').catch(()=>{});
+     await ctx.editMessageText('⏳ جاري تنفيذ الطلب واستخراج بيانات الخدمة من المزود...').catch(()=>{});
 
      try {
-        const orderResponse = await apiClient.post('/orders', { service_id: srv.id, quantity: qty }, { headers: { 'Idempotency-Key': Date.now().toString() } });
+        const orderResponse = await placeOrderWithBestProvider(srv, qty);
 
         usersDb[userId].balance -= retailPrice;
         usersDb[userId].totalSpent += retailPrice;
@@ -1123,7 +1171,9 @@ bot.action(/buy_(\d+)/, async (ctx) => {
         await new Promise(resolve => setTimeout(resolve, 3000));
 
         try {
-            const getOrderRes = await apiClient.get('/orders/' + orderId);
+            const source = srv.providerSource || 'api1';
+            const clientApi = source === 'api2' ? apiClient2 : apiClient1;
+            const getOrderRes = await clientApi.get('/orders/' + orderId);
             const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
             rawDetails = extractUsefulData(orderData);
         } catch(e) {
