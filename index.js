@@ -214,21 +214,33 @@ async function fetchAllServices() {
             s1.forEach(item => { item.providerSource = 'api1'; });
             services.push(...s1);
         }
-    } catch(e) {
-        console.error('API 1 Error:', e.message);
-    }
+    } catch(e) { console.error('API 1 Error:', e.message); }
 
-    // سحب من المزود الثاني (استخدام المسار الصحيح /products)
+    // سحب من المزود الثاني
     try {
         const res2 = await apiClient2.get('/products');
-        let s2 = res2.data.data || res2.data.services || res2.data;
+        
+        // تعديل ذكي لاصطياد مصفوفة الخدمات أياً كان المسمى (products أو services أو data)
+        let s2 = res2.data.data || res2.data.products || res2.data.services || res2.data;
+        
+        // لو الموقع باعت البيانات جوه Object بدل مصفوفة مباشرة
+        if (!Array.isArray(s2) && typeof s2 === 'object') {
+            for (let key in s2) {
+                if (Array.isArray(s2[key])) { s2 = s2[key]; break; }
+            }
+        }
+
         if (Array.isArray(s2)) {
-            s2.forEach(item => { item.providerSource = 'api2'; });
+            s2.forEach(item => { 
+                item.providerSource = 'api2'; 
+                // توحيد المسميات عشان تظهر مع الأقسام القديمة وماتختفيش
+                if(!item.name && item.title) item.name = item.title;
+                if(!item.name_ar && item.name) item.name_ar = item.name;
+                if(!item.category && item.category_name) item.category = item.category_name;
+            });
             services.push(...s2);
         }
-    } catch(e) {
-        console.error('API 2 Error:', e.message);
-    }
+    } catch(e) { console.error('API 2 Error:', e.message); }
 
     return services;
 }
