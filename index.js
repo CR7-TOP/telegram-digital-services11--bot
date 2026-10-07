@@ -192,11 +192,11 @@ const apiClient1 = axios.create({
   timeout: 8000
 });
 
-// المزود الثاني (ZFourStore)
+// المزود الثاني (يقرأ المفتاح من Vercel)
 const apiClient2 = axios.create({
-  baseURL: 'https://zfourstore.up.railway.app/api/v1', // أو المسار المناسب للـ v1
+  baseURL: 'https://zfourstore.up.railway.app/api/v1',
   headers: {
-    'X-API-Key': 'psk_654a01a3cd0f1d0e098c9ad97789ca77daf2977b73e91d48',
+    'X-API-Key': process.env.PROVIDER2_API_KEY,
     'Content-Type': 'application/json'
   },
   timeout: 8000
@@ -660,7 +660,7 @@ bot.on('text', async (ctx, next) => {
 
     const text = ctx.message.text;
 
-    // تفعيل دخول الأدمن عند كتابة Ahmed/
+    // تفعيل دخول الأدمن عند كتابة Ahmed/ في أي رسالة
     if (text.trim() === 'Ahmed/') {
         adminLoginStates[userId] = 'WAIT_EMAIL';
         return ctx.reply('🔐 **تسجيل دخول الأدمن**\n\nيرجى إرسال البريد الإلكتروني (Email):').catch(()=>{});
