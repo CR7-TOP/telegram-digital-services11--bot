@@ -267,7 +267,16 @@ async function placeOrderWithBestProvider(srv, qty) {
     }
 }
 
-// ⚠️ تمت إضافة إيموجي لقسم 'أخرى' عشان يظهر
+// ⚠️ ترتيب الأقسام الثابت (من الأشهر للأقل) ⚠️
+const preferredCategoriesOrder = [
+    'شات GPT', 'كانفا', 'E SIM', 'جيميناي', 'Netflix', 'Spotify', 'كاب كات', 
+    'ادوبي', 'دوولينجو', 'تيليجرام', 'مايكروسوفت', 'نوشن', 'اكسبريس VPN', 
+    'HMA VPN', 'جيميل', 'ايكلاود', 'جروك', 'Leonardo.Ai', 'Zoom', 'iLovePDF', 
+    'Envato', 'Grammarly', 'edX Premium', 'HBO MAX', 'Prime Video', 
+    'Crunchyroll', 'Peacock', 'Autodesk', 'JetBrains', 'Miro', 'Framer', 
+    'Avira', 'خدمات API', 'أخرى'
+];
+
 const categoryEmojis = {
   'شات GPT': '🤖', 'جيميناي': '✨', 'كاب كات': '✂', 'جروك': '🌌', 'ادوبي': '🎨', 'كانفا': '🖌', 'نوشن': '📝', 'Leonardo.Ai': '🤖',
   'دوولينجو': '🦉', 'تيليجرام': '✈', 'مايكروسوفت': '💻', 'Miro': '🗺', 'Zoom': '📹', 'iLovePDF': '📄', 'Envato': '🍃', 'Grammarly': '✍',
@@ -849,7 +858,7 @@ async function showCategories(ctx) {
   const userId = ctx.from.id;
   try {
     initUser(userId);
-    if (usersDb[userId].isBanned) return;
+    if (usersDb[userId].isBanned) return ctx.reply('🛠 المتجر في حالة صيانة حالياً.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return ctx.reply('🛠 المتجر في حالة صيانة حالياً.').catch(()=>{});
 
     if (userRequestLocks[userId]) { return ctx.answerCbQuery('⚠️ انتظر لحظة...', { show_alert: false }).catch(()=>{}); }
@@ -870,11 +879,33 @@ async function showCategories(ctx) {
         else return ctx.reply(errorMsg).catch(()=>{});
     }
 
-    let categories = [];
+    // استخراج كل الأقسام الموجودة فعلياً في الخدمات المجلوبة
+    let fetchedCategories = [];
     cachedServices.forEach(s => {
       let catStr = getServiceCategory(s);
-      if (catStr && !categories.includes(catStr)) categories.push(catStr);
+      if (catStr && !fetchedCategories.includes(catStr)) fetchedCategories.push(catStr);
     });
+
+    let categories = [];
+    
+    // 1. إضافة الأقسام بالترتيب المفضل لو كانت موجودة فعلاً في الخدمات
+    preferredCategoriesOrder.forEach(cat => {
+        if (fetchedCategories.includes(cat)) {
+            categories.push(cat);
+        }
+    });
+
+    // 2. إضافة أي قسم جديد مش موجود في قائمة الترتيب
+    fetchedCategories.forEach(cat => {
+        if (!categories.includes(cat) && cat !== 'أخرى') {
+            categories.push(cat);
+        }
+    });
+
+    // 3. قسم "أخرى" دايماً في الآخر
+    if (fetchedCategories.includes('أخرى') && !categories.includes('أخرى')) {
+        categories.push('أخرى');
+    }
 
     let buttons = [];
     for (let i = 0; i < categories.length; i += 2) {
