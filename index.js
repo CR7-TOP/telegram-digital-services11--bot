@@ -258,19 +258,25 @@ async function fetchAllServices() {
     return services;
 }
 
+// ⚠️ تعديل الشراء لإرسال المتغيرات بالمسميات الدقيقة اللي طلبها السيرفر ⚠️
 async function placeOrderWithBestProvider(srv, qty) {
     const source = srv.providerSource || 'api1';
     const parsedQty = parseInt(qty) || 1;
 
+    // تحويل الـ ID لرقم صحيح لو أمكن عشان بعض السيرفرات بترفض الـ Strings
+    const srvIdConverted = !isNaN(srv.id) ? parseInt(srv.id) : srv.id;
+
     if (source === 'api2') {
+         // نرسل productId كما تم طلبه في رسالة الخطأ
          return await apiClient2.post('/order', { 
-             service_id: srv.id, 
-             product_id: srv.id, 
+             service_id: srvIdConverted, 
+             product_id: srvIdConverted,
+             productId: srvIdConverted, // 👈 التعديل السحري هنا
              quantity: parsedQty 
          });
     } else {
          return await apiClient1.post('/orders', { 
-             service_id: srv.id, 
+             service_id: srvIdConverted, 
              quantity: parsedQty 
          });
     }
@@ -1169,7 +1175,6 @@ bot.action(/buy_(.+)/, async (ctx) => {
         notifyAdmin(adminLogMsg);
 
      } catch (error) {
-        // ⚠️ تعديل ذكي لقراءة الخطأ حتى لو كان Object
         let apiErrorMsg = error.response?.data?.message || error.response?.data?.error || error.response?.data || error.message || "عطل غير معروف";
         if (typeof apiErrorMsg === 'object') {
             apiErrorMsg = JSON.stringify(apiErrorMsg);
