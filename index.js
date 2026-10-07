@@ -466,6 +466,9 @@ function showAdminPanel(ctx) {
   } catch(e){}
 }
 
+// ----------------------------------------------------
+// أزرار البحث الخاصة بالأدمن للتسعير بنسبة والمخزون
+// ----------------------------------------------------
 bot.action('admin_search_markup', (ctx) => {
     adminInputStates[ctx.from.id] = 'WAIT_SEARCH_MARKUP';
     ctx.editMessageText('🔍 أرسل اسم المنتج الذي تريد تحديد **نسبة ربح مخصصة** له:').catch(()=>{});
@@ -562,7 +565,7 @@ bot.action('admin_set_global_markup', (ctx) => {
 
 bot.action('admin_set_custom_markup', (ctx) => {
     adminInputStates[ctx.from.id] = 'WAIT_CUSTOM_MARKUP';
-    ctx.editMessageText('🎯 **تعديل نسبة قسم معين:**\n\nأرسل اسم القسم والنسبة هكذا:\n`اسم_القسم النسبة`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    ctx.editMessageText('🎯 **تعديل نسبة قسم معين:**\n\nأرسل اسم القسم والنسبة هكذا:\n`اسم_القسم النسبة`\n\n🗑️ لمسح جميع نسب الأقسام والعودة للنسبة العامة، اكتب: `حذف الكل`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_flash_sale', (ctx) => {
@@ -601,6 +604,7 @@ bot.on('text', async (ctx, next) => {
         const state = adminInputStates[userId];
         delete adminInputStates[userId];
 
+        // 🔍 بحث الأدمن عن منتج للتسعير بالنسبة المئوية أو إضافة المخزون
         if (state === 'WAIT_SEARCH_MARKUP' || state === 'WAIT_SEARCH_STOCK') {
             const query = text.toLowerCase();
             if (!cachedServices || cachedServices.length === 0) cachedServices = await fetchAllServices();
@@ -613,6 +617,7 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply('🔍 اختر المنتج من القائمة:', Markup.inlineKeyboard(buttons));
         }
 
+        // 📈 تحديد نسبة ربح للمنتج المختار
         if (state.startsWith('WAIT_SET_MARKUP_')) {
             const srvId = String(state.split('WAIT_SET_MARKUP_')[1]);
 
@@ -632,6 +637,7 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: *${percent}%*\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
+        // 📦 إضافة مخزون للمنتج
         if (state.startsWith('WAIT_ADD_STOCK_')) {
             const srvId = String(state.split('WAIT_ADD_STOCK_')[1]);
             const items = text.split('\n').map(i => i.trim()).filter(i => i !== '');
@@ -661,6 +667,14 @@ bot.on('text', async (ctx, next) => {
         }
 
         if (state === 'WAIT_CUSTOM_MARKUP') {
+            // ميزة حذف كل الأقسام
+            if (text.trim() === 'حذف الكل') {
+                customMarkups = {};
+                saveDatabase();
+                logAdminAction(userId, 'مسح جميع نسب الأقسام المخصصة');
+                return ctx.reply('✅ تم مسح جميع النسب المخصصة للأقسام!\nكل الأقسام ستتبع الآن النسبة العامة للمتجر.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            }
+
             const lines = text.split('\n'); let updatedCount = 0; let reportMsg = '📊 **تقرير تحديث نسب الأقسام:**\n\n';
             for (let line of lines) {
                 line = line.trim(); if (!line) continue;
