@@ -7,6 +7,11 @@ import { MongoClient } from 'mongodb'; // استدعاء مكتبة قاعدة �
 dotenv.config();
 
 // ==========================================
+// ⚠️ إعدادات تحويل العملة (الدولار للمصري) ⚠️
+// ==========================================
+const USD_TO_EGP_RATE = 50; // غير الرقم ده لسعر الدولار اللي عايز تحاسب بيه العملاء
+
+// ==========================================
 // إعدادات الاتصال بقاعدة بيانات MongoDB
 // ==========================================
 const MONGODB_URI = "mongodb+srv://ahmwogod24920s_db_user:LwAbx06XOKBWel9j@cluster0.sjxm2ga.mongodb.net/xprostore?retryWrites=true&w=majority&appName=Cluster0";
@@ -192,7 +197,7 @@ const apiClient1 = axios.create({
   timeout: 8000
 });
 
-// المزود الثاني (يقرأ المفتاح من Vercel)
+// المزود الثاني
 const apiClient2 = axios.create({
   baseURL: 'https://zfourstore.up.railway.app/api/v1',
   headers: {
@@ -202,11 +207,11 @@ const apiClient2 = axios.create({
   timeout: 8000
 });
 
-// دالة موحدة لطلب الخدمات من المزودين مع دمجهم واختيار الأرخص
+// دالة موحدة لطلب الخدمات من المزودين مع دمجهم وتحويل العملة
 async function fetchAllServices() {
     let services = [];
     
-    // سحب من المزود الأول
+    // سحب من المزود الأول (المصري)
     try {
         const res1 = await apiClient1.get('/services?limit=1000');
         let s1 = res1.data.data || res1.data.services || res1.data;
@@ -216,14 +221,13 @@ async function fetchAllServices() {
         }
     } catch(e) { console.error('API 1 Error:', e.message); }
 
-    // سحب من المزود الثاني
+    // سحب من المزود الثاني (الدولاري)
     try {
         const res2 = await apiClient2.get('/products');
         
-        // تعديل ذكي لاصطياد مصفوفة الخدمات أياً كان المسمى (products أو services أو data)
+        // اصطياد مصفوفة الخدمات
         let s2 = res2.data.data || res2.data.products || res2.data.services || res2.data;
         
-        // لو الموقع باعت البيانات جوه Object بدل مصفوفة مباشرة
         if (!Array.isArray(s2) && typeof s2 === 'object') {
             for (let key in s2) {
                 if (Array.isArray(s2[key])) { s2 = s2[key]; break; }
@@ -233,10 +237,16 @@ async function fetchAllServices() {
         if (Array.isArray(s2)) {
             s2.forEach(item => { 
                 item.providerSource = 'api2'; 
-                // توحيد المسميات عشان تظهر مع الأقسام القديمة وماتختفيش
-                if(!item.name && item.title) item.name = item.title;
-                if(!item.name_ar && item.name) item.name_ar = item.name;
-                if(!item.category && item.category_name) item.category = item.category_name;
+                
+                // توحيد المسميات عشان تظهر مع الأقسام القديمة
+                item.name = item.name || item.title || item.name_ar || "خدمة بدون اسم";
+                item.category = item.category || item.category_name || "أخرى";
+
+                // استخراج السعر بالدولار
+                let rawPriceUSD = parseFloat(item.price || item.rate || item.price_amount || 0);
+                
+                // تحويل السعر للمصري عشان يظهر للعميل ويخصم من رصيده المصري
+                item.price = (rawPriceUSD * USD_TO_EGP_RATE).toString();
             });
             services.push(...s2);
         }
@@ -250,7 +260,7 @@ async function placeOrderWithBestProvider(srv, qty) {
     const source = srv.providerSource || 'api1';
     
     if (source === 'api2') {
-         // المزود الثاني بيستخدم مسار /order
+         // المزود الثاني بيستخدم مسار /order لإنشاء الطلب
          return await apiClient2.post('/order', { service_id: srv.id, quantity: qty }, { headers: { 'Idempotency-Key': Date.now().toString() } });
     } else {
          // المزود الأول بيستخدم مسار /orders
@@ -493,7 +503,7 @@ bot.action('admin_check_api_balance', async (ctx) => {
         try {
             const res1 = await apiClient1.get('/me/wallet');
             const bal1 = res1.data.data?.balance || res1.data?.balance || 0;
-            msg += `🔹 المزود الأول: *${parseFloat(bal1).toFixed(2)}*\n`;
+            msg += `🔹 المزود الأول: *${parseFloat(bal1).toFixed(2)} EGP*\n`;
         } catch(e) {
             msg += `🔹 المزود الأول: خطأ ❌ (${e.response?.status || e.message})\n`;
         }
@@ -502,7 +512,8 @@ bot.action('admin_check_api_balance', async (ctx) => {
             // المزود الثاني بيستخدم مسار /balance
             const res2 = await apiClient2.get('/balance');
             const bal2 = res2.data.data?.balance || res2.data?.balance || res2.data?.data || 0;
-            msg += `🔹 المزود الثاني: *${parseFloat(bal2).toFixed(2)}*\n`;
+            // ضفنا علامة الدولار عشان تبقى واضحة للأدمن
+            msg += `🔹 المزود الثاني: *$${parseFloat(bal2).toFixed(2)}*\n`;
         } catch(e) {
             msg += `🔹 المزود الثاني: خطأ ❌ (${e.response?.status || e.message})\n`;
         }
