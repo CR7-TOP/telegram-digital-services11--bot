@@ -192,9 +192,9 @@ const apiClient1 = axios.create({
   timeout: 8000
 });
 
-// المزود الثاني (يقرأ المفتاح من Vercel) - تم تعديل الرابط
+// المزود الثاني (يقرأ المفتاح من Vercel)
 const apiClient2 = axios.create({
-  baseURL: 'https://zfourstore.up.railway.app/api',
+  baseURL: 'https://zfourstore.up.railway.app/api/v1',
   headers: {
     'X-API-Key': process.env.PROVIDER2_API_KEY,
     'Content-Type': 'application/json'
@@ -218,9 +218,9 @@ async function fetchAllServices() {
         console.error('API 1 Error:', e.message);
     }
 
-    // سحب من المزود الثاني
+    // سحب من المزود الثاني (استخدام المسار الصحيح /products)
     try {
-        const res2 = await apiClient2.get('/services?limit=1000');
+        const res2 = await apiClient2.get('/products');
         let s2 = res2.data.data || res2.data.services || res2.data;
         if (Array.isArray(s2)) {
             s2.forEach(item => { item.providerSource = 'api2'; });
@@ -236,9 +236,14 @@ async function fetchAllServices() {
 // دالة تنفيذ الطلب تلقائياً حسب المصدر الخاص بالخدمة
 async function placeOrderWithBestProvider(srv, qty) {
     const source = srv.providerSource || 'api1';
-    const clientApi = source === 'api2' ? apiClient2 : apiClient1;
     
-    return await clientApi.post('/orders', { service_id: srv.id, quantity: qty }, { headers: { 'Idempotency-Key': Date.now().toString() } });
+    if (source === 'api2') {
+         // المزود الثاني بيستخدم مسار /order
+         return await apiClient2.post('/order', { service_id: srv.id, quantity: qty }, { headers: { 'Idempotency-Key': Date.now().toString() } });
+    } else {
+         // المزود الأول بيستخدم مسار /orders
+         return await apiClient1.post('/orders', { service_id: srv.id, quantity: qty }, { headers: { 'Idempotency-Key': Date.now().toString() } });
+    }
 }
 
 const categoryEmojis = {
@@ -482,8 +487,9 @@ bot.action('admin_check_api_balance', async (ctx) => {
         }
 
         try {
-            const res2 = await apiClient2.get('/me/wallet');
-            const bal2 = res2.data.data?.balance || res2.data?.balance || 0;
+            // المزود الثاني بيستخدم مسار /balance
+            const res2 = await apiClient2.get('/balance');
+            const bal2 = res2.data.data?.balance || res2.data?.balance || res2.data?.data || 0;
             msg += `🔹 المزود الثاني: *${parseFloat(bal2).toFixed(2)}*\n`;
         } catch(e) {
             msg += `🔹 المزود الثاني: خطأ ❌ (${e.response?.status || e.message})\n`;
@@ -512,7 +518,8 @@ bot.action('admin_check_api_status', async (ctx) => {
 
         try {
             const start2 = Date.now();
-            await apiClient2.get('/services?limit=1');
+            // المزود الثاني بيستخدم مسار /products
+            await apiClient2.get('/products');
             msg += `🔹 المزود الثاني: يعمل ✅ (${Date.now() - start2}ms)\n`;
         } catch(e) {
             msg += `🔹 المزود الثاني: متعطل ❌ (${e.response?.status || e.message})\n`;
@@ -1186,7 +1193,11 @@ bot.action(/buy_(\d+)/, async (ctx) => {
         try {
             const source = srv.providerSource || 'api1';
             const clientApi = source === 'api2' ? apiClient2 : apiClient1;
-            const getOrderRes = await clientApi.get('/orders/' + orderId);
+            
+            // تعديل مسار جلب تفاصيل الطلب حسب المزود
+            const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : `/orders/${orderId}`;
+            
+            const getOrderRes = await clientApi.get(fetchOrderPath);
             const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
             rawDetails = extractUsefulData(orderData);
         } catch(e) {
