@@ -30,6 +30,10 @@ let adminAuditLogs = [];
 let maintenanceMode = false; 
 let bulkQuantityStates = {}; 
 
+// المتغيرات الجديدة الخاصة بالمخزن والتسعير
+let customProductPrices = {}; 
+let localInventory = {}; 
+
 // دالة الاتصال المباشر بقاعدة البيانات
 async function connectDB() {
     if (!dbCollection) {
@@ -55,6 +59,8 @@ async function loadDatabase() {
             vouchers = data.vouchers || {};
             adminAuditLogs = data.adminAuditLogs || [];
             maintenanceMode = data.maintenanceMode || false;
+            customProductPrices = data.customProductPrices || {};
+            localInventory = data.localInventory || {};
         }
     } catch (error) {
         console.error('❌ خطأ في تحميل قاعدة البيانات:', error);
@@ -64,7 +70,7 @@ async function loadDatabase() {
 // دالة حفظ البيانات في السحابة بأمان تام
 function saveDatabase() {
     try {
-        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode };
+        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductPrices, localInventory };
         const savePromise = connectDB().then(() => {
             return dbCollection.updateOne(
                 { _id: "main_data" },
@@ -207,6 +213,25 @@ const apiClient2 = axios.create({
   timeout: 8000
 });
 
+// دالة التصنيف الذكية للمنتجات
+function detectCategoryFromName(name) {
+    let n = name.toLowerCase();
+    if (n.includes('gemini')) return 'جيميناي';
+    if (n.includes('gpt')) return 'شات GPT';
+    if (n.includes('canva')) return 'كانفا';
+    if (n.includes('adobe')) return 'ادوبي';
+    if (n.includes('duolingo')) return 'دوولينجو';
+    if (n.includes('capcut')) return 'كاب كات';
+    if (n.includes('spotify')) return 'Spotify';
+    if (n.includes('netflix')) return 'Netflix';
+    if (n.includes('crunchyroll')) return 'Crunchyroll';
+    if (n.includes('microsoft') || n.includes('office')) return 'مايكروسوفت';
+    if (n.includes('coursera')) return 'edX Premium';
+    if (n.includes('prime')) return 'Prime Video';
+    if (n.includes('notion')) return 'نوشن';
+    return 'أخرى';
+}
+
 // دالة موحدة لطلب الخدمات من المزودين مع دمجهم وتحويل العملة
 async function fetchAllServices() {
     let services = [];
@@ -240,7 +265,7 @@ async function fetchAllServices() {
                 
                 // توحيد المسميات عشان تظهر مع الأقسام القديمة
                 item.name = item.name || item.title || item.name_ar || "خدمة بدون اسم";
-                item.category = item.category || item.category_name || "أخرى";
+                item.category = item.category || item.category_name || detectCategoryFromName(item.name);
 
                 // استخراج السعر بالدولار
                 let rawPriceUSD = parseFloat(item.price || item.rate || item.price_amount || 0);
@@ -276,7 +301,7 @@ const categoryEmojis = {
   'Autodesk': '🏗', 'JetBrains': '💻', 'edX Premium': '🎓',
   'Peacock': '🦚', 'HBO MAX': '🎬', 'Paramount+': '⛰', 'Framer': '⚡',
   'Avira': '☂️', 'HMA VPN': '🌍', 'اكسبريس VPN': '🛡', 'جيميل': '📧',
-  'ايكلاود': '☁', 'E SIM': '📱'
+  'ايكلاود': '☁', 'E SIM': '📱', 'Spotify': '🎧', 'Netflix': '🍿', 'Crunchyroll': '🍘', 'Prime Video': '🎬'
 };
 
 let cachedServices = [];
@@ -324,6 +349,13 @@ bot.start((ctx) => {
 
 function calculateRetailPrice(service, user, quantity = 1) {
   try {
+    // 🎯 التحقق لو المنتج ليه سعر ثابت مخصص في قاعدة البيانات
+    if (customProductPrices && customProductPrices[service.id]) {
+        let p = customProductPrices[service.id];
+        if (flashSale.active && Date.now() < flashSale.expiresAt) p = p - (p * (flashSale.discount / 100));
+        return (p * quantity).toFixed(2);
+    }
+
     const originalPrice = parseFloat(service.price_amount || service.price || 0);
     const cat = getServiceCategory(service);
 
@@ -336,9 +368,6 @@ function calculateRetailPrice(service, user, quantity = 1) {
     if (flashSale.active && Date.now() < flashSale.expiresAt) {
         const discountAmount = finalPrice * (flashSale.discount / 100);
         finalPrice = finalPrice - discountAmount;
-    } else if (flashSale.active && Date.now() >= flashSale.expiresAt) {
-        flashSale.active = false;
-        saveDatabase();
     }
 
     return (finalPrice * quantity).toFixed(2);
@@ -459,8 +488,9 @@ function showAdminPanel(ctx) {
     const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback('💳 طلبات الشحن المعلقة (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
+        [Markup.button.callback('🎯 تسعير منتج يدوي', 'admin_search_price'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
-        [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_create_voucher'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_voucher')],
+        [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_voucher')],
         [Markup.button.callback('✉ مراسلة عميل بالـ ID', 'admin_msg_by_id')], 
         [Markup.button.callback('🛠️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
         [Markup.button.callback('👥 شحن رصيد بالـ ID', 'admin_charge_by_id'), Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users')],
@@ -473,6 +503,27 @@ function showAdminPanel(ctx) {
     else { ctx.reply(text, { parse_mode: 'Markdown', ...keyboard }).catch(()=>{}); }
   } catch(e){}
 }
+
+// ----------------------------------------------------
+// أزرار البحث الخاصة بالأدمن للتسعير والمخزون
+// ----------------------------------------------------
+bot.action('admin_search_price', (ctx) => {
+    adminInputStates[ctx.from.id] = 'WAIT_SEARCH_PRICE';
+    ctx.editMessageText('🔍 أرسل اسم المنتج الذي تريد تحديد سعر ثابت له:').catch(()=>{});
+});
+bot.action('admin_search_stock', (ctx) => {
+    adminInputStates[ctx.from.id] = 'WAIT_SEARCH_STOCK';
+    ctx.editMessageText('📦 أرسل اسم المنتج الذي تريد إضافة أكواد لمخزنه المحلي:').catch(()=>{});
+});
+
+bot.action(/setprice_(.+)/, (ctx) => {
+    adminInputStates[ctx.from.id] = 'WAIT_SET_PRICE_' + ctx.match[1];
+    ctx.editMessageText('💰 أرسل السعر الجديد الثابت بالجنيه المصري لهذا المنتج (أرقام فقط):').catch(()=>{});
+});
+bot.action(/addstock_(.+)/, (ctx) => {
+    adminInputStates[ctx.from.id] = 'WAIT_ADD_STOCK_' + ctx.match[1];
+    ctx.editMessageText('📦 أرسل الأكواد أو الحسابات لإضافتها في المخزن المحلي لهذا المنتج.\n(إذا كان هناك أكثر من كود، ضع كل كود في سطر منفصل):').catch(()=>{});
+});
 
 bot.action('admin_pending_deposits', (ctx) => {
     try {
@@ -712,6 +763,41 @@ bot.on('text', async (ctx, next) => {
     if (adminSession[userId] && adminInputStates[userId]) {
         const state = adminInputStates[userId];
         delete adminInputStates[userId];
+
+        // بحث الأدمن عن منتج للتسعير أو المخزون
+        if (state === 'WAIT_SEARCH_PRICE' || state === 'WAIT_SEARCH_STOCK') {
+            const query = text.toLowerCase();
+            if (!cachedServices || cachedServices.length === 0) cachedServices = await fetchAllServices();
+            const results = cachedServices.filter(s => (s.name_ar || s.name || s.title || '').toLowerCase().includes(query));
+            if(results.length === 0) return ctx.reply('❌ لا توجد نتائج مطابقة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            
+            const prefix = state === 'WAIT_SEARCH_PRICE' ? 'setprice_' : 'addstock_';
+            let buttons = results.slice(0, 15).map(srv => [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ` (${srv.providerSource})`, prefix + srv.id)]);
+            buttons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
+            return ctx.reply('🔍 اختر المنتج من القائمة:', Markup.inlineKeyboard(buttons));
+        }
+
+        // تسعير المنتج
+        if (state.startsWith('WAIT_SET_PRICE_')) {
+            const srvId = state.split('WAIT_SET_PRICE_')[1];
+            const price = parseFloat(text);
+            if (isNaN(price)) return ctx.reply('❌ يرجى إدخال رقم صحيح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            customProductPrices[srvId] = price;
+            saveDatabase();
+            logAdminAction(userId, `تحديد سعر ثابت للمنتج ${srvId} بـ ${price} EGP`);
+            return ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: *${price} EGP*`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+        }
+
+        // إضافة مخزون
+        if (state.startsWith('WAIT_ADD_STOCK_')) {
+            const srvId = state.split('WAIT_ADD_STOCK_')[1];
+            const items = text.split('\n').map(i => i.trim()).filter(i => i !== '');
+            if (!localInventory[srvId]) localInventory[srvId] = [];
+            localInventory[srvId].push(...items);
+            saveDatabase();
+            logAdminAction(userId, `إضافة ${items.length} عنصر למخزون المنتج ${srvId}`);
+            return ctx.reply(`✅ تم إضافة *${items.length}* عنصر للمخزن.\nإجمالي المخزون الحالي لهذا المنتج: *${localInventory[srvId].length}*`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+        }
 
         if (state === 'WAIT_USER_MSG') {
             const firstSpace = text.indexOf(' ');
@@ -1194,6 +1280,30 @@ bot.action(/buy_(\d+)/, async (ctx) => {
 
      await ctx.editMessageText('⏳ جاري تنفيذ الطلب واستخراج بيانات الخدمة من المزود...').catch(()=>{});
 
+     // 📦 التحقق من المخزون المحلي أولاً قبل إرسال الطلب للمزود 📦
+     const hasLocalStock = localInventory[srv.id] && localInventory[srv.id].length >= qty;
+
+     if (hasLocalStock) {
+         // خصم العناصر من المخزن المحلي
+         const deliveredItems = localInventory[srv.id].splice(0, qty);
+         
+         // خصم الرصيد وتسجيل الطلب للعميل
+         usersDb[userId].balance -= retailPrice;
+         usersDb[userId].totalSpent += retailPrice;
+         usersDb[userId].walletHistory.push({ type: `شراء محلي (${name})`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+         usersDb[userId].orders.push({ name: `${name} (${qty}x)`, price: retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+         saveDatabase();
+
+         let deliveryMsg = `📦 <b>رقم الطلب:</b> #LOCAL-${Math.floor(1000 + Math.random() * 9000)}\n\n` +
+                           `🛍️ <b>الخدمة:</b> ${name}\n🔢 <b>الكمية:</b> ${qty}\n🟢 <b>الحالة:</b> مكتمل فوراً\n💰 <b>المدفوع:</b> ${retailPrice} EGP\n\n` +
+                           `📋 <b>العناصر المسلمة:</b>\n<code>${deliveredItems.join('\n\n')}</code>`;
+
+         await ctx.editMessageText(deliveryMsg, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]])}).catch(()=>{});
+         notifyAdmin(`👑 <b>عملية بيع من المخزن المحلي:</b>\n🛍 ${name}\n💰 ${retailPrice} EGP\n📦 متبقي في المخزن لهذا المنتج: ${localInventory[srv.id].length}`);
+         return; // إيقاف العملية هنا لعدم الشراء من الـ API
+     }
+
+     // 🌐 لو المخزن المحلي فاضي، البوت هيكمل طبيعي ويشتري من المزود (API) 🌐
      try {
         const orderResponse = await placeOrderWithBestProvider(srv, qty);
 
@@ -1253,7 +1363,7 @@ bot.action(/buy_(\d+)/, async (ctx) => {
             ])
         }).catch(()=>{});
 
-        const adminLogMsg = `👑 <b>إشعار شراء جديد:</b>\n\n` +
+        const adminLogMsg = `👑 <b>إشعار شراء جديد (API):</b>\n\n` +
                             `📦 <b>رقم الطلب:</b> #${orderId}\n` +
                             `🛍 <b>الخدمة:</b> ${name}\n` +
                             `👤 <b>المشتري (ID):</b> <code>${usersDb[userId].uid}</code>\n` +
