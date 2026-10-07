@@ -192,9 +192,9 @@ const apiClient1 = axios.create({
   timeout: 8000
 });
 
-// المزود الثاني (يقرأ المفتاح من Vercel)
+// المزود الثاني (يقرأ المفتاح من Vercel) - تم تعديل الرابط
 const apiClient2 = axios.create({
-  baseURL: 'https://zfourstore.up.railway.app/api/v1',
+  baseURL: 'https://zfourstore.up.railway.app/api',
   headers: {
     'X-API-Key': process.env.PROVIDER2_API_KEY,
     'Content-Type': 'application/json'
@@ -433,7 +433,7 @@ function showAdminPanel(ctx) {
         [Markup.button.callback('💳 طلبات الشحن المعلقة (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
-        [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_voucher')],
+        [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_create_voucher'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_voucher')],
         [Markup.button.callback('✉ مراسلة عميل بالـ ID', 'admin_msg_by_id')], 
         [Markup.button.callback('🛠️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
         [Markup.button.callback('👥 شحن رصيد بالـ ID', 'admin_charge_by_id'), Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users')],
