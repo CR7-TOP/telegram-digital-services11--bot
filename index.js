@@ -313,24 +313,19 @@ function calculateRetailPrice(service, user, quantity = 1) {
     const originalPrice = parseFloat(service.price_amount || service.price || 0);
     const cat = getServiceCategory(service);
 
-    // 1. نبدأ بالنسبة العامة كإفتراضي
     let markup = parseFloat(globalMarkupPercent) || 0;
 
-    // 2. لو القسم ليه نسبة مخصصة، تاخد الأولوية
     if (customMarkups && customMarkups[cat] !== undefined) {
         markup = parseFloat(customMarkups[cat]);
     }
 
-    // 3. 🎯 لو المنتج نفسه ليه نسبة ربح مخصصة (تغطي على الكل)
     const srvIdStr = String(service.id);
     if (customProductMarkups && customProductMarkups[srvIdStr] !== undefined) {
         markup = parseFloat(customProductMarkups[srvIdStr]);
     }
 
-    // خصومات الـ VIP
     if (user && user.isVip) markup = Math.max(0, markup - 5);
 
-    // حساب السعر النهائي بضرب السعر الأصلي في النسبة
     let finalPrice = originalPrice * (1 + (markup / 100));
 
     if (flashSale.active && Date.now() < flashSale.expiresAt) {
@@ -466,16 +461,13 @@ function showAdminPanel(ctx) {
   } catch(e){}
 }
 
-// ----------------------------------------------------
-// أزرار البحث الخاصة بالأدمن للتسعير بنسبة والمخزون
-// ----------------------------------------------------
 bot.action('admin_search_markup', (ctx) => {
     adminInputStates[ctx.from.id] = 'WAIT_SEARCH_MARKUP';
     ctx.editMessageText('🔍 أرسل اسم المنتج الذي تريد تحديد **نسبة ربح مخصصة** له:').catch(()=>{});
 });
 bot.action('admin_search_stock', (ctx) => {
     adminInputStates[ctx.from.id] = 'WAIT_SEARCH_STOCK';
-    ctx.editMessageText('📦 أرسل اسم المنتج الذي تريد إضافة أكواد لمخزنه المحلي:').catch(()=>{});
+    ctx.editMessageText('📦 أرسل اسم المنتج الذي تريد إدارة مخزونه المحلي:').catch(()=>{});
 });
 
 bot.action(/setmarkup_(.+)/, (ctx) => {
@@ -484,7 +476,7 @@ bot.action(/setmarkup_(.+)/, (ctx) => {
 });
 bot.action(/addstock_(.+)/, (ctx) => {
     adminInputStates[ctx.from.id] = 'WAIT_ADD_STOCK_' + ctx.match[1];
-    ctx.editMessageText('📦 أرسل الأكواد أو الحسابات لإضافتها في المخزن المحلي لهذا المنتج.\n(إذا كان هناك أكثر من كود، ضع كل كود في سطر منفصل):').catch(()=>{});
+    ctx.editMessageText('📦 **إدارة المخزن المحلي لهذا المنتج:**\n\n➕ **للإضافة:** أرسل رسالة تحتوي على البيانات كاملة (مهما كان عدد سطورها سيتم اعتبارها كعنصر واحد).\n👀 **للعرض:** أرسل كلمة `عرض` لمعرفة محتويات المخزن.\n🗑️ **للحذف:** أرسل كلمة `حذف الكل` لتفريغ مخزن هذا المنتج بالكامل.', {parse_mode: 'Markdown'}).catch(()=>{});
 });
 
 bot.action('admin_pending_deposits', (ctx) => {
@@ -604,7 +596,6 @@ bot.on('text', async (ctx, next) => {
         const state = adminInputStates[userId];
         delete adminInputStates[userId];
 
-        // 🔍 بحث الأدمن عن منتج للتسعير بالنسبة المئوية أو إضافة المخزون
         if (state === 'WAIT_SEARCH_MARKUP' || state === 'WAIT_SEARCH_STOCK') {
             const query = text.toLowerCase();
             if (!cachedServices || cachedServices.length === 0) cachedServices = await fetchAllServices();
@@ -617,11 +608,9 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply('🔍 اختر المنتج من القائمة:', Markup.inlineKeyboard(buttons));
         }
 
-        // 📈 تحديد نسبة ربح للمنتج المختار
         if (state.startsWith('WAIT_SET_MARKUP_')) {
             const srvId = String(state.split('WAIT_SET_MARKUP_')[1]);
 
-            // ميزة حذف النسبة المخصصة للرجوع للعامة
             if (text.trim() === 'حذف') {
                 delete customProductMarkups[srvId];
                 saveDatabase();
@@ -637,15 +626,32 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: *${percent}%*\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
-        // 📦 إضافة مخزون للمنتج
+        // 📦 التحكم الكامل في المخزن المحلي
         if (state.startsWith('WAIT_ADD_STOCK_')) {
             const srvId = String(state.split('WAIT_ADD_STOCK_')[1]);
-            const items = text.split('\n').map(i => i.trim()).filter(i => i !== '');
+
+            if (text.trim() === 'عرض') {
+                if (!localInventory[srvId] || localInventory[srvId].length === 0) {
+                    return ctx.reply('📦 المخزن فارغ تماماً لهذا المنتج.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+                }
+                let stockList = localInventory[srvId].map((item, idx) => `📦 **عنصر رقم ${idx + 1}:**\n${item}`).join('\n\n━━━━━━━━━━━━\n\n');
+                return ctx.reply(`📦 **المخزن الحالي لهذا المنتج (${localInventory[srvId].length} عنصر):**\n\n${stockList}`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]])});
+            }
+
+            if (text.trim() === 'حذف الكل') {
+                localInventory[srvId] = [];
+                saveDatabase();
+                logAdminAction(userId, `تفريغ مخزن المنتج ${srvId}`);
+                return ctx.reply('✅ تم تفريغ المخزن لهذا المنتج بنجاح!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+            }
+
+            // الإضافة: الرسالة بالكامل تعتبر عنصر واحد مهما كان فيها من سطور
+            const item = text.trim();
             if (!localInventory[srvId]) localInventory[srvId] = [];
-            localInventory[srvId].push(...items);
+            localInventory[srvId].push(item);
             saveDatabase();
-            logAdminAction(userId, `إضافة ${items.length} عنصر למخزون المنتج ${srvId}`);
-            return ctx.reply(`✅ تم إضافة *${items.length}* عنصر للمخزن.\nإجمالي المخزون الحالي لهذا المنتج: *${localInventory[srvId].length}*`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+            logAdminAction(userId, `إضافة 1 عنصر למخزن المنتج ${srvId}`);
+            return ctx.reply(`✅ تم حفظ الرسالة بالكامل كـ **عنصر واحد** في المخزن.\nإجمالي المخزون الحالي لهذا المنتج: *${localInventory[srvId].length}*`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
         if (state === 'WAIT_USER_MSG') {
@@ -667,7 +673,6 @@ bot.on('text', async (ctx, next) => {
         }
 
         if (state === 'WAIT_CUSTOM_MARKUP') {
-            // ميزة حذف كل الأقسام
             if (text.trim() === 'حذف الكل') {
                 customMarkups = {};
                 saveDatabase();
