@@ -471,46 +471,59 @@ bot.action('admin_pending_deposits', (ctx) => {
 bot.action('admin_check_api_balance', async (ctx) => {
     try {
         ctx.editMessageText('⏳ جاري الاتصال بالمزودين...').catch(()=>{});
-        const res1 = await apiClient1.get('/me/wallet').catch(() => ({ data: { balance: 0 } }));
-        const res2 = await apiClient2.get('/me/wallet').catch(() => ({ data: { balance: 0 } }));
-        const bal1 = res1.data.data?.balance || res1.data?.balance || 0;
-        const bal2 = res2.data.data?.balance || res2.data?.balance || 0;
-        
-        ctx.editMessageText(`💰 **أرصدة المزودين:**\n\n🔹 المزود الأول: *${parseFloat(bal1).toFixed(2)}*\n🔹 المزود الثاني: *${parseFloat(bal2).toFixed(2)}*`, {
+        let msg = '💰 **أرصدة المزودين:**\n\n';
+
+        try {
+            const res1 = await apiClient1.get('/me/wallet');
+            const bal1 = res1.data.data?.balance || res1.data?.balance || 0;
+            msg += `🔹 المزود الأول: *${parseFloat(bal1).toFixed(2)}*\n`;
+        } catch(e) {
+            msg += `🔹 المزود الأول: خطأ ❌ (${e.response?.status || e.message})\n`;
+        }
+
+        try {
+            const res2 = await apiClient2.get('/me/wallet');
+            const bal2 = res2.data.data?.balance || res2.data?.balance || 0;
+            msg += `🔹 المزود الثاني: *${parseFloat(bal2).toFixed(2)}*\n`;
+        } catch(e) {
+            msg += `🔹 المزود الثاني: خطأ ❌ (${e.response?.status || e.message})\n`;
+        }
+
+        ctx.editMessageText(msg, {
             parse_mode: 'Markdown', ...Markup.inlineKeyboard([
                 [Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]
             ])
         }).catch(()=>{});
-    } catch(e) {
-        ctx.editMessageText('❌ فشل الاتصال.', Markup.inlineKeyboard([
-            [Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]
-        ])).catch(()=>{});
-    }
+    } catch(e) {}
 });
 
 bot.action('admin_check_api_status', async (ctx) => {
     try {
         ctx.editMessageText('⏳ جاري فحص استجابة سيرفرات المزودين...').catch(()=>{});
-        const start1 = Date.now();
-        await apiClient1.get('/services?limit=1').catch(() => {});
-        const latency1 = Date.now() - start1;
+        let msg = '🟢 **حالة سيرفرات المزودين (API):**\n\n';
 
-        const start2 = Date.now();
-        await apiClient2.get('/services?limit=1').catch(() => {});
-        const latency2 = Date.now() - start2;
+        try {
+            const start1 = Date.now();
+            await apiClient1.get('/services?limit=1');
+            msg += `🔹 المزود الأول: يعمل ✅ (${Date.now() - start1}ms)\n`;
+        } catch(e) {
+            msg += `🔹 المزود الأول: متعطل ❌ (${e.response?.status || e.message})\n`;
+        }
 
-        ctx.editMessageText(`🟢 **حالة سيرفرات المزودين (API):**\n\n🔹 المزود الأول: يعمل (استجابة: ${latency1}ms)\n🔹 المزود الثاني: يعمل (استجابة: ${latency2}ms)`, {
+        try {
+            const start2 = Date.now();
+            await apiClient2.get('/services?limit=1');
+            msg += `🔹 المزود الثاني: يعمل ✅ (${Date.now() - start2}ms)\n`;
+        } catch(e) {
+            msg += `🔹 المزود الثاني: متعطل ❌ (${e.response?.status || e.message})\n`;
+        }
+
+        ctx.editMessageText(msg, {
             parse_mode: 'Markdown', ...Markup.inlineKeyboard([
                 [Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]
             ])
         }).catch(()=>{});
-    } catch(e) {
-        ctx.editMessageText('❌ سيرفرات المزودين لا تستجيب أو هناك عطل تقني حالياً!', {
-            parse_mode: 'Markdown', ...Markup.inlineKeyboard([
-                [Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]
-            ])
-        }).catch(()=>{});
-    }
+    } catch(e) {}
 });
 
 bot.action('admin_toggle_maintenance', (ctx) => {
