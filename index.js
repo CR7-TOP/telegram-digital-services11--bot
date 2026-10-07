@@ -243,6 +243,7 @@ async function fetchAllServices() {
             s2.forEach(item => { 
                 item.providerSource = 'api2'; 
                 item.name = item.name || item.title || item.name_ar || "خدمة بدون اسم";
+                // نأخذ الـ ID الأصلي لو موجود عشان الطلب ينجح
                 item.id = String(item.id || item.product_id || item.service_id || item.uuid || item.code || generateStableId(item.name));
                 item.category = item.category || item.category_name || detectCategoryFromName(item.name);
 
@@ -258,16 +259,27 @@ async function fetchAllServices() {
     return services;
 }
 
+// ⚠️ تعديل ذكي لدالة الشراء عشان نضمن إنها تقبل المسميات المختلفة للمزود الثاني
 async function placeOrderWithBestProvider(srv, qty) {
     const source = srv.providerSource || 'api1';
+    // التأكد إن الكمية رقم صحيح
+    const parsedQty = parseInt(qty) || 1;
+
     if (source === 'api2') {
-         return await apiClient2.post('/order', { service_id: srv.id, quantity: qty }, { headers: { 'Idempotency-Key': Date.now().toString() } });
+         // نرسل service_id و product_id لتجنب أي مشاكل مع المزود الثاني
+         return await apiClient2.post('/order', { 
+             service_id: srv.id, 
+             product_id: srv.id, // تم الإضافة لأن المزود قد يطلب هذا المسمى
+             quantity: parsedQty 
+         });
     } else {
-         return await apiClient1.post('/orders', { service_id: srv.id, quantity: qty }, { headers: { 'Idempotency-Key': Date.now().toString() } });
+         return await apiClient1.post('/orders', { 
+             service_id: srv.id, 
+             quantity: parsedQty 
+         });
     }
 }
 
-// ⚠️ ترتيب الأقسام الثابت (من الأشهر للأقل) ⚠️
 const preferredCategoriesOrder = [
     'شات GPT', 'كانفا', 'E SIM', 'جيميناي', 'Netflix', 'Spotify', 'كاب كات', 
     'ادوبي', 'دوولينجو', 'تيليجرام', 'مايكروسوفت', 'نوشن', 'اكسبريس VPN', 
@@ -879,7 +891,6 @@ async function showCategories(ctx) {
         else return ctx.reply(errorMsg).catch(()=>{});
     }
 
-    // استخراج كل الأقسام الموجودة فعلياً في الخدمات المجلوبة
     let fetchedCategories = [];
     cachedServices.forEach(s => {
       let catStr = getServiceCategory(s);
@@ -888,24 +899,15 @@ async function showCategories(ctx) {
 
     let categories = [];
     
-    // 1. إضافة الأقسام بالترتيب المفضل لو كانت موجودة فعلاً في الخدمات
     preferredCategoriesOrder.forEach(cat => {
-        if (fetchedCategories.includes(cat)) {
-            categories.push(cat);
-        }
+        if (fetchedCategories.includes(cat)) categories.push(cat);
     });
 
-    // 2. إضافة أي قسم جديد مش موجود في قائمة الترتيب
     fetchedCategories.forEach(cat => {
-        if (!categories.includes(cat) && cat !== 'أخرى') {
-            categories.push(cat);
-        }
+        if (!categories.includes(cat) && cat !== 'أخرى') categories.push(cat);
     });
 
-    // 3. قسم "أخرى" دايماً في الآخر
-    if (fetchedCategories.includes('أخرى') && !categories.includes('أخرى')) {
-        categories.push('أخرى');
-    }
+    if (fetchedCategories.includes('أخرى') && !categories.includes('أخرى')) categories.push('أخرى');
 
     let buttons = [];
     for (let i = 0; i < categories.length; i += 2) {
@@ -1171,8 +1173,9 @@ bot.action(/buy_(.+)/, async (ctx) => {
         notifyAdmin(adminLogMsg);
 
      } catch (error) {
-        console.error('Buy API Error:', error.message);
-        await ctx.editMessageText('❌ فشل الشراء من المزود. لم يتم خصم أي مبلغ من محفظتك.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]])).catch(()=>{});
+        // ⚠️ تعديل ذكي لمعرفة سبب الرفض بالتحديد من المزود
+        const apiErrorMsg = error.response?.data?.message || error.response?.data?.error || error.message || "عطل غير معروف";
+        await ctx.editMessageText(`❌ فشل الشراء من المزود الأساسي.\n\n⚠️ السبب: ${apiErrorMsg}\n\nلم يتم خصم أي مبلغ من محفظتك.`, Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]])).catch(()=>{});
      }
   } catch (err){
       console.error('Buy General Error:', err.message);
