@@ -12,12 +12,13 @@ dotenv.config();
 const USD_TO_EGP_RATE = 50; 
 
 // ==========================================
-// إعدادات الاتصال بقاعدة بيانات MongoDB
+// 🛡️ إعدادات الاتصال بقاعدة بيانات MongoDB (محدثة لتجنب الانهيار)
 // ==========================================
 const MONGODB_URI = "mongodb+srv://ahmwogod24920s_db_user:LwAbx06XOKBWel9j@cluster0.sjxm2ga.mongodb.net/xprostore?retryWrites=true&w=majority&appName=Cluster0";
 const client = new MongoClient(MONGODB_URI);
 let dbCollection = null;
 let pendingSaves = []; 
+let isDbConnected = false;
 
 let usersDb = {};
 let globalMarkupPercent = 15;
@@ -28,15 +29,22 @@ let flashSale = { active: false, discount: 0, expiresAt: 0 };
 let vouchers = {}; 
 let adminAuditLogs = []; 
 let maintenanceMode = false; 
-let bulkQuantityStates = {}; 
 let customProductMarkups = {}; 
 let localInventory = {}; 
 
+let botStates = {
+    deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: ""
+};
+
+// 🛡️ قفل العمليات لمنع النقر المزدوج وتكرار الشراء
+const userRequestLocks = {};
+
 async function connectDB() {
-    if (!dbCollection) {
+    if (!isDbConnected) {
         await client.connect();
         const database = client.db("xprostore");
         dbCollection = database.collection("botData");
+        isDbConnected = true;
         console.log("✅ متصل بقاعدة بيانات MongoDB السحابية بنجاح!");
     }
 }
@@ -57,6 +65,7 @@ async function loadDatabase() {
             maintenanceMode = data.maintenanceMode || false;
             customProductMarkups = data.customProductMarkups || {};
             localInventory = data.localInventory || {};
+            botStates = data.botStates || { deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "" };
         }
     } catch (error) {
         console.error('❌ خطأ في تحميل قاعدة البيانات:', error);
@@ -65,7 +74,7 @@ async function loadDatabase() {
 
 function saveDatabase() {
     try {
-        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory };
+        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates };
         const savePromise = connectDB().then(() => {
             return dbCollection.updateOne({ _id: "main_data" }, { $set: data }, { upsert: true });
         }).catch(e => console.error('DB Save Error:', e));
@@ -96,22 +105,16 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
 
-const adminLoginStates = {};
-const adminSession = {}; 
-const depositStates = {};
-const broadcastStates = {}; 
-const promoCodeStates = {}; 
-const searchStates = {}; 
-const adminInputStates = {}; 
-const userRequestLocks = {};
 const categoryCacheTime = 60000; 
 let lastCategoriesFetchTime = 0;
+let cachedServices = [];
 
 function clearUserStates(userId) {
-    delete depositStates[userId];
-    delete promoCodeStates[userId];
-    delete searchStates[userId];
-    delete bulkQuantityStates[userId];
+    const idStr = String(userId);
+    delete botStates.deposit[idStr];
+    delete botStates.promo[idStr];
+    delete botStates.search[idStr];
+    saveDatabase();
 }
 
 function logAdminAction(adminId, action) {
@@ -132,49 +135,54 @@ function notifyAdmin(text) {
     } catch(e) {}
 }
 
-// ⚠️ نظام الإشعارات اليومية (سيعمل بشكل مثالي إذا كان السيرفر نشطاً وقت منتصف الليل)
-setInterval(() => {
-  try {
-    const now = new Date();
-    if (now.getHours() === 0 && now.getMinutes() === 0) {
-        let totalDaySpent = 0;
-        let totalDayProfit = 0;
-        for (let id in usersDb) {
-            if (usersDb[id].orders) {
-                const todayStr = now.toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' });
-                usersDb[id].orders.forEach(o => {
-                    if (o.date.includes(todayStr)) {
-                        totalDaySpent += parseFloat(o.price || 0);
-                        totalDayProfit += parseFloat(o.profit || (parseFloat(o.price || 0) - (parseFloat(o.price || 0) / (1 + (globalMarkupPercent / 100)))));
+// 🛡️ نظام التقارير الذكي المتوافق مع Vercel
+function checkAndSendDailyReport() {
+    try {
+        const now = new Date();
+        const currentDate = now.toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' });
+        
+        if (botStates.lastReportDate !== currentDate) {
+            if (botStates.lastReportDate !== "") {
+                let totalSpent = 0; let totalProfit = 0;
+                for (let id in usersDb) {
+                    if (usersDb[id].orders) {
+                        usersDb[id].orders.forEach(o => {
+                            if (o.date.includes(botStates.lastReportDate)) {
+                                totalSpent += parseFloat(o.price || 0);
+                                totalProfit += parseFloat(o.profit || (parseFloat(o.price || 0) - (parseFloat(o.price || 0) / (1 + (globalMarkupPercent / 100)))));
+                            }
+                        });
                     }
-                });
+                }
+                notifyAdmin(`📊 **التقرير المالي التلقائي ليوم (${botStates.lastReportDate}):**\n\n💰 إجمالي المشتريات: <b>${totalSpent.toFixed(2)} EGP</b>\n💸 صافي الأرباح: <b>${totalProfit.toFixed(2)} EGP</b>\n📈 نسبة الربح العامة: ${globalMarkupPercent}%`);
             }
+            botStates.lastReportDate = currentDate;
+            saveDatabase();
         }
-        notifyAdmin(`📊 التقرير المالي اليومي التلقائي:\n\n💰 إجمالي المشتريات اليوم: <b>${totalDaySpent.toFixed(2)} EGP</b>\n💸 صافي أرباح اليوم: <b>${totalDayProfit.toFixed(2)} EGP</b>\n📈 نسبة الربح العامة الحالية: ${globalMarkupPercent}%`);
-    }
-  } catch(e) {}
-}, 60000);
+    } catch(e) {}
+}
 
 function initUser(userId) {
   try {
-    if (!usersDb[userId]) {
+    const idStr = String(userId);
+    if (!usersDb[idStr]) {
       let isUnique = false; let newUid;
       while (!isUnique) {
         newUid = Math.floor(1000000000 + Math.random() * 9000000000);
         isUnique = true;
         for (let tgId in usersDb) { if (String(usersDb[tgId].uid) === String(newUid)) { isUnique = false; break; } }
       }
-      usersDb[userId] = { uid: newUid, balance: 0, orders: [], walletHistory: [], isBanned: false, totalSpent: 0, isVip: false, referrals: 0, referredBy: null, tempCategories: [] }; 
+      usersDb[idStr] = { uid: newUid, balance: 0, orders: [], walletHistory: [], isBanned: false, totalSpent: 0, isVip: false, referrals: 0, referredBy: null, tempCategories: [] }; 
       saveDatabase(); 
     } else {
-        if (!usersDb[userId].orders) usersDb[userId].orders = [];
-        if (!usersDb[userId].walletHistory) usersDb[userId].walletHistory = [];
-        if (usersDb[userId].isBanned === undefined) usersDb[userId].isBanned = false;
-        if (usersDb[userId].totalSpent === undefined) usersDb[userId].totalSpent = 0;
-        if (usersDb[userId].isVip === undefined) usersDb[userId].isVip = false;
-        if (usersDb[userId].referrals === undefined) usersDb[userId].referrals = 0;
-        if (usersDb[userId].referredBy === undefined) usersDb[userId].referredBy = null;
-        if (!usersDb[userId].tempCategories) usersDb[userId].tempCategories = [];
+        if (!usersDb[idStr].orders) usersDb[idStr].orders = [];
+        if (!usersDb[idStr].walletHistory) usersDb[idStr].walletHistory = [];
+        if (usersDb[idStr].isBanned === undefined) usersDb[idStr].isBanned = false;
+        if (usersDb[idStr].totalSpent === undefined) usersDb[idStr].totalSpent = 0;
+        if (usersDb[idStr].isVip === undefined) usersDb[idStr].isVip = false;
+        if (usersDb[idStr].referrals === undefined) usersDb[idStr].referrals = 0;
+        if (usersDb[idStr].referredBy === undefined) usersDb[idStr].referredBy = null;
+        if (!usersDb[idStr].tempCategories) usersDb[idStr].tempCategories = [];
     }
   } catch(e) {}
 }
@@ -229,7 +237,6 @@ function detectCategoryFromName(name) {
 
 async function fetchAllServices() {
     let services = [];
-    
     try {
         const res1 = await apiClient1.get('/services?limit=1000');
         let s1 = res1.data.data || res1.data.services || res1.data;
@@ -246,18 +253,15 @@ async function fetchAllServices() {
     try {
         const res2 = await apiClient2.get('/products');
         let s2 = res2.data.data || res2.data.products || res2.data.services || res2.data;
-        
         if (!Array.isArray(s2) && typeof s2 === 'object') {
             for (let key in s2) { if (Array.isArray(s2[key])) { s2 = s2[key]; break; } }
         }
-
         if (Array.isArray(s2)) {
             s2.forEach(item => { 
                 item.providerSource = 'api2'; 
                 item.name = item.name || item.title || item.name_ar || "خدمة بدون اسم";
                 item.id = String(item.id || item.product_id || item.service_id || item.uuid || item.code || generateStableId(item.name));
                 item.category = item.category || item.category_name || detectCategoryFromName(item.name);
-
                 let rawPriceUSD = parseFloat(item.price || item.rate || item.price_amount || 0);
                 let egpPrice = (rawPriceUSD * USD_TO_EGP_RATE).toFixed(2);
                 item.price = egpPrice;
@@ -266,7 +270,6 @@ async function fetchAllServices() {
             services.push(...s2);
         }
     } catch(e) {}
-
     return services;
 }
 
@@ -307,8 +310,6 @@ const categoryEmojis = {
   'خدمات API': '🔌', 'أخرى': '📦'
 };
 
-let cachedServices = [];
-
 function getMainMenu() {
   let keyboard = [
     ['🛍 الخدمات', '🔍 بحث عن خدمة'],
@@ -319,16 +320,26 @@ function getMainMenu() {
   return Markup.keyboard(keyboard).resize();
 }
 
+bot.use(async (ctx, next) => {
+    checkAndSendDailyReport(); 
+    return next();
+});
+
 bot.start((ctx) => {
   try {
-    const userId = ctx.from.id; initUser(userId); 
+    const userId = String(ctx.from.id); initUser(userId); 
     clearUserStates(userId);
 
     if (usersDb[userId].isBanned) return ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
     const isNewUser = !usersDb[userId].referredBy && userId;
-    const payload = ctx.startPayload;
+    let payload = null;
+    if (ctx.message && ctx.message.text) {
+        const parts = ctx.message.text.split(' ');
+        if (parts.length > 1) payload = parts[1];
+    }
+
     if (isNewUser && payload && payload.startsWith('ref_')) {
         const referrerUid = payload.split('_')[1];
         const referrer = getUserByUid(referrerUid);
@@ -350,24 +361,23 @@ function calculateRetailPrice(service, user, quantity = 1) {
     const cat = getServiceCategory(service);
 
     let markup = parseFloat(globalMarkupPercent) || 0;
-
-    if (customMarkups && customMarkups[cat] !== undefined) {
-        markup = parseFloat(customMarkups[cat]);
-    }
+    if (customMarkups && customMarkups[cat] !== undefined) { markup = parseFloat(customMarkups[cat]); }
 
     const srvIdStr = String(service.id);
-    if (customProductMarkups && customProductMarkups[srvIdStr] !== undefined) {
-        markup = parseFloat(customProductMarkups[srvIdStr]);
-    }
+    if (customProductMarkups && customProductMarkups[srvIdStr] !== undefined) { markup = parseFloat(customProductMarkups[srvIdStr]); }
 
     if (user && user.isVip) markup = Math.max(0, markup - 5);
-
     let finalPrice = originalPrice * (1 + (markup / 100));
 
-    if (flashSale.active && Date.now() < flashSale.expiresAt) {
-        finalPrice = finalPrice - (finalPrice * (flashSale.discount / 100));
+    // 🛡️ إيقاف الخصم التلقائي عند انتهاء الوقت لحماية لوحة التحكم
+    if (flashSale.active) {
+        if (Date.now() < flashSale.expiresAt) {
+            finalPrice = finalPrice - (finalPrice * (flashSale.discount / 100));
+        } else {
+            flashSale.active = false;
+            saveDatabase();
+        }
     }
-
     return (finalPrice * quantity).toFixed(2);
   } catch(e) {
     return '0.00';
@@ -376,7 +386,7 @@ function calculateRetailPrice(service, user, quantity = 1) {
 
 bot.hears(/^💰 حسابي$/, (ctx) => {
   try {
-    const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
+    const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
     const user = usersDb[userId];
     if (user.isBanned) return ctx.reply('❌ تم حظرك.').catch(()=>{});
     const vipTag = user.isVip ? '👑 (VIP)' : '👤 (عادي)';
@@ -386,20 +396,27 @@ bot.hears(/^💰 حسابي$/, (ctx) => {
 
 bot.hears(/^🛒 طلباتي$/, (ctx) => {
     try {
-      const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
+      const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
       const userOrders = usersDb[userId].orders || [];
       if (userOrders.length === 0) return ctx.reply('🛒 لم تقم بأي عمليات شراء حتى الآن.').catch(()=>{});
+      
       const lastOrders = userOrders.slice(-5).reverse();
       let message = '🛒 **آخر عمليات الشراء الخاصة بك:**\n\n';
-      lastOrders.forEach(order => { message += '🛍 **الخدمة:** ' + order.name + '\n💰 **السعر:** ' + parseFloat(order.price).toFixed(2) + ' EGP\n🕒 **التاريخ:** ' + order.date + '\n━━━━━━━━━━━━\n'; });
+      lastOrders.forEach(order => { 
+          message += `🛍 **الخدمة:** ${order.name}\n💰 **السعر:** ${parseFloat(order.price).toFixed(2)} EGP\n🕒 **التاريخ:** ${order.date}\n`;
+          if (order.details && order.details.trim() !== '') {
+              message += `📌 **البيانات المسلمة:**\n\`${order.details}\`\n`;
+          }
+          message += '━━━━━━━━━━━━\n'; 
+      });
       ctx.reply(message, { parse_mode: 'Markdown' }).catch(()=>{});
     } catch(e){}
 });
 
 bot.hears(/^📜 سجل المحفظة$/, (ctx) => {
     try {
-      const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
+      const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
       const history = usersDb[userId].walletHistory || [];
       if (history.length === 0) return ctx.reply('📜 لا توجد معاملات مالية مسجلة حتى الآن.').catch(()=>{});
@@ -413,7 +430,7 @@ bot.hears(/^📜 سجل المحفظة$/, (ctx) => {
 
 bot.hears(/^📞 الدعم الفني$/, (ctx) => {
     try {
-      const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
+      const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
       ctx.reply('📞 **تواصل مع الدعم الفني:**\n\nيرجى اختيار طريقة التواصل المناسبة لك:', {
         parse_mode: 'Markdown',
@@ -427,7 +444,7 @@ bot.hears(/^📞 الدعم الفني$/, (ctx) => {
 
 bot.hears(/^🔗 دعوة الأصدقاء \(اربح 2%\)$/, (ctx) => {
     try {
-      const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
+      const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
       const refLink = 'https://t.me/' + ctx.botInfo.username + '?start=ref_' + usersDb[userId].uid;
       ctx.reply('🎁 **نظام دعوة الأصدقاء المربح:**\n\nشارِك رابط الدعوة مع أصدقائك، وكلما قام أحدهم **بشحن محفظته**، ستحصل أنت فوراً على **2%** من قيمة شحنه تضاف لرصيدك تلقائياً!\n\n🔗 رابط الدعوة الخاص بك:\n`' + refLink + '`\n\n👥 عدد الأشخاص الذين دعوتهم: ' + usersDb[userId].referrals, {parse_mode: 'Markdown'}).catch(()=>{});
@@ -436,27 +453,27 @@ bot.hears(/^🔗 دعوة الأصدقاء \(اربح 2%\)$/, (ctx) => {
 
 bot.hears(/^🔍 بحث عن خدمة$/, (ctx) => {
     try {
-      const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
+      const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
-      searchStates[userId] = true;
+      botStates.search[userId] = true; saveDatabase();
       ctx.reply('🔍 أرسل اسم الخدمة التي تبحث عنها (مثال: Canva أو نتفلكس) أو اكتب `Ahmed/` لتسجيل دخول الأدمن:').catch(()=>{});
     } catch(e){}
 });
 
 bot.hears(/^💳 شحن المحفظة \(فودافون كاش\)$/, (ctx) => {
   try {
-    const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
+    const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
     if (usersDb[userId].isBanned) return;
-    depositStates[userId] = { step: 'WAIT_AMOUNT' };
+    botStates.deposit[userId] = { step: 'WAIT_AMOUNT' }; saveDatabase();
     ctx.reply('💳 **شحن المحفظة عبر فودافون كاش**\n\nمن فضلك أكتب **المبلغ** الذي قمت بتحويله بالجنيه المصري (مثال: 100):').catch(()=>{});
   } catch(e){}
 });
 
 bot.hears(/^🎟 استخدام كود خصم$/, (ctx) => { 
     try {
-      const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
+      const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
-      promoCodeStates[userId] = true;
+      botStates.promo[userId] = true; saveDatabase();
       ctx.reply('🎟️ **استخدام كود خصم أو قسيمة شحن:**\n\nمن فضلك أرسل الكود الآن في رسالة:', {parse_mode: 'Markdown'}).catch(()=>{}); 
     } catch(e){}
 });
@@ -493,13 +510,12 @@ function showAdminPanel(ctx) {
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
-        [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_voucher')],
+        [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_promo')],
         [Markup.button.callback('✉ مراسلة عميل بالـ ID', 'admin_msg_by_id'), Markup.button.callback('👥 شحن رصيد بالـ ID', 'admin_charge_by_id')], 
         [Markup.button.callback('🛠️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
         [Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users'), Markup.button.callback('💸 تقرير الأرباح', 'admin_profit_report')],
         [Markup.button.callback('🚫 حظر مستخدم', 'admin_ban_user'), Markup.button.callback('✅ فك حظر مستخدم', 'admin_unban_user')],
-        [Markup.button.callback('📢 إرسال رسالة (إذاعة)', 'admin_broadcast'), Markup.button.callback('🎟️ إنشاء كود خصم', 'admin_create_promo')],
-        [Markup.button.callback('🚪 تسجيل خروج', 'admin_logout')]
+        [Markup.button.callback('📢 إرسال رسالة (إذاعة)', 'admin_broadcast'), Markup.button.callback('🚪 تسجيل خروج', 'admin_logout')]
       ]);
 
     if(ctx.callbackQuery) { ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard }).catch(()=>{}); }
@@ -508,6 +524,7 @@ function showAdminPanel(ctx) {
 }
 
 bot.action('admin_profit_report', (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
     try {
         let totalProfit = 0; let todayProfit = 0; let yesterdayProfit = 0;
         const now = new Date();
@@ -520,8 +537,12 @@ bot.action('admin_profit_report', (ctx) => {
             if (user.orders && user.orders.length > 0) {
                 user.orders.forEach(order => {
                     let profit = 0;
-                    if (order.profit !== undefined) { profit = parseFloat(order.profit); } 
-                    else { const price = parseFloat(order.price || 0); profit = price - (price / (1 + (globalMarkupPercent / 100))); }
+                    if (order.profit !== undefined && !isNaN(parseFloat(order.profit))) { 
+                        profit = parseFloat(order.profit); 
+                    } else { 
+                        const price = parseFloat(order.price || 0); 
+                        profit = isNaN(price) ? 0 : price - (price / (1 + (globalMarkupPercent / 100))); 
+                    }
                     totalProfit += profit;
                     if (order.date.includes(todayStr)) { todayProfit += profit; } 
                     else if (order.date.includes(yesterdayStr)) { yesterdayProfit += profit; }
@@ -534,24 +555,29 @@ bot.action('admin_profit_report', (ctx) => {
 });
 
 bot.action('admin_search_markup', (ctx) => {
-    adminInputStates[ctx.from.id] = 'WAIT_SEARCH_MARKUP';
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_SEARCH_MARKUP'; saveDatabase();
     ctx.editMessageText('🔍 أرسل اسم المنتج الذي تريد تحديد **نسبة ربح مخصصة** له:').catch(()=>{});
 });
 bot.action('admin_search_stock', (ctx) => {
-    adminInputStates[ctx.from.id] = 'WAIT_SEARCH_STOCK';
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_SEARCH_STOCK'; saveDatabase();
     ctx.editMessageText('📦 أرسل اسم المنتج الذي تريد إدارة مخزونه المحلي:').catch(()=>{});
 });
 
-bot.action(/setmarkup_(.+)/, (ctx) => {
-    adminInputStates[ctx.from.id] = 'WAIT_SET_MARKUP_' + ctx.match[1];
+bot.action(/^setmarkup_(.+)$/, (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_SET_MARKUP_' + ctx.match[1]; saveDatabase();
     ctx.editMessageText('📈 أرسل النسبة المئوية للربح لهذا المنتج فقط (مثال: اكتب 50 لربح 50%).\n\n🗑️ لإلغاء النسبة المخصصة وجعل المنتج يتبع النسبة العامة، اكتب كلمة: `حذف`', {parse_mode: 'Markdown'}).catch(()=>{});
 });
-bot.action(/addstock_(.+)/, (ctx) => {
-    adminInputStates[ctx.from.id] = 'WAIT_ADD_STOCK_' + ctx.match[1];
+bot.action(/^addstock_(.+)$/, (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_ADD_STOCK_' + ctx.match[1]; saveDatabase();
     ctx.editMessageText('📦 **إدارة المخزن المحلي لهذا المنتج:**\n\n➕ **للإضافة:** أرسل رسالة تحتوي على البيانات كاملة.\n👀 **للعرض:** أرسل كلمة `عرض` لمعرفة محتويات المخزن.\n🗑️ **للحذف:** أرسل كلمة `حذف الكل` لتفريغ مخزن هذا المنتج بالكامل.', {parse_mode: 'Markdown'}).catch(()=>{});
 });
 
 bot.action('admin_pending_deposits', (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
     try {
         if (!pendingDeposits || pendingDeposits.length === 0) return ctx.editMessageText('💳 **طلبات الشحن المعلقة:**\n\nلا توجد طلبات شحن معلقة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
         let msg = '💳 **طلبات الشحن المعلقة (' + pendingDeposits.length + '):**\n\n';
@@ -566,6 +592,7 @@ bot.action('admin_pending_deposits', (ctx) => {
 });
 
 bot.action('admin_check_api_balance', async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
     try {
         ctx.editMessageText('⏳ جاري الاتصال بالمزودين...').catch(()=>{});
         let msg = '💰 **أرصدة المزودين:**\n\n';
@@ -578,6 +605,7 @@ bot.action('admin_check_api_balance', async (ctx) => {
 });
 
 bot.action('admin_check_api_status', async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
     try {
         ctx.editMessageText('⏳ جاري فحص استجابة سيرفرات المزودين...').catch(()=>{});
         let msg = '🟢 **حالة سيرفرات المزودين (API):**\n\n';
@@ -590,13 +618,15 @@ bot.action('admin_check_api_status', async (ctx) => {
 });
 
 bot.action('admin_toggle_maintenance', (ctx) => {
+    ctx.answerCbQuery('تم التغيير بنجاح').catch(()=>{});
     try {
       maintenanceMode = !maintenanceMode; saveDatabase(); logAdminAction(ctx.from.id, 'تغيير وضع الصيانة');
-      showAdminPanel(ctx); ctx.answerCbQuery('تم التغيير بنجاح').catch(()=>{});
+      showAdminPanel(ctx);
     } catch(e){}
 });
 
 bot.action('admin_view_logs', (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
     try {
       let msg = '📝 **سجل نشاط الأدمن (آخر 15 حركة):**\n\n';
       if (adminAuditLogs.length === 0) msg += 'لا توجد حركات مسجلة بعد.';
@@ -605,10 +635,11 @@ bot.action('admin_view_logs', (ctx) => {
     } catch(e){}
 });
 
-bot.action('back_to_admin', (ctx) => { try { showAdminPanel(ctx); } catch(e){} });
-bot.action('admin_logout', (ctx) => { adminSession[ctx.from.id] = false; adminLoginStates[ctx.from.id] = null; ctx.editMessageText('✅ تم تسجيل الخروج.').catch(()=>{}); });
+bot.action('back_to_admin', (ctx) => { ctx.answerCbQuery().catch(()=>{}); try { showAdminPanel(ctx); } catch(e){} });
+bot.action('admin_logout', (ctx) => { ctx.answerCbQuery().catch(()=>{}); botStates.adminSession[ctx.from.id] = false; botStates.adminLogin[ctx.from.id] = null; saveDatabase(); ctx.editMessageText('✅ تم تسجيل الخروج.').catch(()=>{}); });
 
 bot.action('admin_view_users', (ctx) => {
+  ctx.answerCbQuery().catch(()=>{});
   try {
     let userList = '👥 **قائمة العملاء:**\n\n'; let count = 0;
     for (let tgId in usersDb) { 
@@ -618,69 +649,78 @@ bot.action('admin_view_users', (ctx) => {
     if (count === 0) userList = 'لا يوجد عملاء.';
     if (userList.length > 3900) userList = userList.substring(0, 3900) + '\n...';
     ctx.editMessageText(userList, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{}); 
-    ctx.answerCbQuery().catch(()=>{});
   } catch(e){}
 });
 
 bot.action('admin_set_global_markup', (ctx) => {
-    adminInputStates[ctx.from.id] = 'WAIT_GLOBAL_MARKUP';
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_GLOBAL_MARKUP'; saveDatabase();
     ctx.editMessageText('📊 **تعديل النسبة العامة:**\n\nأرسل الآن نسبة الربح الجديدة بالأرقام فقط (مثال: 15):', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_set_custom_markup', (ctx) => {
-    adminInputStates[ctx.from.id] = 'WAIT_CUSTOM_MARKUP';
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_CUSTOM_MARKUP'; saveDatabase();
     ctx.editMessageText('🎯 **تعديل نسبة قسم معين:**\n\nأرسل اسم القسم والنسبة هكذا:\n`اسم_القسم النسبة`\n\n🗑️ لمسح جميع نسب الأقسام والعودة للنسبة العامة، اكتب: `حذف الكل`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_flash_sale', (ctx) => {
-    adminInputStates[ctx.from.id] = 'WAIT_FLASH_SALE';
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_FLASH_SALE'; saveDatabase();
     ctx.editMessageText('⚡ **إعداد خصم مؤقت:**\n\nأرسل نسبة الخصم وعدد الساعات هكذا:\n`النسبة الساعات`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_charge_by_id', (ctx) => {
-    adminInputStates[ctx.from.id] = 'WAIT_CHARGE_USER';
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_CHARGE_USER'; saveDatabase();
     ctx.editMessageText('💰 **شحن رصيد لعميل:**\n\nأرسل الآيدي والمبلغ هكذا (بينهم مسافة):\n`الآيدي المبلغ`\n(مثال: `123456789 50`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_create_promo', (ctx) => {
-    adminInputStates[ctx.from.id] = 'WAIT_PROMO_CREATE';
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_PROMO_CREATE'; saveDatabase();
     ctx.editMessageText('🎟️ **إنشاء كود خصم عام:**\n\nأرسل الكود والمبلغ هكذا (بينهم مسافة):\n`الكود المبلغ`\n(مثال: `WELCOME 20`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_create_voucher', (ctx) => {
-    adminInputStates[ctx.from.id] = 'WAIT_VOUCHER_CREATE';
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_VOUCHER_CREATE'; saveDatabase();
     ctx.editMessageText('🎫 **توليد كروت شحن (قسائم):**\n\nأرسل الكود والمبلغ هكذا (بينهم مسافة):\n`الكود المبلغ`\n(مثال: `VIP100 100`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_ban_user', (ctx) => {
-    adminInputStates[ctx.from.id] = 'WAIT_BAN_USER';
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_BAN_USER'; saveDatabase();
     ctx.editMessageText('🚫 **حظر مستخدم:**\n\nأرسل الآيدي (ID) الخاص بالعميل لحظره نهائياً:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_unban_user', (ctx) => {
-    adminInputStates[ctx.from.id] = 'WAIT_UNBAN_USER';
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_UNBAN_USER'; saveDatabase();
     ctx.editMessageText('✅ **فك حظر مستخدم:**\n\nأرسل الآيدي (ID) الخاص بالعميل لفك الحظر عنه:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_msg_by_id', (ctx) => {
-    adminInputStates[ctx.from.id] = 'WAIT_USER_MSG';
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_USER_MSG'; saveDatabase();
     ctx.editMessageText('✉️ **مراسلة عميل عبر الـ ID:**\n\nأرسل الآيدي والرسالة هكذا:\n`الآيدي الرسالة`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_broadcast', (ctx) => { 
-    broadcastStates[ctx.from.id] = true; 
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.broadcast[ctx.from.id] = true; saveDatabase();
     ctx.editMessageText('📢 أرسل رسالة الإذاعة (أو اكتب `إلغاء`):', { ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{}); 
 });
 
 
 bot.on('text', async (ctx, next) => {
   try {
-    const userId = ctx.from.id; initUser(userId);
+    const userId = String(ctx.from.id); initUser(userId);
     if (usersDb[userId].isBanned) return;
     const text = ctx.message.text;
 
-    if (promoCodeStates[userId]) {
-        delete promoCodeStates[userId]; 
+    if (botStates.promo[userId]) {
+        delete botStates.promo[userId]; saveDatabase();
         const textCode = text.trim().toUpperCase();
 
         if (vouchers[textCode]) {
@@ -692,7 +732,7 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply(`🎉 **تم شحن محفظتك بنجاح!**\n💰 تمت إضافة: *${amount} EGP*\n💳 رصيدك الحالي: *${usersDb[userId].balance.toFixed(2)} EGP*`, { parse_mode: 'Markdown' }).catch(()=>{});
         }
         if (promoCodes[textCode]) {
-            if (promoCodes[textCode].usedBy.includes(userId)) return ctx.reply('❌ لقد قمت باستخدام كود الخصم هذا مسبقاً.').catch(()=>{});
+            if (promoCodes[textCode].usedBy.map(String).includes(userId)) return ctx.reply('❌ لقد قمت باستخدام كود الخصم هذا مسبقاً.').catch(()=>{});
             const amount = promoCodes[textCode].amount; usersDb[userId].balance += amount;
             usersDb[userId].walletHistory.push({ type: 'كود خصم (' + textCode + ')', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
             promoCodes[textCode].usedBy.push(userId); saveDatabase();
@@ -703,13 +743,13 @@ bot.on('text', async (ctx, next) => {
     }
 
     if (text.trim() === 'Ahmed/') {
-        adminLoginStates[userId] = 'WAIT_EMAIL';
+        botStates.adminLogin[userId] = 'WAIT_EMAIL'; saveDatabase();
         return ctx.reply('🔐 **تسجيل دخول الأدمن**\n\nيرجى إرسال البريد الإلكتروني (Email):').catch(()=>{});
     }
 
-    if (adminSession[userId] && adminInputStates[userId]) {
-        const state = adminInputStates[userId];
-        delete adminInputStates[userId];
+    if (botStates.adminSession[userId] && botStates.adminInput[userId]) {
+        const state = botStates.adminInput[userId];
+        delete botStates.adminInput[userId]; saveDatabase();
 
         if (state === 'WAIT_CHARGE_USER') {
             const parts = text.trim().split(/\s+/);
@@ -795,7 +835,6 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: *${percent}%*\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
-        // 👈 حماية عرض المخزن من التعليق بسبب كثرة العناصر
         if (state.startsWith('WAIT_ADD_STOCK_')) {
             const srvId = String(state.split('WAIT_ADD_STOCK_')[1]);
 
@@ -887,44 +926,54 @@ bot.on('text', async (ctx, next) => {
         }
     }
 
-    if (searchStates[userId]) {
-        delete searchStates[userId]; const query = text.toLowerCase();
+    if (botStates.search[userId]) {
+        delete botStates.search[userId]; saveDatabase();
+        const query = text.toLowerCase();
         if (!cachedServices || cachedServices.length === 0) cachedServices = await fetchAllServices();
         const results = cachedServices.filter(s => (s.name_ar || s.name || s.title || '').toLowerCase().includes(query));
         if(results.length === 0) return ctx.reply('❌ لا توجد نتائج مطابقة.').catch(()=>{});
-        let buttons = results.slice(0, 15).map(srv => [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ' - ' + calculateRetailPrice(srv, usersDb[userId]) + ' EGP', 'confirm_' + srv.id)]);
+        let buttons = results.slice(0, 15).map(srv => [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ' - ' + calculateRetailPrice(srv, usersDb[userId]) + ' EGP', `buyact_${srv.id}`)]);
         return ctx.reply('🔍 نتائج البحث:', Markup.inlineKeyboard(buttons)).catch(()=>{});
     }
 
-    if (adminLoginStates[userId] === 'WAIT_EMAIL') {
-      if (text.trim() === ADMIN_EMAIL) { adminLoginStates[userId] = 'WAIT_PASS'; return ctx.reply('🔒 أرسل كلمة المرور:').catch(()=>{}); } 
-      else { adminLoginStates[userId] = null; return ctx.reply('❌ بريد خاطئ.').catch(()=>{}); }
+    if (botStates.adminLogin[userId] === 'WAIT_EMAIL') {
+      if (text.trim() === ADMIN_EMAIL) { botStates.adminLogin[userId] = 'WAIT_PASS'; saveDatabase(); return ctx.reply('🔒 أرسل كلمة المرور:').catch(()=>{}); } 
+      else { botStates.adminLogin[userId] = null; saveDatabase(); return ctx.reply('❌ بريد خاطئ.').catch(()=>{}); }
     }
-    if (adminLoginStates[userId] === 'WAIT_PASS') {
+    if (botStates.adminLogin[userId] === 'WAIT_PASS') {
       if (text.trim() === ADMIN_PASS) {
-        adminLoginStates[userId] = null; adminSession[userId] = true;
+        botStates.adminLogin[userId] = null; botStates.adminSession[userId] = true;
         initUser(userId); usersDb[userId].uid = 1001; saveDatabase();
         ctx.reply('✅ تم تسجيل الدخول.').catch(()=>{}); return showAdminPanel(ctx);
-      } else { adminLoginStates[userId] = null; return ctx.reply('❌ كلمة مرور خاطئة.').catch(()=>{}); }
+      } else { botStates.adminLogin[userId] = null; saveDatabase(); return ctx.reply('❌ كلمة مرور خاطئة.').catch(()=>{}); }
     }
 
-    if (broadcastStates[userId]) {
-        if (text.trim() === 'إلغاء') { delete broadcastStates[userId]; return ctx.reply('✅ تم الإلغاء.'); }
+    // 🛡️ حماية ضد حظر تليجرام للإذاعة
+    if (botStates.broadcast[userId]) {
+        if (text.trim() === 'إلغاء') { delete botStates.broadcast[userId]; saveDatabase(); return ctx.reply('✅ تم الإلغاء.'); }
+        
+        ctx.reply('⏳ جاري إرسال الإذاعة لجميع العملاء... (تتم ببطء لتجنب حظر تليجرام)').catch(()=>{});
+        let count = 0;
         for (let tgId in usersDb) {
-            if (String(usersDb[tgId].uid) !== '1001') bot.telegram.sendMessage(tgId, '📢 **إذاعة:**\n\n' + text).catch(() => {});
+            if (String(usersDb[tgId].uid) !== '1001') {
+                bot.telegram.sendMessage(tgId, '📢 **إذاعة:**\n\n' + text).catch(() => {});
+                count++;
+                if (count % 15 === 0) await new Promise(r => setTimeout(r, 200)); 
+            }
         }
-        delete broadcastStates[userId]; return ctx.reply('✅ تم الإرسال للجميع.');
+        delete botStates.broadcast[userId]; saveDatabase(); 
+        return ctx.reply('✅ تم الإرسال للجميع بنجاح.');
     }
 
-    if (depositStates[userId]) {
-      const state = depositStates[userId];
+    if (botStates.deposit[userId]) {
+      const state = botStates.deposit[userId];
       if (state.step === 'WAIT_AMOUNT') {
         const amount = parseFloat(text);
         if (isNaN(amount) || amount <= 0) return ctx.reply('❌ أدخل مبلغاً صحيحاً:').catch(()=>{});
-        state.amount = amount; state.step = 'WAIT_NUMBER';
+        state.amount = amount; state.step = 'WAIT_NUMBER'; saveDatabase();
         return ctx.reply('💳 حول (' + amount + ' EGP) على رقم فودافون كاش:\n📱 `' + vodafoneCashNumber + '`\n\n**ثم أرسل الرقم الذي حوّلت منه:**', { parse_mode: 'Markdown' }).catch(()=>{});
       } else if (state.step === 'WAIT_NUMBER') {
-        const amount = state.amount; delete depositStates[userId]; initUser(userId);
+        const amount = state.amount; delete botStates.deposit[userId]; initUser(userId);
         const reqData = { userId, userUid: usersDb[userId].uid, amount, senderNumber: text }; 
         ctx.reply('⏳ تم إرسال طلب الشحن للإدارة بنجاح، سيتم المراجعة والإضافة قريباً.').catch(()=>{});
         pendingDeposits.push(reqData); saveDatabase(); sendDepositNotification(reqData); return;
@@ -936,6 +985,7 @@ bot.on('text', async (ctx, next) => {
 });
 
 bot.action(/approve_dep_(\d+)_([\d.]+)/, async (ctx) => {
+  ctx.answerCbQuery().catch(()=>{});
   try {
     const targetUserId = ctx.match[1]; const amount = parseFloat(ctx.match[2]);
     initUser(targetUserId); usersDb[targetUserId].balance += amount; 
@@ -954,6 +1004,7 @@ bot.action(/approve_dep_(\d+)_([\d.]+)/, async (ctx) => {
 });
 
 bot.action(/reject_dep_(\d+)/, async (ctx) => {
+  ctx.answerCbQuery().catch(()=>{});
   try {
     const targetUserId = ctx.match[1];
     pendingDeposits = pendingDeposits.filter(d => String(d.userId) !== String(targetUserId)); saveDatabase();
@@ -966,16 +1017,12 @@ bot.hears(/^🛍 الخدمات$/, showCategories);
 bot.action('main_categories', showCategories);
 
 async function showCategories(ctx) {
-  const userId = ctx.from.id;
+  const userId = String(ctx.from.id);
   try {
-    initUser(userId);
-    clearUserStates(userId);
+    initUser(userId); clearUserStates(userId);
     
     if (usersDb[userId].isBanned) return ctx.reply('🛠 المتجر في حالة صيانة حالياً.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return ctx.reply('🛠 المتجر في حالة صيانة حالياً.').catch(()=>{});
-
-    if (userRequestLocks[userId]) { return ctx.answerCbQuery('⚠️ انتظر لحظة...', { show_alert: false }).catch(()=>{}); }
-    userRequestLocks[userId] = true; setTimeout(() => { delete userRequestLocks[userId]; }, 1500);
 
     let loadingMsgId = null;
     if(ctx.callbackQuery) { await ctx.answerCbQuery().catch(()=>{}); ctx.editMessageText('⏳ جاري جلب الأقسام...').catch(()=>{}); } 
@@ -999,7 +1046,6 @@ async function showCategories(ctx) {
     });
 
     let categories = [];
-    
     preferredCategoriesOrder.forEach(cat => {
         if (fetchedCategories.includes(cat)) categories.push(cat);
     });
@@ -1020,22 +1066,23 @@ async function showCategories(ctx) {
     buttons.push([Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]);
     const keyboard = Markup.inlineKeyboard(buttons);
 
-    // 👈 تأمين الأقسام لكل مستخدم لوحده
+    // 🛡️ حفظ الأقسام بطريقة آمنة لكل عميل بمفرده لعدم التداخل
     usersDb[userId].tempCategories = categories;
+    saveDatabase();
 
     if(ctx.callbackQuery) { return ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{}); } 
     else if(loadingMsgId) { return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, 'اختر الفئة:', keyboard).catch(()=>{}); } 
     else { return ctx.reply('اختر الفئة:', keyboard).catch(()=>{}); }
 
   } catch (error) {
-    delete userRequestLocks[userId];
     if(ctx.callbackQuery) ctx.editMessageText('❌ حدث خطأ مؤقت، يرجى المحاولة مجدداً.').catch(()=>{});
   }
 }
 
-bot.action(/cat_(\d+)/, async (ctx) => {
+bot.action(/^cat_(\d+)$/, async (ctx) => {
+  ctx.answerCbQuery().catch(()=>{});
   try {
-    const userId = ctx.from.id; initUser(userId);
+    const userId = String(ctx.from.id); initUser(userId);
     if (usersDb[userId].isBanned) return;
 
     const catIndex = parseInt(ctx.match[1]);
@@ -1043,7 +1090,7 @@ bot.action(/cat_(\d+)/, async (ctx) => {
     
     if (!selectedCategory || !cachedServices || cachedServices.length === 0) { 
         cachedServices = await fetchAllServices(); 
-        return ctx.answerCbQuery('يرجى إعادة فتح الأقسام.', { show_alert: true }).catch(()=>{});
+        return ctx.editMessageText('⚠️ يرجى إعادة فتح الأقسام من البداية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
     }
 
     const categoryServices = cachedServices.filter(s => {
@@ -1051,9 +1098,9 @@ bot.action(/cat_(\d+)/, async (ctx) => {
       return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
     });
 
-    if (categoryServices.length === 0) return ctx.answerCbQuery('لا توجد خدمات.', { show_alert: true }).catch(()=>{});
+    if (categoryServices.length === 0) return ctx.editMessageText('لا توجد خدمات حالياً في هذا القسم.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
 
-    let buttons = categoryServices.map(srv => [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ' - ' + calculateRetailPrice(srv, usersDb[userId], 1) + ' EGP', 'confirm_' + srv.id)]);
+    let buttons = categoryServices.map(srv => [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ' - ' + calculateRetailPrice(srv, usersDb[userId], 1) + ' EGP', `buyact_${srv.id}`)]);
     buttons.push([Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]);
 
     ctx.editMessageText(`📦 خدمات قسم *${selectedCategory}*:`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
@@ -1061,39 +1108,45 @@ bot.action(/cat_(\d+)/, async (ctx) => {
 });
 
 bot.action('main_menu', (ctx) => {
+  ctx.answerCbQuery().catch(()=>{});
   try {
-    const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
+    const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
     if (usersDb[userId].isBanned) return;
     ctx.deleteMessage().catch(()=>{}); ctx.reply('القائمة الرئيسية 🚀', getMainMenu()).catch(()=>{});
   } catch(e){}
 });
 
-// 👈 زر الإلغاء الصامت 
+// 🛡️ زر الإلغاء الشامل والآمن (يمسح الجلسة تماماً)
 bot.action('cancel_action', (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    const userId = String(ctx.from.id);
+    delete botStates.bulkQty[userId];
+    saveDatabase();
     ctx.deleteMessage().catch(()=>{});
 });
 
-bot.action(/confirm_(.+)/, async (ctx) => {
+bot.action(/^buyact_(.+)$/, async (ctx) => {
+  ctx.answerCbQuery().catch(()=>{});
   try {
-     const userId = ctx.from.id; initUser(userId);
+     const userId = String(ctx.from.id); initUser(userId);
      if (usersDb[userId].isBanned) return;
 
      if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
 
      const srvId = ctx.match[1];
      const srv = cachedServices.find(s => String(s.id) === String(srvId));
-     if(!srv) return ctx.answerCbQuery('الخدمة غير موجودة').catch(()=>{});
+     if(!srv) return ctx.editMessageText('الخدمة غير موجودة').catch(()=>{});
 
-     bulkQuantityStates[userId] = { srvId: String(srv.id), qty: 1 };
      const price = calculateRetailPrice(srv, usersDb[userId], 1);
      const srvName = srv.name_ar || srv.name || srv.title;
 
+     // 🛡️ الاعتماد التام على الأزرار لحفظ الكمية (بدون الذاكرة المعرضة للخطأ)
      ctx.editMessageText(`⚠ اختر الكمية المطلوبة لـ:\n\n🛍️ *${srvName}*\n💰 السعر للقطعة: ${price} EGP\n🔢 الكمية الحالية: 1`, 
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard([
-              [Markup.button.callback('➖ 1-', 'qty_dec_' + srv.id), Markup.button.callback('➕ 1+', 'qty_inc_' + srv.id)],
-              [Markup.button.callback('✅ تأكيد الشراء', 'buy_' + srv.id)],
+              [Markup.button.callback('➖ 1-', `qdec_${srv.id}_1`), Markup.button.callback('➕ 1+', `qinc_${srv.id}_1`)],
+              [Markup.button.callback('✅ تأكيد الشراء', `exec_${srv.id}_1`)],
               [Markup.button.callback('❌ إلغاء', 'cancel_action')] 
           ])
         }
@@ -1101,27 +1154,28 @@ bot.action(/confirm_(.+)/, async (ctx) => {
   } catch(err){}
 });
 
-bot.action(/qty_inc_(.+)/, async (ctx) => {
+bot.action(/^qinc_(.+)_(\d+)$/, async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
     try {
-      const userId = ctx.from.id; const srvId = ctx.match[1];
-      if (!bulkQuantityStates[userId]) bulkQuantityStates[userId] = { srvId, qty: 1 };
-      bulkQuantityStates[userId].qty += 1;
-      await updateQuantityPrompt(ctx, srvId, bulkQuantityStates[userId].qty);
+      const srvId = ctx.match[1];
+      const qty = parseInt(ctx.match[2]) + 1;
+      await updateQuantityPrompt(ctx, srvId, qty);
     } catch(e){}
 });
 
-bot.action(/qty_dec_(.+)/, async (ctx) => {
+bot.action(/^qdec_(.+)_(\d+)$/, async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
     try {
-      const userId = ctx.from.id; const srvId = ctx.match[1];
-      if (!bulkQuantityStates[userId]) bulkQuantityStates[userId] = { srvId, qty: 1 };
-      if (bulkQuantityStates[userId].qty > 1) bulkQuantityStates[userId].qty -= 1;
-      await updateQuantityPrompt(ctx, srvId, bulkQuantityStates[userId].qty);
+      const srvId = ctx.match[1];
+      let qty = parseInt(ctx.match[2]);
+      if (qty > 1) qty -= 1;
+      await updateQuantityPrompt(ctx, srvId, qty);
     } catch(e){}
 });
 
 async function updateQuantityPrompt(ctx, srvId, qty) {
     try {
-      const userId = ctx.from.id;
+      const userId = String(ctx.from.id);
       if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
       const srv = cachedServices.find(s => String(s.id) === String(srvId));
       if (!srv) return;
@@ -1132,8 +1186,8 @@ async function updateQuantityPrompt(ctx, srvId, qty) {
          {
            parse_mode: 'Markdown',
            ...Markup.inlineKeyboard([
-               [Markup.button.callback('➖ 1-', 'qty_dec_' + srv.id), Markup.button.callback('➕ 1+', 'qty_inc_' + srv.id)],
-               [Markup.button.callback('✅ تأكيد الشراء', 'buy_' + srv.id)],
+               [Markup.button.callback('➖ 1-', `qdec_${srv.id}_${qty}`), Markup.button.callback('➕ 1+', `qinc_${srv.id}_${qty}`)],
+               [Markup.button.callback('✅ تأكيد الشراء', `exec_${srv.id}_${qty}`)],
                [Markup.button.callback('❌ إلغاء', 'cancel_action')]
            ])
          }
@@ -1141,7 +1195,6 @@ async function updateQuantityPrompt(ctx, srvId, qty) {
     } catch(e){}
 }
 
-// 👈 دالة الاستخراج الذكية لضمان قراءة الأكواد الرقمية بأمان تام
 function extractUsefulData(obj) {
     if (!obj) return null;
     if (typeof obj === 'string' || typeof obj === 'number') return String(obj);
@@ -1170,26 +1223,35 @@ function extractUsefulData(obj) {
     return [...new Set(extracted)].join('\n');
 }
 
-bot.action(/buy_(.+)/, async (ctx) => {
+bot.action(/^exec_(.+)_(\d+)$/, async (ctx) => {
+  const userId = String(ctx.from.id); 
+  
+  // 🛡️ القفل الأمني لصد هجمات النقر المزدوج تماماً (تجنب الخسائر)
+  if (userRequestLocks[userId]) {
+      return ctx.answerCbQuery('⚠️ جاري تنفيذ طلبك السابق، الرجاء الانتظار...', { show_alert: true }).catch(()=>{});
+  }
+  userRequestLocks[userId] = true;
+  ctx.answerCbQuery().catch(()=>{});
+
   try {
-     const userId = ctx.from.id; initUser(userId);
+     initUser(userId);
      if (usersDb[userId].isBanned) return;
 
      const srvId = ctx.match[1];
-     
-     // 👈 تأمين جلسة الشراء
-     if (bulkQuantityStates[userId] && bulkQuantityStates[userId].srvId !== String(srvId)) {
-         return ctx.editMessageText('⚠️ انتهت صلاحية هذه الجلسة.\nيرجى اختيار الخدمة مرة أخرى من القائمة لضمان صحة طلبك.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]])).catch(()=>{});
-     }
+     const qty = parseInt(ctx.match[2]) || 1;
 
      if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
      const srv = cachedServices.find(s => String(s.id) === String(srvId));
-     if (!srv) return ctx.answerCbQuery('الخدمة غير موجودة').catch(()=>{});
+     if (!srv) {
+         ctx.editMessageText('❌ الخدمة غير موجودة أو تم حذفها من المزود.').catch(()=>{});
+         return;
+     }
 
-     const qty = bulkQuantityStates[userId]?.qty || 1;
      const retailPrice = parseFloat(calculateRetailPrice(srv, usersDb[userId], qty));
      
-     const originalCost = parseFloat(srv.price_amount || srv.price || 0) * qty;
+     // 🛡️ حماية ضد الأرقام المجهولة NaN
+     const parseCost = parseFloat(srv.price_amount || srv.price || 0);
+     const originalCost = isNaN(parseCost) ? 0 : parseCost * qty;
      const exactProfit = retailPrice - originalCost;
      
      const userBalance = usersDb[userId].balance;
@@ -1215,30 +1277,30 @@ bot.action(/buy_(.+)/, async (ctx) => {
      if (hasLocalStock) {
          const deliveredItems = localInventory[String(srv.id)].splice(0, qty);
          
-         // الشراء المحلي
          usersDb[userId].balance -= retailPrice;
          usersDb[userId].totalSpent += retailPrice;
          usersDb[userId].walletHistory.push({ type: `شراء محلي (${name})`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
-         usersDb[userId].orders.push({ name: `${name} (${qty}x)`, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+         
+         const safeDetails = deliveredItems.join('\n\n');
+         usersDb[userId].orders.push({ name: `${name} (${qty}x)`, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }), details: safeDetails });
          saveDatabase();
 
          let deliveryMsg = `📦 <b>رقم الطلب:</b> #LOCAL-${Math.floor(1000 + Math.random() * 9000)}\n\n` +
                            `🛍️ <b>الخدمة:</b> ${name}\n🔢 <b>الكمية:</b> ${qty}\n🟢 <b>الحالة:</b> مكتمل فوراً\n💰 <b>المدفوع:</b> ${retailPrice} EGP\n\n` +
-                           `📋 <b>العناصر المسلمة:</b>\n<code>${deliveredItems.join('\n\n')}</code>`;
+                           `📋 <b>العناصر المسلمة:</b>\n<code>${safeDetails}</code>`;
 
          await ctx.editMessageText(deliveryMsg, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]])}).catch(()=>{});
-         notifyAdmin(`👑 <b>عملية بيع من المخزن المحلي:</b>\n🛍 ${name}\n💰 ${retailPrice} EGP\n📦 متبقي في المخزن لهذا المنتج: ${localInventory[String(srv.id)].length}`);
+         notifyAdmin(`👑 <b>عملية بيع من المخزن المحلي:</b>\n🛍 ${name}\n💰 ${retailPrice} EGP\n📦 متبقي في المخزن: ${localInventory[String(srv.id)].length}`);
          return; 
      }
 
-     // 👈 التعديل الأمني (الخصم المسبق لحماية أموال الأدمن)
+     // 🛡️ الخصم المسبق الآمن جداً
      usersDb[userId].balance -= retailPrice;
      saveDatabase();
 
      try {
         const orderResponse = await placeOrderWithBestProvider(srv, qty);
 
-        // 👈 إضافة الطلب للسجل بعد التأكد التام من الشراء
         usersDb[userId].totalSpent += retailPrice;
         usersDb[userId].walletHistory.push({ type: `شراء (${name} - ${qty}x)`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
 
@@ -1247,20 +1309,20 @@ bot.action(/buy_(.+)/, async (ctx) => {
             bot.telegram.sendMessage(userId, '👑 **تهانينا!**\nتمت ترقية حسابك إلى **VIP** لتحقيقك مشتريات بـ 500 EGP. ستحصل على أسعار مخفضة تلقائياً!').catch(()=>{});
         }
         
-        usersDb[userId].orders.push({ name: `${name} (${qty}x)`, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+        const currentOrder = { name: `${name} (${qty}x)`, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }), details: "جاري المعالجة من المزود..." };
+        usersDb[userId].orders.push(currentOrder);
         saveDatabase(); 
 
         let orderId = orderResponse.data?.order?.id || orderResponse.data?.id || orderResponse.data?.order_id || Math.floor(10000 + Math.random() * 90000);
         let rawDetails = null;
 
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // 🛡️ الانتظار 1.5 ثانية فقط لتفادي Timeout سيرفرات Vercel
+        await new Promise(resolve => setTimeout(resolve, 1500));
 
         try {
             const source = srv.providerSource || 'api1';
             const clientApi = source === 'api2' ? apiClient2 : apiClient1;
-            
             const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : `/orders/${orderId}`;
-            
             const getOrderRes = await clientApi.get(fetchOrderPath);
             const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
             rawDetails = extractUsefulData(orderData);
@@ -1282,6 +1344,10 @@ bot.action(/buy_(.+)/, async (ctx) => {
             const safeRawText = String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             deliveryMsg += `📋 <b>العناصر المسلمة:</b>\n${safeRawText}\n\n` +
                            `📌 <b>البيانات المسلمة (اضغط للنسخ):</b>\n<code>${safeRawText}</code>`;
+            
+            // 🛡️ تحديث الطلب لحفظه للعميل في قسم طلباتي
+            const lastIndex = usersDb[userId].orders.length - 1;
+            if (lastIndex >= 0) { usersDb[userId].orders[lastIndex].details = safeRawText; saveDatabase(); }
         } else {
             deliveryMsg += `📋 <b>العناصر المسلمة:</b>\n✅ تم تنفيذ الطلب بنجاح.`;
         }
@@ -1303,8 +1369,14 @@ bot.action(/buy_(.+)/, async (ctx) => {
         notifyAdmin(adminLogMsg);
 
      } catch (error) {
-        // 👈 الاسترجاع الآمن للمحفظة في حالة فشل الـ API
+        // 🛡️ الاسترجاع الآمن للمحفظة، وتعديل حالة "الطلب الشبح"
         usersDb[userId].balance += retailPrice;
+        
+        const lastIndex = usersDb[userId].orders.length - 1;
+        if (lastIndex >= 0) { 
+            usersDb[userId].orders[lastIndex].details = "❌ فشل الشراء وتم استرداد المبلغ بالكامل"; 
+            usersDb[userId].orders[lastIndex].profit = 0; // مسح الأرباح الوهمية
+        }
         saveDatabase();
         
         let apiErrorMsg = error.response?.data?.message || error.response?.data?.error || error.response?.data || error.message || "عطل غير معروف";
@@ -1314,20 +1386,22 @@ bot.action(/buy_(.+)/, async (ctx) => {
      }
   } catch (err){
       console.error('Buy General Error:', err.message);
+  } finally {
+      delete userRequestLocks[userId];
   }
 });
 
 // ==========================================
-// التحديث الخاص بـ Vercel لضمان عمل قاعدة البيانات
+// 🛡️ معالجة Vercel المتقدمة (حل مشكلة تصادم الحفظ Race Condition)
 // ==========================================
 export default async function handler(req, res) {
   if (req.method === 'POST') {
-    pendingSaves = []; 
     await loadDatabase(); 
     await bot.handleUpdate(req.body); 
 
     if (pendingSaves.length > 0) {
         await Promise.all(pendingSaves);
+        pendingSaves = []; 
     }
     res.status(200).send('OK');
   } else {
