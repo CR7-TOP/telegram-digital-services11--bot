@@ -108,7 +108,6 @@ const userRequestLocks = {};
 const categoryCacheTime = 60000; 
 let lastCategoriesFetchTime = 0;
 
-// دالة لتنظيف حالة العميل (لو غير رأيه وداس على زرار تاني)
 function clearUserStates(userId) {
     delete depositStates[userId];
     delete promoCodeStates[userId];
@@ -223,7 +222,7 @@ function detectCategoryFromName(name) {
     if (n.includes('coursera')) return 'edX Premium';
     if (n.includes('prime')) return 'Prime Video';
     if (n.includes('notion')) return 'نوشن';
-    if (n.includes('api')) return 'خدمات API';
+    if (/\bapi\b/i.test(n) || n.includes('خدمات برمجة')) return 'خدمات API';
     return 'أخرى';
 }
 
@@ -615,7 +614,7 @@ bot.action('admin_view_users', (ctx) => {
         userList += '👤 ID: `' + usersDb[tgId].uid + '` | الرصيد: ' + parseFloat(usersDb[tgId].balance).toFixed(2) + ' EGP' + bStatus + '\n'; count++; 
     }
     if (count === 0) userList = 'لا يوجد عملاء.';
-    if (userList.length > 4000) userList = userList.substring(0, 4000) + '\n...';
+    if (userList.length > 3900) userList = userList.substring(0, 3900) + '\n...';
     ctx.editMessageText(userList, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{}); 
     ctx.answerCbQuery().catch(()=>{});
   } catch(e){}
@@ -801,7 +800,9 @@ bot.on('text', async (ctx, next) => {
                 if (!localInventory[srvId] || localInventory[srvId].length === 0) {
                     return ctx.reply('📦 المخزن فارغ تماماً لهذا المنتج.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
                 }
-                let stockList = localInventory[srvId].map((item, idx) => `📦 **عنصر رقم ${idx + 1}:**\n${item}`).join('\n\n━━━━━━━━━━━━\n\n');
+                let stockList = localInventory[srvId].map((item, idx) => `📦 **عنصر ${idx + 1}:**\n${item}`).join('\n\n');
+                if (stockList.length > 3800) stockList = stockList.substring(0, 3800) + '\n\n... (يوجد المزيد لكن الرسالة طويلة جداً)';
+                
                 return ctx.reply(`📦 **المخزن الحالي لهذا المنتج (${localInventory[srvId].length} عنصر):**\n\n${stockList}`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]])});
             }
 
@@ -866,7 +867,7 @@ bot.on('text', async (ctx, next) => {
         }
 
         if (state === 'WAIT_FLASH_SALE') {
-            const parts = text.split(' ');
+            const parts = text.trim().split(/\s+/);
             if (parts.length < 2) return ctx.reply('❌ صيغة غير صحيحة.');
             const discountVal = parseFloat(parts[0]); const hoursVal = parseFloat(parts[1]);
             if (discountVal === 0 && hoursVal === 0) {
@@ -961,13 +962,6 @@ bot.action(/reject_dep_(\d+)/, async (ctx) => {
 bot.hears(/^🛍 الخدمات$/, showCategories);
 bot.action('main_categories', showCategories);
 
-function getServiceCategory(s) {
-  try {
-    let cat = s.category_name || s.category_ar || s.category_title || (typeof s.category === 'object' ? (s.category?.name || s.category?.name_ar || s.category?.title) : s.category);
-    return cat ? String(cat).trim() : 'أخرى';
-  } catch(e) { return 'أخرى'; }
-}
-
 async function showCategories(ctx) {
   const userId = ctx.from.id;
   try {
@@ -1016,16 +1010,12 @@ async function showCategories(ctx) {
     let buttons = [];
     for (let i = 0; i < categories.length; i += 2) {
       const row = [];
-      // تم تبسيط اسم الـ callback لحماية البوت من عطل تليجرام (64 byte limit)
-      row.push(Markup.button.callback((categoryEmojis[categories[i]] || '📦') + ' ' + categories[i], 'cat_' + i));
-      if (i + 1 < categories.length) row.push(Markup.button.callback((categoryEmojis[categories[i+1]] || '📦') + ' ' + categories[i+1], 'cat_' + (i + 1)));
+      row.push(Markup.button.callback((categoryEmojis[categories[i]] || '📦') + ' ' + categories[i], 'cat_' + encodeURIComponent(categories[i])));
+      if (i + 1 < categories.length) row.push(Markup.button.callback((categoryEmojis[categories[i+1]] || '📦') + ' ' + categories[i+1], 'cat_' + encodeURIComponent(categories[i+1])));
       buttons.push(row);
     }
     buttons.push([Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]);
     const keyboard = Markup.inlineKeyboard(buttons);
-
-    // ربط الأقسام بمصفوفة مؤقتة عشان الـ callback يشتغل صح
-    bot.context.tempCategories = categories;
 
     if(ctx.callbackQuery) { return ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{}); } 
     else if(loadingMsgId) { return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, 'اختر الفئة:', keyboard).catch(()=>{}); } 
@@ -1037,18 +1027,14 @@ async function showCategories(ctx) {
   }
 }
 
-bot.action(/cat_(\d+)/, async (ctx) => {
+bot.action(/cat_(.+)/, async (ctx) => {
   try {
     const userId = ctx.from.id; initUser(userId);
     if (usersDb[userId].isBanned) return;
 
-    const catIndex = parseInt(ctx.match[1]);
-    const selectedCategory = bot.context.tempCategories ? bot.context.tempCategories[catIndex] : null;
+    const selectedCategory = decodeURIComponent(ctx.match[1]);
     
-    if (!selectedCategory || !cachedServices || cachedServices.length === 0) { 
-        cachedServices = await fetchAllServices(); 
-        return ctx.answerCbQuery('يرجى إعادة فتح الأقسام.', { show_alert: true }).catch(()=>{});
-    }
+    if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
 
     const categoryServices = cachedServices.filter(s => {
       let cat = getServiceCategory(s);
@@ -1072,7 +1058,7 @@ bot.action('main_menu', (ctx) => {
   } catch(e){}
 });
 
-// مسح رسالة اختيار الكمية بهدوء عند الإلغاء
+// 👈 زر الإلغاء الصامت لمنع التكدس
 bot.action('cancel_action', (ctx) => {
     ctx.deleteMessage().catch(()=>{});
 });
@@ -1098,7 +1084,7 @@ bot.action(/confirm_(.+)/, async (ctx) => {
           ...Markup.inlineKeyboard([
               [Markup.button.callback('➖ 1-', 'qty_dec_' + srv.id), Markup.button.callback('➕ 1+', 'qty_inc_' + srv.id)],
               [Markup.button.callback('✅ تأكيد الشراء', 'buy_' + srv.id)],
-              [Markup.button.callback('❌ إلغاء', 'cancel_action')]
+              [Markup.button.callback('❌ إلغاء', 'cancel_action')] // تم استخدام الزر الصامت
           ])
         }
      ).catch(()=>{});
@@ -1145,23 +1131,25 @@ async function updateQuantityPrompt(ctx, srvId, qty) {
     } catch(e){}
 }
 
+// 👈 دالة الاستخراج المحدثة لقراءة الأكواد الرقمية بأمان
 function extractUsefulData(obj) {
     if (!obj) return null;
-    if (typeof obj === 'string') return obj;
+    if (typeof obj === 'string' || typeof obj === 'number') return String(obj);
     let extracted = [];
+    const ignoreKeys = ['id', 'order', 'orders', 'order_id', 'status', 'created_at', 'updated_at', 'service_id', 'quantity', 'price', 'user_id', 'api', 'api_id', 'api_order_id', 'api_service_id', 'currency', 'charge', 'remains', 'start_count', 'link', 'cost', 'old_charge'];
     
     function deepExtract(currentObj) {
-        if (typeof currentObj === 'string') {
-            if (currentObj.trim().length > 5 && !/^[0-9]+(\.[0-9]+)?$/.test(currentObj)) {
-                extracted.push(currentObj);
+        if (currentObj === null || currentObj === undefined) return;
+        if (typeof currentObj === 'string' || typeof currentObj === 'number') {
+            let str = String(currentObj).trim();
+            if (str.length > 0 && str !== '0' && str !== '0.00' && str !== '0.0') {
+                extracted.push(str);
             }
         } else if (Array.isArray(currentObj)) {
             currentObj.forEach(deepExtract);
-        } else if (typeof currentObj === 'object' && currentObj !== null) {
+        } else if (typeof currentObj === 'object') {
             for (let key in currentObj) {
-                if (['id', 'order_id', 'status', 'created_at', 'updated_at', 'service_id', 'quantity', 'price', 'user_id', 'api', 'api_id', 'api_order_id', 'api_service_id'].includes(key)) {
-                    continue;
-                }
+                if (ignoreKeys.includes(key.toLowerCase())) continue;
                 deepExtract(currentObj[key]);
             }
         }
@@ -1209,11 +1197,10 @@ bot.action(/buy_(.+)/, async (ctx) => {
 
      const hasLocalStock = localInventory[String(srv.id)] && localInventory[String(srv.id)].length >= qty;
 
-     // الشراء من المخزن المحلي
      if (hasLocalStock) {
          const deliveredItems = localInventory[String(srv.id)].splice(0, qty);
          
-         // 👈 التعديل الأول: الخصم بعد التأكد من وجود العنصر
+         // 👈 التعديل الأول: الخصم فقط بعد التأكد من الاستلام
          usersDb[userId].balance -= retailPrice;
          usersDb[userId].totalSpent += retailPrice;
          usersDb[userId].walletHistory.push({ type: `شراء محلي (${name})`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
@@ -1230,11 +1217,10 @@ bot.action(/buy_(.+)/, async (ctx) => {
          return; 
      }
 
-     // الشراء من الـ API
      try {
         const orderResponse = await placeOrderWithBestProvider(srv, qty);
 
-        // 👈 التعديل الثاني (الأخطر): الفلوس تتخصم هنا فقط بعد نجاح طلب الـ API
+        // 👈 التعديل الأهم: الفلوس تتخصم هنا فقط بعد نجاح الشراء من الـ API
         usersDb[userId].balance -= retailPrice;
         usersDb[userId].totalSpent += retailPrice;
         usersDb[userId].walletHistory.push({ type: `شراء (${name} - ${qty}x)`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
@@ -1300,7 +1286,6 @@ bot.action(/buy_(.+)/, async (ctx) => {
         notifyAdmin(adminLogMsg);
 
      } catch (error) {
-        // الفلوس مش هتتخصم هنا أبداً لو حصل خطأ
         let apiErrorMsg = error.response?.data?.message || error.response?.data?.error || error.response?.data || error.message || "عطل غير معروف";
         if (typeof apiErrorMsg === 'object') {
             apiErrorMsg = JSON.stringify(apiErrorMsg);
@@ -1322,7 +1307,6 @@ export default async function handler(req, res) {
 
     await bot.handleUpdate(req.body); // تنفيذ أمر البوت
 
-    // الانتظار حتى تنتهي كل عمليات الحفظ السحابية قبل قفل الاتصال
     if (pendingSaves.length > 0) {
         await Promise.all(pendingSaves);
     }
