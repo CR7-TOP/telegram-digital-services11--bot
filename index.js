@@ -101,7 +101,7 @@ const adminLoginStates = {};
 const adminSession = {}; 
 const depositStates = {};
 const broadcastStates = {}; 
-const promoCodeStates = {}; 
+const promoCodeStates = {}; // 👈 تم تفعيل حالة الأكواد للعملاء
 const searchStates = {}; 
 const adminInputStates = {}; 
 const userRequestLocks = {};
@@ -131,15 +131,19 @@ setInterval(() => {
     const now = new Date();
     if (now.getHours() === 0 && now.getMinutes() === 0) {
         let totalDaySpent = 0;
+        let totalDayProfit = 0;
         for (let id in usersDb) {
             if (usersDb[id].orders) {
-                const todayStr = now.toLocaleDateString();
+                const todayStr = now.toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' });
                 usersDb[id].orders.forEach(o => {
-                    if (o.date.includes(todayStr)) totalDaySpent += parseFloat(o.price || 0);
+                    if (o.date.includes(todayStr)) {
+                        totalDaySpent += parseFloat(o.price || 0);
+                        totalDayProfit += parseFloat(o.profit || (parseFloat(o.price || 0) - (parseFloat(o.price || 0) / (1 + (globalMarkupPercent / 100)))));
+                    }
                 });
             }
         }
-        notifyAdmin('📊 التقرير المالي اليومي التلقائي:\n\n💰 إجمالي المشتريات اليوم: <b>' + totalDaySpent.toFixed(2) + ' EGP</b>\n📈 نسبة الربح العامة الحالية: ' + globalMarkupPercent + '%');
+        notifyAdmin(`📊 التقرير المالي اليومي التلقائي:\n\n💰 إجمالي المشتريات اليوم: <b>${totalDaySpent.toFixed(2)} EGP</b>\n💸 صافي أرباح اليوم: <b>${totalDayProfit.toFixed(2)} EGP</b>\n📈 نسبة الربح العامة الحالية: ${globalMarkupPercent}%`);
     }
   } catch(e) {}
 }, 60000);
@@ -437,6 +441,16 @@ bot.hears(/^💳 شحن المحفظة \(فودافون كاش\)$/, (ctx) => {
   } catch(e){}
 });
 
+// 👈 تفعيل حالة استلام الكود من العميل بأمان تام
+bot.hears(/^🎟 استخدام كود خصم$/, (ctx) => { 
+    try {
+      const userId = ctx.from.id; initUser(userId);
+      if (usersDb[userId].isBanned) return;
+      promoCodeStates[userId] = true;
+      ctx.reply('🎟️ **استخدام كود خصم أو قسيمة شحن:**\n\nمن فضلك أرسل الكود الآن في رسالة:', {parse_mode: 'Markdown'}).catch(()=>{}); 
+    } catch(e){}
+});
+
 function sendDepositNotification(req) {
   try {
     notifyAdmin(`🔔 <b>طلب شحن محفظة جديد!</b>\n\n👤 المستخدم (ID): <code>${req.userUid}</code>\n💰 المبلغ المطلوب: <b>${req.amount} EGP</b>\n📱 الرقم المحول منه: <code>${req.senderNumber}</code>\n\nيرجى المراجعة من قسم (طلبات الشحن المعلقة):`);
@@ -469,18 +483,66 @@ function showAdminPanel(ctx) {
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
-        [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_promo')],
+        [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_voucher')],
         [Markup.button.callback('✉ مراسلة عميل بالـ ID', 'admin_msg_by_id'), Markup.button.callback('👥 شحن رصيد بالـ ID', 'admin_charge_by_id')], 
         [Markup.button.callback('🛠️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
-        [Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users')],
+        [Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users'), Markup.button.callback('💸 تقرير الأرباح', 'admin_profit_report')],
         [Markup.button.callback('🚫 حظر مستخدم', 'admin_ban_user'), Markup.button.callback('✅ فك حظر مستخدم', 'admin_unban_user')],
-        [Markup.button.callback('📢 إرسال رسالة (إذاعة)', 'admin_broadcast'), Markup.button.callback('🚪 تسجيل خروج', 'admin_logout')]
+        [Markup.button.callback('📢 إرسال رسالة (إذاعة)', 'admin_broadcast'), Markup.button.callback('🎟️ إنشاء كود خصم', 'admin_create_promo')],
+        [Markup.button.callback('🚪 تسجيل خروج', 'admin_logout')]
       ]);
 
     if(ctx.callbackQuery) { ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard }).catch(()=>{}); }
     else { ctx.reply(text, { parse_mode: 'Markdown', ...keyboard }).catch(()=>{}); }
   } catch(e){}
 }
+
+bot.action('admin_profit_report', (ctx) => {
+    try {
+        let totalProfit = 0;
+        let todayProfit = 0;
+        let yesterdayProfit = 0;
+
+        const now = new Date();
+        const todayStr = now.toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' });
+        const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const yesterdayStr = yesterday.toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' });
+
+        for (let id in usersDb) {
+            const user = usersDb[id];
+            if (user.orders && user.orders.length > 0) {
+                user.orders.forEach(order => {
+                    let profit = 0;
+                    if (order.profit !== undefined) {
+                        profit = parseFloat(order.profit);
+                    } else {
+                        const price = parseFloat(order.price || 0);
+                        profit = price - (price / (1 + (globalMarkupPercent / 100)));
+                    }
+
+                    totalProfit += profit;
+
+                    if (order.date.includes(todayStr)) {
+                        todayProfit += profit;
+                    } else if (order.date.includes(yesterdayStr)) {
+                        yesterdayProfit += profit;
+                    }
+                });
+            }
+        }
+
+        const msg = `💸 **تقرير أرباح المتجر:**\n\n` +
+                    `📅 **أرباح اليوم:** *${todayProfit.toFixed(2)} EGP*\n` +
+                    `📆 **أرباح أمس:** *${yesterdayProfit.toFixed(2)} EGP*\n` +
+                    `📈 **إجمالي الأرباح الكلية:** *${totalProfit.toFixed(2)} EGP*\n\n` +
+                    `*(ملاحظة: الأرباح القديمة محسوبة بشكل تقديري، أما أرباح الطلبات الجديدة يتم حسابها بدقة 100% بناءً على تكلفة المنتج الأصلية).*`;
+
+        ctx.editMessageText(msg, {
+            parse_mode: 'Markdown',
+            ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])
+        }).catch(()=>{});
+    } catch (e) { console.error(e); }
+});
 
 bot.action('admin_search_markup', (ctx) => {
     adminInputStates[ctx.from.id] = 'WAIT_SEARCH_MARKUP';
@@ -586,7 +648,6 @@ bot.action('admin_flash_sale', (ctx) => {
     ctx.editMessageText('⚡ **إعداد خصم مؤقت:**\n\nأرسل نسبة الخصم وعدد الساعات هكذا:\n`النسبة الساعات`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
-// الأزرار الجديدة المطورة لتسهيل الإدارة بدون أوامر (/)
 bot.action('admin_charge_by_id', (ctx) => {
     adminInputStates[ctx.from.id] = 'WAIT_CHARGE_USER';
     ctx.editMessageText('💰 **شحن رصيد لعميل:**\n\nأرسل الآيدي والمبلغ هكذا (بينهم مسافة):\n`الآيدي المبلغ`\n(مثال: `123456789 50`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
@@ -595,6 +656,11 @@ bot.action('admin_charge_by_id', (ctx) => {
 bot.action('admin_create_promo', (ctx) => {
     adminInputStates[ctx.from.id] = 'WAIT_PROMO_CREATE';
     ctx.editMessageText('🎟️ **إنشاء كود خصم عام:**\n\nأرسل الكود والمبلغ هكذا (بينهم مسافة):\n`الكود المبلغ`\n(مثال: `WELCOME 20`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+});
+
+bot.action('admin_create_voucher', (ctx) => {
+    adminInputStates[ctx.from.id] = 'WAIT_VOUCHER_CREATE';
+    ctx.editMessageText('🎫 **توليد كروت شحن (قسائم):**\n\nأرسل الكود والمبلغ هكذا (بينهم مسافة):\n`الكود المبلغ`\n(مثال: `VIP100 100`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_ban_user', (ctx) => {
@@ -624,6 +690,30 @@ bot.on('text', async (ctx, next) => {
     if (usersDb[userId].isBanned) return;
     const text = ctx.message.text;
 
+    // 👈 استقبال الأكواد من العميل بذكاء وحماية
+    if (promoCodeStates[userId]) {
+        delete promoCodeStates[userId]; 
+        const textCode = text.trim().toUpperCase();
+
+        if (vouchers[textCode]) {
+            if (vouchers[textCode].isUsed) return ctx.reply('❌ عذراً، كارت الشحن هذا تم استخدامه مسبقاً.').catch(()=>{});
+            const amount = vouchers[textCode].amount; vouchers[textCode].isUsed = true;
+            usersDb[userId].balance += amount;
+            usersDb[userId].walletHistory.push({ type: 'شحن كارت (' + textCode + ')', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+            saveDatabase(); 
+            return ctx.reply(`🎉 **تم شحن محفظتك بنجاح!**\n💰 تمت إضافة: *${amount} EGP*\n💳 رصيدك الحالي: *${usersDb[userId].balance.toFixed(2)} EGP*`, { parse_mode: 'Markdown' }).catch(()=>{});
+        }
+        if (promoCodes[textCode]) {
+            if (promoCodes[textCode].usedBy.includes(userId)) return ctx.reply('❌ لقد قمت باستخدام كود الخصم هذا مسبقاً.').catch(()=>{});
+            const amount = promoCodes[textCode].amount; usersDb[userId].balance += amount;
+            usersDb[userId].walletHistory.push({ type: 'كود خصم (' + textCode + ')', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+            promoCodes[textCode].usedBy.push(userId); saveDatabase();
+            return ctx.reply(`🎉 **كود خصم صحيح!**\n💰 تمت إضافة *${amount} EGP* لرصيدك.\n💳 رصيدك الحالي: *${usersDb[userId].balance.toFixed(2)} EGP*`, { parse_mode: 'Markdown' }).catch(()=>{});
+        }
+
+        return ctx.reply('❌ الكود الذي أدخلته غير صحيح أو منتهي الصلاحية.');
+    }
+
     if (text.trim() === 'Ahmed/') {
         adminLoginStates[userId] = 'WAIT_EMAIL';
         return ctx.reply('🔐 **تسجيل دخول الأدمن**\n\nيرجى إرسال البريد الإلكتروني (Email):').catch(()=>{});
@@ -634,7 +724,7 @@ bot.on('text', async (ctx, next) => {
         delete adminInputStates[userId];
 
         if (state === 'WAIT_CHARGE_USER') {
-            const parts = text.trim().split(' ');
+            const parts = text.trim().split(/\s+/);
             if (parts.length < 2) return ctx.reply('❌ صيغة غير صحيحة. استخدم: `الآيدي المبلغ`', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             const targetUid = parts[0].trim();
             const amount = parseFloat(parts[1]);
@@ -653,13 +743,24 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply(`✅ تم شحن رصيد العميل بنجاح!\n👤 العميل: \`${targetUid}\`\n💰 المبلغ: *${amount} EGP*`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
+        // 👈 سد ثغرة المسافات الزائدة عند إنتاج الأكواد
         if (state === 'WAIT_PROMO_CREATE') {
-            const parts = text.split(' ');
-            if (parts.length < 2) return ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+            const parts = text.trim().split(/\s+/); 
+            if (parts.length < 2) return ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             const code = parts[0].toUpperCase(); const amount = parseFloat(parts[1]);
-            if (isNaN(amount)) return ctx.reply('❌ القيمة غير صحيحة.');
+            if (isNaN(amount)) return ctx.reply('❌ القيمة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             promoCodes[code] = { amount, usedBy: [] }; saveDatabase();
             return ctx.reply(`✅ تم إنشاء كود الخصم!\n🎟 الكود: \`${code}\`\n💰 القيمة: *${amount} EGP*`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+        }
+
+        // 👈 سد ثغرة المسافات الزائدة عند إنتاج قسائم الشحن
+        if (state === 'WAIT_VOUCHER_CREATE') {
+            const parts = text.trim().split(/\s+/); 
+            if (parts.length < 2) return ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            const code = parts[0].toUpperCase(); const amount = parseFloat(parts[1]);
+            if (isNaN(amount)) return ctx.reply('❌ القيمة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            vouchers[code] = { amount, isUsed: false }; saveDatabase();
+            return ctx.reply(`✅ تم إنشاء كارت الشحن!\n🎟 الكود: \`${code}\`\n💰 القيمة: *${amount} EGP*`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_BAN_USER') {
@@ -843,39 +944,6 @@ bot.on('text', async (ctx, next) => {
 
     return next();
   } catch(e) {}
-});
-
-bot.hears(/^🎟 استخدام كود خصم$/, (ctx) => { 
-    try {
-      const userId = ctx.from.id; initUser(userId);
-      if (usersDb[userId].isBanned) return;
-      ctx.reply('أرسل كود الخصم أو القسيمة الآن:').catch(()=>{}); 
-    } catch(e){}
-});
-
-bot.hears(/^[A-Za-z0-9]+$/, (ctx, next) => {
-    try {
-      const userId = ctx.from.id; initUser(userId);
-      if (usersDb[userId].isBanned) return;
-
-      const textCode = ctx.message.text.toUpperCase();
-
-      if (vouchers[textCode]) {
-          if (vouchers[textCode].isUsed) return ctx.reply('❌ عذراً، كارت الشحن هذا تم استخدامه مسبقاً.').catch(()=>{});
-          const amount = vouchers[textCode].amount; vouchers[textCode].isUsed = true;
-          usersDb[userId].balance += amount;
-          usersDb[userId].walletHistory.push({ type: 'شحن كارت (' + textCode + ')', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
-          saveDatabase(); return ctx.reply('🎉 **تم شحن محفظتك بنجاح!**\n💰 تمت إضافة: *' + amount + ' EGP*', { parse_mode: 'Markdown' }).catch(()=>{});
-      }
-      if (promoCodes[textCode]) {
-          if (promoCodes[textCode].usedBy.includes(userId)) return ctx.reply('❌ استخدمت الكود مسبقاً.').catch(()=>{});
-          const amount = promoCodes[textCode].amount; usersDb[userId].balance += amount;
-          usersDb[userId].walletHistory.push({ type: 'كود خصم (' + textCode + ')', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
-          promoCodes[textCode].usedBy.push(userId); saveDatabase();
-          return ctx.reply('🎉 تمت إضافة *' + amount + ' EGP* لرصيدك.', { parse_mode: 'Markdown' }).catch(()=>{});
-      }
-      return next();
-    } catch(e) {}
 });
 
 bot.action(/approve_dep_(\d+)_([\d.]+)/, async (ctx) => {
@@ -1117,6 +1185,10 @@ bot.action(/buy_(.+)/, async (ctx) => {
 
      const qty = bulkQuantityStates[userId]?.qty || 1;
      const retailPrice = parseFloat(calculateRetailPrice(srv, usersDb[userId], qty));
+     
+     const originalCost = parseFloat(srv.price_amount || srv.price || 0) * qty;
+     const exactProfit = retailPrice - originalCost;
+     
      const userBalance = usersDb[userId].balance;
      const name = srv.name_ar || srv.name || srv.title;
 
@@ -1143,7 +1215,8 @@ bot.action(/buy_(.+)/, async (ctx) => {
          usersDb[userId].balance -= retailPrice;
          usersDb[userId].totalSpent += retailPrice;
          usersDb[userId].walletHistory.push({ type: `شراء محلي (${name})`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
-         usersDb[userId].orders.push({ name: `${name} (${qty}x)`, price: retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+         
+         usersDb[userId].orders.push({ name: `${name} (${qty}x)`, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
          saveDatabase();
 
          let deliveryMsg = `📦 <b>رقم الطلب:</b> #LOCAL-${Math.floor(1000 + Math.random() * 9000)}\n\n` +
@@ -1166,7 +1239,8 @@ bot.action(/buy_(.+)/, async (ctx) => {
             usersDb[userId].isVip = true;
             bot.telegram.sendMessage(userId, '👑 **تهانينا!**\nتمت ترقية حسابك إلى **VIP** لتحقيقك مشتريات بـ 500 EGP. ستحصل على أسعار مخفضة تلقائياً!').catch(()=>{});
         }
-        usersDb[userId].orders.push({ name: `${name} (${qty}x)`, price: retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+        
+        usersDb[userId].orders.push({ name: `${name} (${qty}x)`, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
         saveDatabase(); 
 
         let orderId = orderResponse.data?.order?.id || orderResponse.data?.id || orderResponse.data?.order_id || Math.floor(10000 + Math.random() * 90000);
