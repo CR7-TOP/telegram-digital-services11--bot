@@ -231,7 +231,6 @@ function detectCategoryFromName(name) {
     return 'أخرى';
 }
 
-// دالة تصنيف الأقسام الأساسية
 function getServiceCategory(s) {
   try {
     let cat = s.category_name || s.category_ar || s.category_title || (typeof s.category === 'object' ? (s.category?.name || s.category?.name_ar || s.category?.title) : s.category);
@@ -239,7 +238,6 @@ function getServiceCategory(s) {
   } catch(e) { return 'أخرى'; }
 }
 
-// تسريع وتأمين جلب الخدمات عبر Promise.allSettled
 async function fetchAllServices() {
     let services = [];
     const [res1Result, res2Result] = await Promise.allSettled([
@@ -381,7 +379,7 @@ function calculateRetailPrice(service, user, quantity = 1) {
     if (user && user.isVip) markup = Math.max(0, markup - 5);
     let finalPrice = originalPrice * (1 + (markup / 100));
 
-    if (flashSale.active) {
+    if (flashSale && flashSale.active) {
         if (Date.now() < flashSale.expiresAt) {
             finalPrice = finalPrice - (finalPrice * (flashSale.discount / 100));
         } else {
@@ -502,19 +500,24 @@ function showAdminPanel(ctx) {
         totalUsers++; totalBalances += parseFloat(usersDb[id].balance || 0); totalStoreSpent += parseFloat(usersDb[id].totalSpent || 0); totalOrdersCount += (usersDb[id].orders ? usersDb[id].orders.length : 0);
     }
 
-    const flashStatus = (flashSale.active && Date.now() < flashSale.expiresAt) ? '⚡ (نشط حالياً)' : '❌ (متوقف)';
+    const isFlashActive = flashSale && flashSale.active && Date.now() < flashSale.expiresAt;
+    let flashStatus = '❌ (متوقف)';
+    if (isFlashActive) {
+        const remainingMinutes = Math.max(1, Math.ceil((flashSale.expiresAt - Date.now()) / (1000 * 60)));
+        flashStatus = `⚡ (نشط حالياً - خصم ${flashSale.discount}% متبقي ${remainingMinutes} دقيقة)`;
+    }
     const maintStatus = maintenanceMode ? '🛠️ (مفعل - المتجر مغلق للصيانة)' : '✅ (متوقف - المتجر يعمل)';
 
-    const text = '👑 **لوحة تحكم الأدمن (الآيدي: 1001)**\n\n' +
-                 '📊 **الإحصائيات المتقدمة:**\n' +
-                 '👥 إجمالي العملاء: ' + totalUsers + '\n' +
-                 '💰 إجمالي أرصدة العملاء: ' + totalBalances.toFixed(2) + ' EGP\n' +
-                 '🛍️ إجمالي المشتريات بالمتجر: ' + totalStoreSpent.toFixed(2) + ' EGP\n' +
-                 '📦 إجمالي الطلبات المنفذة: ' + totalOrdersCount + '\n\n' +
-                 '📈 نسبة الربح العامة: ' + globalMarkupPercent + '%\n' +
-                 '⚡ حالة الخصم المؤقت: ' + flashStatus + '\n' +
-                 '🛑 وضع الصيانة: ' + maintStatus + '\n' +
-                 '📱 رقم الكاش: `' + vodafoneCashNumber + '`';
+    const text = `👑 <b>لوحة تحكم الأدمن (الآيدي: 1001)</b>\n\n` +
+                 `📊 <b>الإحصائيات المتقدمة:</b>\n` +
+                 `👥 إجمالي العملاء: ${totalUsers}\n` +
+                 `💰 إجمالي أرصدة العملاء: ${totalBalances.toFixed(2)} EGP\n` +
+                 `🛍️ إجمالي المشتريات بالمتجر: ${totalStoreSpent.toFixed(2)} EGP\n` +
+                 `📦 إجمالي الطلبات المنفذة: ${totalOrdersCount}\n\n` +
+                 `📈 نسبة الربح العامة: ${globalMarkupPercent}%\n` +
+                 `⚡ حالة الخصم المؤقت: ${flashStatus}\n` +
+                 `🛑 وضع الصيانة: ${maintStatus}\n` +
+                 `📱 رقم الكاش: <code>${vodafoneCashNumber}</code>`;
 
     const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback('💳 طلبات الشحن المعلقة (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
@@ -529,8 +532,8 @@ function showAdminPanel(ctx) {
         [Markup.button.callback('📢 إرسال رسالة (إذاعة)', 'admin_broadcast'), Markup.button.callback('🚪 تسجيل خروج', 'admin_logout')]
       ]);
 
-    if(ctx.callbackQuery) { ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard }).catch(()=>{}); }
-    else { ctx.reply(text, { parse_mode: 'Markdown', ...keyboard }).catch(()=>{}); }
+    if(ctx.callbackQuery) { ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{}); }
+    else { ctx.reply(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{}); }
   } catch(e){}
 }
 
@@ -678,7 +681,7 @@ bot.action('admin_set_custom_markup', (ctx) => {
 bot.action('admin_flash_sale', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     botStates.adminInput[ctx.from.id] = 'WAIT_FLASH_SALE'; saveDatabase();
-    ctx.editMessageText('⚡ **إعداد خصم مؤقت:**\n\nأرسل نسبة الخصم وعدد الساعات هكذا:\n`النسبة الساعات`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    ctx.editMessageText('⚡ **إعداد خصم مؤقت (Flash Sale):**\n\nأرسل نسبة الخصم وعدد الساعات هكذا (بينهم مسافة):\n`النسبة الساعات`\n(مثال: `20 1` لخصم 20% لمدة ساعة واحدة)\n\n❌ لإلغاء الخصم الحالي، أرسل: `0 0`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_charge_by_id', (ctx) => {
@@ -760,7 +763,7 @@ bot.on('text', async (ctx, next) => {
 
     if (botStates.adminSession[userId] && botStates.adminInput[userId]) {
         const state = botStates.adminInput[userId];
-        delete botStates.adminInput[userId]; saveDatabase();
+        delete botStates.adminInput[userId];
 
         if (state === 'WAIT_CHARGE_USER') {
             const parts = text.trim().split(/\s+/);
@@ -921,23 +924,30 @@ bot.on('text', async (ctx, next) => {
 
         if (state === 'WAIT_FLASH_SALE') {
             const parts = text.trim().split(/\s+/);
-            if (parts.length < 2) return ctx.reply('❌ صيغة غير صحيحة.');
+            if (parts.length < 2) return ctx.reply('❌ صيغة غير صحيحة. أرسل: `النسبة الساعات` (مثال: `20 1`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
             const discountVal = parseFloat(parts[0]); const hoursVal = parseFloat(parts[1]);
+            
+            if (discountVal === 0 && hoursVal === 0) {
+                flashSale = { active: false, discount: 0, expiresAt: 0 }; 
+                saveDatabase();
+                await ctx.reply('✅ تم إلغاء الخصم المؤقت.');
+                return showAdminPanel(ctx);
+            }
+
             if (isNaN(discountVal) || discountVal <= 0 || discountVal > 100 || isNaN(hoursVal) || hoursVal <= 0) {
-                if (discountVal === 0 && hoursVal === 0) {
-                    flashSale = { active: false, discount: 0, expiresAt: 0 }; saveDatabase();
-                    return ctx.reply('✅ تم إلغاء الخصم.');
-                }
-                return ctx.reply('❌ أرقام غير صحيحة.');
+                return ctx.reply('❌ أرقام غير صحيحة. يرجى إدخال نسبة بين 1 و 100 وعدد ساعات صحيح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
             
-            flashSale = { active: true, discount: discountVal, expiresAt: Date.now() + (hoursVal * 60 * 60 * 1000) }; saveDatabase();
+            flashSale = { active: true, discount: discountVal, expiresAt: Date.now() + (hoursVal * 60 * 60 * 1000) }; 
+            saveDatabase();
+
             for (let tgId in usersDb) {
                 if (String(usersDb[tgId].uid) !== '1001' && !usersDb[tgId].isBanned) {
                     bot.telegram.sendMessage(tgId, `⚡ **عروض التخفيضات (Flash Sale)!**\n\n🎉 خصم **${discountVal}%** على كل الخدمات لمدة **${hoursVal} ساعة**!`, { parse_mode: 'Markdown' }).catch(() => {});
                 }
             }
-            return ctx.reply('⚡ **تم تفعيل الخصم بنجاح!**');
+            await ctx.reply(`⚡ **تم تفعيل الخصم بنجاح!**\n🎁 نسبة الخصم: ${discountVal}%\n⏳ المدة: ${hoursVal} ساعة`);
+            return showAdminPanel(ctx); // إظهار لوحة الأدمن المحدثة فوراً أمامك
         }
     }
 
