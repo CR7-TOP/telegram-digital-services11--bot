@@ -101,12 +101,20 @@ const adminLoginStates = {};
 const adminSession = {}; 
 const depositStates = {};
 const broadcastStates = {}; 
-const promoCodeStates = {}; // 👈 تم تفعيل حالة الأكواد للعملاء
+const promoCodeStates = {}; 
 const searchStates = {}; 
 const adminInputStates = {}; 
 const userRequestLocks = {};
 const categoryCacheTime = 60000; 
 let lastCategoriesFetchTime = 0;
+
+// دالة لتنظيف حالة العميل (لو غير رأيه وداس على زرار تاني)
+function clearUserStates(userId) {
+    delete depositStates[userId];
+    delete promoCodeStates[userId];
+    delete searchStates[userId];
+    delete bulkQuantityStates[userId];
+}
 
 function logAdminAction(adminId, action) {
   try {
@@ -314,6 +322,8 @@ function getMainMenu() {
 bot.start((ctx) => {
   try {
     const userId = ctx.from.id; initUser(userId); 
+    clearUserStates(userId);
+
     if (usersDb[userId].isBanned) return ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
@@ -366,7 +376,8 @@ function calculateRetailPrice(service, user, quantity = 1) {
 
 bot.hears(/^💰 حسابي$/, (ctx) => {
   try {
-    const userId = ctx.from.id; initUser(userId); const user = usersDb[userId];
+    const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
+    const user = usersDb[userId];
     if (user.isBanned) return ctx.reply('❌ تم حظرك.').catch(()=>{});
     const vipTag = user.isVip ? '👑 (VIP)' : '👤 (عادي)';
     ctx.reply('👤 **حسابي الشخصي:**\n\n🆔 رقم الحساب: `' + user.uid + '`\n🔰 مستوى الحساب: ' + vipTag + '\n💳 الرصيد الحالي: *' + parseFloat(user.balance).toFixed(2) + ' EGP*\n🛍 إجمالي المشتريات: ' + user.totalSpent.toFixed(2) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
@@ -375,26 +386,26 @@ bot.hears(/^💰 حسابي$/, (ctx) => {
 
 bot.hears(/^🛒 طلباتي$/, (ctx) => {
     try {
-      const userId = ctx.from.id; initUser(userId);
+      const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
       const userOrders = usersDb[userId].orders || [];
       if (userOrders.length === 0) return ctx.reply('🛒 لم تقم بأي عمليات شراء حتى الآن.').catch(()=>{});
       const lastOrders = userOrders.slice(-5).reverse();
       let message = '🛒 **آخر عمليات الشراء الخاصة بك:**\n\n';
-      lastOrders.forEach(order => { message += '🛍 **الخدمة:** ' + order.name + '\n💰 **السعر:** ' + order.price + ' EGP\n🕒 **التاريخ:** ' + order.date + '\n━━━━━━━━━━━━\n'; });
+      lastOrders.forEach(order => { message += '🛍 **الخدمة:** ' + order.name + '\n💰 **السعر:** ' + parseFloat(order.price).toFixed(2) + ' EGP\n🕒 **التاريخ:** ' + order.date + '\n━━━━━━━━━━━━\n'; });
       ctx.reply(message, { parse_mode: 'Markdown' }).catch(()=>{});
     } catch(e){}
 });
 
 bot.hears(/^📜 سجل المحفظة$/, (ctx) => {
     try {
-      const userId = ctx.from.id; initUser(userId);
+      const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
       const history = usersDb[userId].walletHistory || [];
       if (history.length === 0) return ctx.reply('📜 لا توجد معاملات مالية مسجلة حتى الآن.').catch(()=>{});
       let msg = '📜 **سجل المعاملات المالية (آخر 10 عمليات):**\n\n';
       history.slice(-10).reverse().forEach(item => {
-          msg += '🔹 ' + item.type + ': *' + item.amount + ' EGP*\n🕒 ' + item.date + '\n━━━━━━━━━━━━\n';
+          msg += '🔹 ' + item.type + ': *' + parseFloat(item.amount).toFixed(2) + ' EGP*\n🕒 ' + item.date + '\n━━━━━━━━━━━━\n';
       });
       ctx.reply(msg, { parse_mode: 'Markdown' }).catch(()=>{});
     } catch(e){}
@@ -402,7 +413,7 @@ bot.hears(/^📜 سجل المحفظة$/, (ctx) => {
 
 bot.hears(/^📞 الدعم الفني$/, (ctx) => {
     try {
-      const userId = ctx.from.id; initUser(userId);
+      const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
       ctx.reply('📞 **تواصل مع الدعم الفني:**\n\nيرجى اختيار طريقة التواصل المناسبة لك:', {
         parse_mode: 'Markdown',
@@ -416,7 +427,7 @@ bot.hears(/^📞 الدعم الفني$/, (ctx) => {
 
 bot.hears(/^🔗 دعوة الأصدقاء \(اربح 2%\)$/, (ctx) => {
     try {
-      const userId = ctx.from.id; initUser(userId);
+      const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
       const refLink = 'https://t.me/' + ctx.botInfo.username + '?start=ref_' + usersDb[userId].uid;
       ctx.reply('🎁 **نظام دعوة الأصدقاء المربح:**\n\nشارِك رابط الدعوة مع أصدقائك، وكلما قام أحدهم **بشحن محفظته**، ستحصل أنت فوراً على **2%** من قيمة شحنه تضاف لرصيدك تلقائياً!\n\n🔗 رابط الدعوة الخاص بك:\n`' + refLink + '`\n\n👥 عدد الأشخاص الذين دعوتهم: ' + usersDb[userId].referrals, {parse_mode: 'Markdown'}).catch(()=>{});
@@ -425,7 +436,7 @@ bot.hears(/^🔗 دعوة الأصدقاء \(اربح 2%\)$/, (ctx) => {
 
 bot.hears(/^🔍 بحث عن خدمة$/, (ctx) => {
     try {
-      const userId = ctx.from.id; initUser(userId);
+      const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
       searchStates[userId] = true;
       ctx.reply('🔍 أرسل اسم الخدمة التي تبحث عنها (مثال: Canva أو نتفلكس) أو اكتب `Ahmed/` لتسجيل دخول الأدمن:').catch(()=>{});
@@ -434,17 +445,16 @@ bot.hears(/^🔍 بحث عن خدمة$/, (ctx) => {
 
 bot.hears(/^💳 شحن المحفظة \(فودافون كاش\)$/, (ctx) => {
   try {
-    const userId = ctx.from.id; initUser(userId);
+    const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
     if (usersDb[userId].isBanned) return;
     depositStates[userId] = { step: 'WAIT_AMOUNT' };
     ctx.reply('💳 **شحن المحفظة عبر فودافون كاش**\n\nمن فضلك أكتب **المبلغ** الذي قمت بتحويله بالجنيه المصري (مثال: 100):').catch(()=>{});
   } catch(e){}
 });
 
-// 👈 تفعيل حالة استلام الكود من العميل بأمان تام
 bot.hears(/^🎟 استخدام كود خصم$/, (ctx) => { 
     try {
-      const userId = ctx.from.id; initUser(userId);
+      const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
       promoCodeStates[userId] = true;
       ctx.reply('🎟️ **استخدام كود خصم أو قسيمة شحن:**\n\nمن فضلك أرسل الكود الآن في رسالة:', {parse_mode: 'Markdown'}).catch(()=>{}); 
@@ -483,13 +493,12 @@ function showAdminPanel(ctx) {
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
-        [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_voucher')],
+        [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_promo')],
         [Markup.button.callback('✉ مراسلة عميل بالـ ID', 'admin_msg_by_id'), Markup.button.callback('👥 شحن رصيد بالـ ID', 'admin_charge_by_id')], 
         [Markup.button.callback('🛠️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
         [Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users'), Markup.button.callback('💸 تقرير الأرباح', 'admin_profit_report')],
         [Markup.button.callback('🚫 حظر مستخدم', 'admin_ban_user'), Markup.button.callback('✅ فك حظر مستخدم', 'admin_unban_user')],
-        [Markup.button.callback('📢 إرسال رسالة (إذاعة)', 'admin_broadcast'), Markup.button.callback('🎟️ إنشاء كود خصم', 'admin_create_promo')],
-        [Markup.button.callback('🚪 تسجيل خروج', 'admin_logout')]
+        [Markup.button.callback('📢 إرسال رسالة (إذاعة)', 'admin_broadcast'), Markup.button.callback('🚪 تسجيل خروج', 'admin_logout')]
       ]);
 
     if(ctx.callbackQuery) { ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard }).catch(()=>{}); }
@@ -499,10 +508,7 @@ function showAdminPanel(ctx) {
 
 bot.action('admin_profit_report', (ctx) => {
     try {
-        let totalProfit = 0;
-        let todayProfit = 0;
-        let yesterdayProfit = 0;
-
+        let totalProfit = 0; let todayProfit = 0; let yesterdayProfit = 0;
         const now = new Date();
         const todayStr = now.toLocaleDateString('ar-EG', { timeZone: 'Africa/Cairo' });
         const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -513,34 +519,16 @@ bot.action('admin_profit_report', (ctx) => {
             if (user.orders && user.orders.length > 0) {
                 user.orders.forEach(order => {
                     let profit = 0;
-                    if (order.profit !== undefined) {
-                        profit = parseFloat(order.profit);
-                    } else {
-                        const price = parseFloat(order.price || 0);
-                        profit = price - (price / (1 + (globalMarkupPercent / 100)));
-                    }
-
+                    if (order.profit !== undefined) { profit = parseFloat(order.profit); } 
+                    else { const price = parseFloat(order.price || 0); profit = price - (price / (1 + (globalMarkupPercent / 100))); }
                     totalProfit += profit;
-
-                    if (order.date.includes(todayStr)) {
-                        todayProfit += profit;
-                    } else if (order.date.includes(yesterdayStr)) {
-                        yesterdayProfit += profit;
-                    }
+                    if (order.date.includes(todayStr)) { todayProfit += profit; } 
+                    else if (order.date.includes(yesterdayStr)) { yesterdayProfit += profit; }
                 });
             }
         }
-
-        const msg = `💸 **تقرير أرباح المتجر:**\n\n` +
-                    `📅 **أرباح اليوم:** *${todayProfit.toFixed(2)} EGP*\n` +
-                    `📆 **أرباح أمس:** *${yesterdayProfit.toFixed(2)} EGP*\n` +
-                    `📈 **إجمالي الأرباح الكلية:** *${totalProfit.toFixed(2)} EGP*\n\n` +
-                    `*(ملاحظة: الأرباح القديمة محسوبة بشكل تقديري، أما أرباح الطلبات الجديدة يتم حسابها بدقة 100% بناءً على تكلفة المنتج الأصلية).*`;
-
-        ctx.editMessageText(msg, {
-            parse_mode: 'Markdown',
-            ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])
-        }).catch(()=>{});
+        const msg = `💸 **تقرير أرباح المتجر:**\n\n📅 **أرباح اليوم:** *${todayProfit.toFixed(2)} EGP*\n📆 **أرباح أمس:** *${yesterdayProfit.toFixed(2)} EGP*\n📈 **إجمالي الأرباح الكلية:** *${totalProfit.toFixed(2)} EGP*\n\n*(ملاحظة: الأرباح القديمة محسوبة بشكل تقديري، أما أرباح الطلبات الجديدة يتم حسابها بدقة 100%).*`;
+        ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch (e) { console.error(e); }
 });
 
@@ -559,7 +547,7 @@ bot.action(/setmarkup_(.+)/, (ctx) => {
 });
 bot.action(/addstock_(.+)/, (ctx) => {
     adminInputStates[ctx.from.id] = 'WAIT_ADD_STOCK_' + ctx.match[1];
-    ctx.editMessageText('📦 **إدارة المخزن المحلي لهذا المنتج:**\n\n➕ **للإضافة:** أرسل رسالة تحتوي على البيانات كاملة (مهما كان عدد سطورها سيتم اعتبارها كعنصر واحد).\n👀 **للعرض:** أرسل كلمة `عرض` لمعرفة محتويات المخزن.\n🗑️ **للحذف:** أرسل كلمة `حذف الكل` لتفريغ مخزن هذا المنتج بالكامل.', {parse_mode: 'Markdown'}).catch(()=>{});
+    ctx.editMessageText('📦 **إدارة المخزن المحلي لهذا المنتج:**\n\n➕ **للإضافة:** أرسل رسالة تحتوي على البيانات كاملة.\n👀 **للعرض:** أرسل كلمة `عرض` لمعرفة محتويات المخزن.\n🗑️ **للحذف:** أرسل كلمة `حذف الكل` لتفريغ مخزن هذا المنتج بالكامل.', {parse_mode: 'Markdown'}).catch(()=>{});
 });
 
 bot.action('admin_pending_deposits', (ctx) => {
@@ -690,7 +678,6 @@ bot.on('text', async (ctx, next) => {
     if (usersDb[userId].isBanned) return;
     const text = ctx.message.text;
 
-    // 👈 استقبال الأكواد من العميل بذكاء وحماية
     if (promoCodeStates[userId]) {
         delete promoCodeStates[userId]; 
         const textCode = text.trim().toUpperCase();
@@ -743,7 +730,6 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply(`✅ تم شحن رصيد العميل بنجاح!\n👤 العميل: \`${targetUid}\`\n💰 المبلغ: *${amount} EGP*`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
-        // 👈 سد ثغرة المسافات الزائدة عند إنتاج الأكواد
         if (state === 'WAIT_PROMO_CREATE') {
             const parts = text.trim().split(/\s+/); 
             if (parts.length < 2) return ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
@@ -753,7 +739,6 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply(`✅ تم إنشاء كود الخصم!\n🎟 الكود: \`${code}\`\n💰 القيمة: *${amount} EGP*`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
-        // 👈 سد ثغرة المسافات الزائدة عند إنتاج قسائم الشحن
         if (state === 'WAIT_VOUCHER_CREATE') {
             const parts = text.trim().split(/\s+/); 
             if (parts.length < 2) return ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
@@ -987,6 +972,8 @@ async function showCategories(ctx) {
   const userId = ctx.from.id;
   try {
     initUser(userId);
+    clearUserStates(userId);
+    
     if (usersDb[userId].isBanned) return ctx.reply('🛠 المتجر في حالة صيانة حالياً.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return ctx.reply('🛠 المتجر في حالة صيانة حالياً.').catch(()=>{});
 
@@ -1029,12 +1016,16 @@ async function showCategories(ctx) {
     let buttons = [];
     for (let i = 0; i < categories.length; i += 2) {
       const row = [];
-      row.push(Markup.button.callback((categoryEmojis[categories[i]] || '📦') + ' ' + categories[i], 'cat_' + encodeURIComponent(categories[i])));
-      if (i + 1 < categories.length) row.push(Markup.button.callback((categoryEmojis[categories[i+1]] || '📦') + ' ' + categories[i+1], 'cat_' + encodeURIComponent(categories[i+1])));
+      // تم تبسيط اسم الـ callback لحماية البوت من عطل تليجرام (64 byte limit)
+      row.push(Markup.button.callback((categoryEmojis[categories[i]] || '📦') + ' ' + categories[i], 'cat_' + i));
+      if (i + 1 < categories.length) row.push(Markup.button.callback((categoryEmojis[categories[i+1]] || '📦') + ' ' + categories[i+1], 'cat_' + (i + 1)));
       buttons.push(row);
     }
     buttons.push([Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]);
     const keyboard = Markup.inlineKeyboard(buttons);
+
+    // ربط الأقسام بمصفوفة مؤقتة عشان الـ callback يشتغل صح
+    bot.context.tempCategories = categories;
 
     if(ctx.callbackQuery) { return ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{}); } 
     else if(loadingMsgId) { return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, 'اختر الفئة:', keyboard).catch(()=>{}); } 
@@ -1046,14 +1037,18 @@ async function showCategories(ctx) {
   }
 }
 
-bot.action(/cat_(.+)/, async (ctx) => {
+bot.action(/cat_(\d+)/, async (ctx) => {
   try {
     const userId = ctx.from.id; initUser(userId);
     if (usersDb[userId].isBanned) return;
 
-    const selectedCategory = decodeURIComponent(ctx.match[1]);
+    const catIndex = parseInt(ctx.match[1]);
+    const selectedCategory = bot.context.tempCategories ? bot.context.tempCategories[catIndex] : null;
     
-    if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
+    if (!selectedCategory || !cachedServices || cachedServices.length === 0) { 
+        cachedServices = await fetchAllServices(); 
+        return ctx.answerCbQuery('يرجى إعادة فتح الأقسام.', { show_alert: true }).catch(()=>{});
+    }
 
     const categoryServices = cachedServices.filter(s => {
       let cat = getServiceCategory(s);
@@ -1071,10 +1066,15 @@ bot.action(/cat_(.+)/, async (ctx) => {
 
 bot.action('main_menu', (ctx) => {
   try {
-    const userId = ctx.from.id; initUser(userId);
+    const userId = ctx.from.id; initUser(userId); clearUserStates(userId);
     if (usersDb[userId].isBanned) return;
     ctx.deleteMessage().catch(()=>{}); ctx.reply('القائمة الرئيسية 🚀', getMainMenu()).catch(()=>{});
   } catch(e){}
+});
+
+// مسح رسالة اختيار الكمية بهدوء عند الإلغاء
+bot.action('cancel_action', (ctx) => {
+    ctx.deleteMessage().catch(()=>{});
 });
 
 bot.action(/confirm_(.+)/, async (ctx) => {
@@ -1098,7 +1098,7 @@ bot.action(/confirm_(.+)/, async (ctx) => {
           ...Markup.inlineKeyboard([
               [Markup.button.callback('➖ 1-', 'qty_dec_' + srv.id), Markup.button.callback('➕ 1+', 'qty_inc_' + srv.id)],
               [Markup.button.callback('✅ تأكيد الشراء', 'buy_' + srv.id)],
-              [Markup.button.callback('❌ إلغاء', 'main_categories')]
+              [Markup.button.callback('❌ إلغاء', 'cancel_action')]
           ])
         }
      ).catch(()=>{});
@@ -1138,7 +1138,7 @@ async function updateQuantityPrompt(ctx, srvId, qty) {
            ...Markup.inlineKeyboard([
                [Markup.button.callback('➖ 1-', 'qty_dec_' + srv.id), Markup.button.callback('➕ 1+', 'qty_inc_' + srv.id)],
                [Markup.button.callback('✅ تأكيد الشراء', 'buy_' + srv.id)],
-               [Markup.button.callback('❌ إلغاء', 'main_categories')]
+               [Markup.button.callback('❌ إلغاء', 'cancel_action')]
            ])
          }
       ).catch(()=>{});
@@ -1209,9 +1209,11 @@ bot.action(/buy_(.+)/, async (ctx) => {
 
      const hasLocalStock = localInventory[String(srv.id)] && localInventory[String(srv.id)].length >= qty;
 
+     // الشراء من المخزن المحلي
      if (hasLocalStock) {
          const deliveredItems = localInventory[String(srv.id)].splice(0, qty);
          
+         // 👈 التعديل الأول: الخصم بعد التأكد من وجود العنصر
          usersDb[userId].balance -= retailPrice;
          usersDb[userId].totalSpent += retailPrice;
          usersDb[userId].walletHistory.push({ type: `شراء محلي (${name})`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
@@ -1228,9 +1230,11 @@ bot.action(/buy_(.+)/, async (ctx) => {
          return; 
      }
 
+     // الشراء من الـ API
      try {
         const orderResponse = await placeOrderWithBestProvider(srv, qty);
 
+        // 👈 التعديل الثاني (الأخطر): الفلوس تتخصم هنا فقط بعد نجاح طلب الـ API
         usersDb[userId].balance -= retailPrice;
         usersDb[userId].totalSpent += retailPrice;
         usersDb[userId].walletHistory.push({ type: `شراء (${name} - ${qty}x)`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
@@ -1296,6 +1300,7 @@ bot.action(/buy_(.+)/, async (ctx) => {
         notifyAdmin(adminLogMsg);
 
      } catch (error) {
+        // الفلوس مش هتتخصم هنا أبداً لو حصل خطأ
         let apiErrorMsg = error.response?.data?.message || error.response?.data?.error || error.response?.data || error.message || "عطل غير معروف";
         if (typeof apiErrorMsg === 'object') {
             apiErrorMsg = JSON.stringify(apiErrorMsg);
