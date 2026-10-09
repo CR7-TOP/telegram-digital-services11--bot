@@ -57,6 +57,10 @@ async function connectDB() {
 async function loadDatabase() {
     await connectDB();
     if (!dbCollection) return;
+    
+    // 🚀 سرعة البوت: منع تحميل الداتا من الصفر مع كل ضغطة زرار طالما هي موجودة في الذاكرة
+    if (Object.keys(usersDb).length > 0) return; 
+
     const data = await dbCollection.findOne({ _id: "main_data" });
     if (data) {
         usersDb = data.usersDb || {};
@@ -125,7 +129,7 @@ let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689';
 const categoryCacheTime = 60000; 
 let lastCategoriesFetchTime = 0;
 let cachedServices = [];
-let isFetchingServices = false; // 🚀 قفل لمنع التحديث المتكرر في نفس اللحظة
+let isFetchingServices = false;
 
 function clearUserStates(userId) {
     try {
@@ -307,7 +311,6 @@ async function fetchAllServices() {
     return services;
 }
 
-// 🚀 نظام التحديث الشبحي (Stale-While-Revalidate)
 async function backgroundServiceUpdate() {
     if (isFetchingServices) return;
     isFetchingServices = true;
@@ -435,10 +438,6 @@ function calculateRetailPrice(service, user, quantity = 1) {
     return '0.00';
   }
 }
-
-// ==========================================
-// 🛡️ قسم القوائم الرئيسية (تم التعديل لتجاهل الإيموجي وحل مشكلة عدم الاستجابة) 🛡️
-// ==========================================
 
 bot.hears(/حسابي/, (ctx) => {
   try {
@@ -570,7 +569,6 @@ bot.hears(/استخدام كود خصم/, (ctx) => {
     } catch(e){}
 });
 
-// 🚀 دالة عرض الخدمات السريعة (بدون انتظار وبدون تحميل)
 async function showCategories(ctx) {
   const userId = String(ctx.from.id);
   try {
@@ -589,7 +587,7 @@ async function showCategories(ctx) {
         }
         await backgroundServiceUpdate(); 
     } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-        backgroundServiceUpdate(); // 🚀 تحديث صامت في الخلفية بدون انتظار للعميل
+        backgroundServiceUpdate(); 
     }
 
     if (cachedServices.length === 0) {
@@ -649,7 +647,7 @@ async function showCategories(ctx) {
 
 bot.hears(/الخدمات/, showCategories);
 bot.action('main_categories', (ctx) => {
-    ctx.answerCbQuery().catch(()=>{}); // 🚀 استجابة فورية للزر لمنع الدوران
+    ctx.answerCbQuery().catch(()=>{}); 
     showCategories(ctx);
 });
 
@@ -763,11 +761,11 @@ bot.action('admin_pending_deposits', (ctx) => {
         let msg = '💳 **طلبات الشحن المعلقة (' + pendingDeposits.length + '):**\n\n';
         let inlineButtons = [];
         pendingDeposits.forEach((req, idx) => {
-            msg += '👤 ID: `' + req.userUid + '`\n💰 المبلغ: *' + req.amount + ' EGP*\n📱 الرقم: `' + req.senderNumber + '`\n━━━━━━━━━━━━\n';
-            inlineButtons.push([ Markup.button.callback('✅ موافقة (' + req.amount + 'ج)', 'approve_dep_' + req.userId + '_' + req.amount), Markup.button.callback('❌ رفض', 'reject_dep_' + req.userId) ]);
+            msg += `👤 ID: <code>${req.userUid}</code>\n💰 المبلغ: <b>${req.amount} EGP</b>\n📱 الرقم: <code>${req.senderNumber}</code>\n━━━━━━━━━━━━\n`;
+            inlineButtons.push([ Markup.button.callback('✅ موافقة (' + req.amount + 'ج)', `approve_dep_${req.userId}_${req.amount}`), Markup.button.callback('❌ رفض', `reject_dep_${req.userId}`) ]);
         });
         inlineButtons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
-        ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(inlineButtons) }).catch(()=>{});
+        ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(inlineButtons) }).catch(()=>{});
     } catch(e) {}
 });
 
@@ -938,7 +936,7 @@ bot.action(/^ord_det_(\d+)$/, (ctx) => {
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
 bot.action(/^cat_(\d+)$/, async (ctx) => {
-  ctx.answerCbQuery().catch(()=>{}); // 🚀 استجابة فورية
+  ctx.answerCbQuery().catch(()=>{}); 
   try {
     const userId = String(ctx.from.id); initUser(userId);
     if (usersDb[userId].isBanned) return;
@@ -950,7 +948,7 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
         await ctx.editMessageText('⏳ جاري تحميل الخدمات السريعة...').catch(()=>{});
         await backgroundServiceUpdate();
     } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-        backgroundServiceUpdate(); // 🚀 تحديث في الخلفية
+        backgroundServiceUpdate(); 
     }
 
     if (!selectedCategory || cachedServices.length === 0) { 
@@ -972,13 +970,13 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
 });
 
 bot.action('cancel_action', (ctx) => {
-    ctx.answerCbQuery().catch(()=>{}); // 🚀
+    ctx.answerCbQuery().catch(()=>{}); 
     clearUserStates(ctx.from.id);
     ctx.deleteMessage().catch(()=>{});
 });
 
 bot.action(/^buyact_(.+)$/, async (ctx) => {
-  ctx.answerCbQuery().catch(()=>{}); // 🚀 استجابة فورية
+  ctx.answerCbQuery().catch(()=>{}); 
   try {
      const userId = String(ctx.from.id); initUser(userId);
      if (usersDb[userId].isBanned) return;
@@ -1072,7 +1070,7 @@ bot.on('text', async (ctx, next) => {
                  await ctx.reply('⏳ جاري التحديث السريع للأسعار...').catch(()=>{});
                  await backgroundServiceUpdate(); 
              } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-                 backgroundServiceUpdate(); // 🚀 تحديث في الخلفية
+                 backgroundServiceUpdate(); 
              }
 
              const srv = cachedServices.find(s => String(s.id) === String(srvId));
@@ -1120,7 +1118,7 @@ bot.on('text', async (ctx, next) => {
                  saveDatabase();
 
                  let deliveryMsg = `✅ <b>تم الشراء بنجاح</b>\n\n📦 <b>رقم الطلب:</b> #LOCAL-${Math.floor(1000 + Math.random() * 9000)}\n\n` +
-                                   `🛍️ <b>الخدمة:</b> ${safeName}\n🔢 <b>الكمية:</b> ${qty}\n🟢 <b>الحالة:</b> مكتمل فوراً\n💰 <b>المدفوع:</b> ${retailPrice} EGP\n\n` +
+                                   `🛍️ <b>الخدمة:</b> ${safeName}\n🔢 <b>الكمية:</b> ${qty}\n🟢 <b>الحالة:</b> مكت فوراً\n💰 <b>المدفوع:</b> ${retailPrice} EGP\n\n` +
                                    `📋 <b>العناصر المسلمة:</b>\n<code>${safeDetails.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>`;
 
                  if(processingMsg) {
@@ -1511,6 +1509,35 @@ bot.on('text', async (ctx, next) => {
 
     return next();
   } catch(e) {}
+});
+
+bot.action(/^approve_dep_(-?\d+)_([\d.]+)$/, async (ctx) => {
+  ctx.answerCbQuery('⏳ جاري التنفيذ...').catch(()=>{}); // 🚀 استجابة فورية للزر لمنع التعليق
+  try {
+    const targetUserId = ctx.match[1]; const amount = parseFloat(ctx.match[2]);
+    initUser(targetUserId); usersDb[targetUserId].balance += amount; 
+    usersDb[targetUserId].walletHistory.push({ type: 'شحن فودافون كاش', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+    pendingDeposits = pendingDeposits.filter(d => String(d.userId) !== String(targetUserId)); saveDatabase();
+    
+    const referrerTelegramId = usersDb[targetUserId].referredBy;
+    if (referrerTelegramId && usersDb[referrerTelegramId]) {
+        const bonus = amount * 0.02; usersDb[referrerTelegramId].balance += bonus;
+        usersDb[referrerTelegramId].walletHistory.push({ type: 'عمولة إحالة 2%', amount: bonus, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+        bot.telegram.sendMessage(referrerTelegramId, `🎉 **عمولة دعوة أصدقاء جديدة!**\n💰 حصلت على: *${bonus.toFixed(2)} EGP*`, { parse_mode: 'Markdown' }).catch(() => {});
+    }
+    ctx.editMessageText(`✅ تمت الموافقة وإضافة مبلغ *${amount} EGP* للمستخدم.`, { parse_mode: 'Markdown' }).catch(()=>{});
+    bot.telegram.sendMessage(targetUserId, `🎉 **تم شحن محفظتك بنجاح!**\n💰 تمت إضافة: *${amount} EGP*`, { parse_mode: 'Markdown' }).catch(() => {});
+  } catch(err) {}
+});
+
+bot.action(/^reject_dep_(-?\d+)$/, async (ctx) => {
+  ctx.answerCbQuery('⏳ جاري التنفيذ...').catch(()=>{}); // 🚀 استجابة فورية للزر
+  try {
+    const targetUserId = ctx.match[1];
+    pendingDeposits = pendingDeposits.filter(d => String(d.userId) !== String(targetUserId)); saveDatabase();
+    ctx.editMessageText('❌ تم رفض الطلب.').catch(()=>{});
+    bot.telegram.sendMessage(targetUserId, '❌ عذراً، تم رفض طلب الشحن لعدم صحة بيانات التحويل.').catch(() => {});
+  } catch(err) {}
 });
 
 export default async function handler(req, res) {
