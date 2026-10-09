@@ -33,9 +33,11 @@ let customProductMarkups = {};
 let localInventory = {}; 
 
 let botStates = {
-    deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: ""
+    deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "",
+    buyQty: {} // 👈 حالة جديدة لتسجيل الخدمة التي يتم تحديد كميتها
 };
 
+// قفل أمني لمنع هجمات النقر المزدوج
 const userRequestLocks = {};
 
 async function connectDB() {
@@ -65,7 +67,7 @@ async function loadDatabase() {
         maintenanceMode = data.maintenanceMode || false;
         customProductMarkups = data.customProductMarkups || {};
         localInventory = data.localInventory || {};
-        botStates = data.botStates || { deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "" };
+        botStates = data.botStates || { deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "", buyQty: {} };
     }
 }
 
@@ -111,6 +113,7 @@ function clearUserStates(userId) {
     delete botStates.deposit[idStr];
     delete botStates.promo[idStr];
     delete botStates.search[idStr];
+    delete botStates.buyQty[idStr];
     saveDatabase();
 }
 
@@ -379,7 +382,7 @@ function calculateRetailPrice(service, user, quantity = 1) {
     if (user && user.isVip) markup = Math.max(0, markup - 5);
     let finalPrice = originalPrice * (1 + (markup / 100));
 
-    if (flashSale && flashSale.active) {
+    if (flashSale.active) {
         if (Date.now() < flashSale.expiresAt) {
             finalPrice = finalPrice - (finalPrice * (flashSale.discount / 100));
         } else {
@@ -733,6 +736,45 @@ bot.on('text', async (ctx, next) => {
     if (usersDb[userId].isBanned) return;
     const text = ctx.message.text;
 
+    // 🛡️ استقبال الكمية مباشرة من العميل في رسالة
+    if (botStates.buyQty[userId]) {
+        const srvId = botStates.buyQty[userId].srvId;
+        const msgId = botStates.buyQty[userId].msgId;
+        const qtyStr = text.trim();
+        
+        // التحقق من أن المدخل رقم صحيح وموجب فقط
+        if (!/^\d+$/.test(qtyStr) || parseInt(qtyStr) < 1) {
+            return ctx.reply('❌ يرجى كتابة أرقام صحيحة فقط للكمية (مثال: 1, 5, 10).').catch(()=>{});
+        }
+        
+        const qty = parseInt(qtyStr);
+        delete botStates.buyQty[userId];
+        saveDatabase();
+
+        if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
+        const srv = cachedServices.find(s => String(s.id) === String(srvId));
+        if (!srv) {
+            return ctx.reply('❌ الخدمة غير موجودة.').catch(()=>{});
+        }
+
+        const price = calculateRetailPrice(srv, usersDb[userId], qty);
+        const srvName = srv.name_ar || srv.name || srv.title;
+
+        // تعديل الرسالة الأصلية أو إرسال واحدة جديدة إذا تم حذف القديمة
+        const summaryText = `⚠️ <b>تأكيد الطلب:</b>\n\n🛍 <b>الخدمة:</b> ${srvName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}\n🔢 <b>الكمية المطلوبة:</b> ${qty}\n💰 <b>إجمالي التكلفة:</b> <b>${price} EGP</b>`;
+        const actionKeyboard = Markup.inlineKeyboard([
+            [Markup.button.callback('✅ تأكيد الشراء', `exec_${srv.id}_${qty}`)],
+            [Markup.button.callback('❌ إلغاء', 'cancel_action')]
+        ]);
+
+        try {
+            await ctx.telegram.editMessageText(ctx.chat.id, msgId, null, summaryText, { parse_mode: 'HTML', ...actionKeyboard });
+        } catch (e) {
+            await ctx.reply(summaryText, { parse_mode: 'HTML', ...actionKeyboard }).catch(()=>{});
+        }
+        return; 
+    }
+
     if (botStates.promo[userId]) {
         delete botStates.promo[userId]; saveDatabase();
         const textCode = text.trim().toUpperCase();
@@ -763,7 +805,7 @@ bot.on('text', async (ctx, next) => {
 
     if (botStates.adminSession[userId] && botStates.adminInput[userId]) {
         const state = botStates.adminInput[userId];
-        delete botStates.adminInput[userId];
+        delete botStates.adminInput[userId]; saveDatabase();
 
         if (state === 'WAIT_CHARGE_USER') {
             const parts = text.trim().split(/\s+/);
@@ -947,7 +989,7 @@ bot.on('text', async (ctx, next) => {
                 }
             }
             await ctx.reply(`⚡ **تم تفعيل الخصم بنجاح!**\n🎁 نسبة الخصم: ${discountVal}%\n⏳ المدة: ${hoursVal} ساعة`);
-            return showAdminPanel(ctx); // إظهار لوحة الأدمن المحدثة فوراً أمامك
+            return showAdminPanel(ctx); 
         }
     }
 
@@ -982,7 +1024,7 @@ bot.on('text', async (ctx, next) => {
             if (String(usersDb[tgId].uid) !== '1001') {
                 bot.telegram.sendMessage(tgId, '📢 **إذاعة:**\n\n' + text).catch(() => {});
                 count++;
-                if (count % 20 === 0) await new Promise(r => setTimeout(r, 1000)); 
+                if (count % 15 === 0) await new Promise(r => setTimeout(r, 200)); 
             }
         }
         delete botStates.broadcast[userId]; saveDatabase(); 
@@ -1161,9 +1203,11 @@ bot.action('main_menu', (ctx) => {
 
 bot.action('cancel_action', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
+    clearUserStates(ctx.from.id); // 👈 تنظيف حالة إدخال الكمية عند الإلغاء
     ctx.deleteMessage().catch(()=>{});
 });
 
+// 🛡️ التعديل الجذري: طلب الكمية كرسالة نصية 
 bot.action(/^buyact_(.+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{});
   try {
@@ -1179,60 +1223,20 @@ bot.action(/^buyact_(.+)$/, async (ctx) => {
      const price = calculateRetailPrice(srv, usersDb[userId], 1);
      const srvName = srv.name_ar || srv.name || srv.title;
 
-     ctx.editMessageText(`⚠️ اختر الكمية المطلوبة لـ:\n\n🛍 <b>${srvName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</b>\n💰 السعر للقطعة: <b>${price} EGP</b>\n🔢 الكمية الحالية: 1`, 
+     // إرسال رسالة تطلب الكمية وتسجيلها في حالة العميل
+     const msg = await ctx.editMessageText(`⚠️ <b>إدخال الكمية المطلوبة:</b>\n\n🛍 <b>الخدمة:</b> ${srvName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}\n💰 السعر للقطعة: <b>${price} EGP</b>\n\n✍️ <b>من فضلك، أرسل الكمية المطلوبة الآن في رسالة (أرقام فقط):</b>`, 
         {
           parse_mode: 'HTML',
-          ...Markup.inlineKeyboard([
-              [Markup.button.callback('➖ 1-', `qdec_${srv.id}_1`), Markup.button.callback('➕ 1+', `qinc_${srv.id}_1`)],
-              [Markup.button.callback('✅ تأكيد الشراء', `exec_${srv.id}_1`)],
-              [Markup.button.callback('❌ إلغاء', 'cancel_action')] 
-          ])
+          ...Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء العملية', 'cancel_action')]])
         }
      ).catch(e => { if (!e.message.includes('not modified')) console.error(e); });
+
+     if (msg) {
+         botStates.buyQty[userId] = { srvId: String(srv.id), msgId: msg.message_id };
+         saveDatabase();
+     }
   } catch(err){}
 });
-
-bot.action(/^qinc_(.+)_(\d+)$/, async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    try {
-      const srvId = ctx.match[1];
-      const qty = parseInt(ctx.match[2]) + 1;
-      await updateQuantityPrompt(ctx, srvId, qty);
-    } catch(e){}
-});
-
-bot.action(/^qdec_(.+)_(\d+)$/, async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    try {
-      const srvId = ctx.match[1];
-      let qty = parseInt(ctx.match[2]);
-      if (isNaN(qty) || qty <= 1) return;
-      qty -= 1;
-      await updateQuantityPrompt(ctx, srvId, qty);
-    } catch(e){}
-});
-
-async function updateQuantityPrompt(ctx, srvId, qty) {
-    try {
-      const userId = String(ctx.from.id);
-      if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
-      const srv = cachedServices.find(s => String(s.id) === String(srvId));
-      if (!srv) return;
-      const price = calculateRetailPrice(srv, usersDb[userId], qty);
-      const srvName = srv.name_ar || srv.name || srv.title;
-
-      ctx.editMessageText(`⚠️ اختر الكمية المطلوبة لـ:\n\n🛍 <b>${srvName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</b>\n💰 السعر الإجمالي (${qty} قطعة): <b>${price} EGP</b>\n🔢 الكمية الحالية: ${qty}`, 
-         {
-           parse_mode: 'HTML',
-           ...Markup.inlineKeyboard([
-               [Markup.button.callback('➖ 1-', `qdec_${srv.id}_${qty}`), Markup.button.callback('➕ 1+', `qinc_${srv.id}_${qty}`)],
-               [Markup.button.callback('✅ تأكيد الشراء', `exec_${srv.id}_${qty}`)],
-               [Markup.button.callback('❌ إلغاء', 'cancel_action')]
-           ])
-         }
-      ).catch(e => { if (!e.message.includes('not modified')) console.error(e); });
-    } catch(e){}
-}
 
 function extractUsefulData(obj) {
     if (!obj) return null;
@@ -1434,9 +1438,6 @@ bot.action(/^exec_(.+)_(-?\d+)$/, async (ctx) => {
   }
 });
 
-// ==========================================
-// 🛡️ معالجة Vercel المتقدمة
-// ==========================================
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
