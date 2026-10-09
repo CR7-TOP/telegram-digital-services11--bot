@@ -19,7 +19,6 @@ const client = new MongoClient(MONGODB_URI);
 let dbCollection = null;
 let pendingSaves = []; 
 let isDbConnected = false;
-let isDataLoaded = false; // 🚀 مفتاح السرعة: منع تحميل الداتا مع كل رسالة
 
 let usersDb = {};
 let globalMarkupPercent = 15;
@@ -56,8 +55,6 @@ async function connectDB() {
 }
 
 async function loadDatabase() {
-    if (isDataLoaded) return; // 🚀 لو الداتا متحملة مسبقاً، متضيعش وقت وحملها من الرام فوراً
-    
     await connectDB();
     if (!dbCollection) return;
     const data = await dbCollection.findOne({ _id: "main_data" });
@@ -88,7 +85,6 @@ async function loadDatabase() {
             ordersPage: loadedStates.ordersPage || {}
         };
     }
-    isDataLoaded = true; // 🚀 حفظنا إن الداتا اتحملت خلاص
 }
 
 function saveDatabase() {
@@ -129,6 +125,7 @@ let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689';
 const categoryCacheTime = 60000; 
 let lastCategoriesFetchTime = 0;
 let cachedServices = [];
+let isFetchingServices = false; // 🚀 قفل لمنع التحديث المتكرر في نفس اللحظة
 
 function clearUserStates(userId) {
     try {
@@ -310,19 +307,20 @@ async function fetchAllServices() {
     return services;
 }
 
-// 🚀 نظام التحديث في الخلفية (Background Sync) لسرعة استجابة لا مثيل لها
-async function ensureServicesLoaded() {
-    if (cachedServices.length === 0) {
-        cachedServices = await fetchAllServices();
-        lastCategoriesFetchTime = Date.now();
-    } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-        // تحديث خفي في الخلفية دون تعطيل المستخدم
-        fetchAllServices().then(services => {
-            if (services && services.length > 0) {
-                cachedServices = services;
-                lastCategoriesFetchTime = Date.now();
-            }
-        }).catch(()=>{});
+// 🚀 نظام التحديث الشبحي (Stale-While-Revalidate)
+async function backgroundServiceUpdate() {
+    if (isFetchingServices) return;
+    isFetchingServices = true;
+    try {
+        const services = await fetchAllServices();
+        if (services && services.length > 0) {
+            cachedServices = services;
+            lastCategoriesFetchTime = Date.now();
+        }
+    } catch (e) {
+        console.error(e);
+    } finally {
+        isFetchingServices = false;
     }
 }
 
@@ -437,6 +435,10 @@ function calculateRetailPrice(service, user, quantity = 1) {
     return '0.00';
   }
 }
+
+// ==========================================
+// 🛡️ قسم القوائم الرئيسية (تم التعديل لتجاهل الإيموجي وحل مشكلة عدم الاستجابة) 🛡️
+// ==========================================
 
 bot.hears(/حسابي/, (ctx) => {
   try {
@@ -568,17 +570,27 @@ bot.hears(/استخدام كود خصم/, (ctx) => {
     } catch(e){}
 });
 
+// 🚀 دالة عرض الخدمات السريعة (بدون انتظار وبدون تحميل)
 async function showCategories(ctx) {
   const userId = String(ctx.from.id);
-  let loadingMsgId = null;
   try {
     initUser(userId); clearUserStates(userId);
     
     if (usersDb[userId].isBanned) return ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
-    // 🚀 تحديث سريع: استخدام Cache مباشرة قبل الطباعة لجعلها لحظية
-    await ensureServicesLoaded();
+    if (cachedServices.length === 0) {
+        let loadingMsgId;
+        if(ctx.callbackQuery) { 
+            await ctx.editMessageText('⏳ جاري ربط السيرفرات (ثواني فقط)...').catch(()=>{}); 
+        } else { 
+            const msg = await ctx.reply('⏳ جاري ربط السيرفرات (ثواني فقط)...').catch(()=>{}); 
+            if(msg) loadingMsgId = msg.message_id; 
+        }
+        await backgroundServiceUpdate(); 
+    } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
+        backgroundServiceUpdate(); // 🚀 تحديث صامت في الخلفية بدون انتظار للعميل
+    }
 
     if (cachedServices.length === 0) {
         const errorMsg = '⚠️ تعذر جلب الخدمات حالياً، يرجى المحاولة بعد قليل.';
@@ -636,7 +648,10 @@ async function showCategories(ctx) {
 }
 
 bot.hears(/الخدمات/, showCategories);
-bot.action('main_categories', showCategories);
+bot.action('main_categories', (ctx) => {
+    ctx.answerCbQuery().catch(()=>{}); // 🚀 استجابة فورية للزر لمنع الدوران
+    showCategories(ctx);
+});
 
 function sendDepositNotification(req) {
   try {
@@ -744,7 +759,7 @@ bot.action(/^addstock_(.+)$/, (ctx) => {
 bot.action('admin_pending_deposits', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
-        if (!pendingDeposits || pendingDeposits.length === 0) return ctx.editMessageText('💳 **طلبات الشحن المعلقة:**\n\nلا توجد طلبات الشحن المعلقة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
+        if (!pendingDeposits || pendingDeposits.length === 0) return ctx.editMessageText('💳 **طلبات الشحن المعلقة:**\n\nلا توجد طلبات شحن معلقة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
         let msg = '💳 **طلبات الشحن المعلقة (' + pendingDeposits.length + '):**\n\n';
         let inlineButtons = [];
         pendingDeposits.forEach((req, idx) => {
@@ -923,7 +938,7 @@ bot.action(/^ord_det_(\d+)$/, (ctx) => {
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
 bot.action(/^cat_(\d+)$/, async (ctx) => {
-  ctx.answerCbQuery().catch(()=>{});
+  ctx.answerCbQuery().catch(()=>{}); // 🚀 استجابة فورية
   try {
     const userId = String(ctx.from.id); initUser(userId);
     if (usersDb[userId].isBanned) return;
@@ -931,7 +946,12 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
     const catIndex = parseInt(ctx.match[1]);
     const selectedCategory = usersDb[userId].tempCategories ? usersDb[userId].tempCategories[catIndex] : null;
     
-    await ensureServicesLoaded(); // 🚀 تحديث سريع للبيانات
+    if (cachedServices.length === 0) {
+        await ctx.editMessageText('⏳ جاري تحميل الخدمات السريعة...').catch(()=>{});
+        await backgroundServiceUpdate();
+    } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
+        backgroundServiceUpdate(); // 🚀 تحديث في الخلفية
+    }
 
     if (!selectedCategory || cachedServices.length === 0) { 
         return ctx.editMessageText('⚠️ يرجى إعادة فتح الأقسام من البداية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
@@ -952,18 +972,21 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
 });
 
 bot.action('cancel_action', (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
+    ctx.answerCbQuery().catch(()=>{}); // 🚀
     clearUserStates(ctx.from.id);
     ctx.deleteMessage().catch(()=>{});
 });
 
 bot.action(/^buyact_(.+)$/, async (ctx) => {
-  ctx.answerCbQuery().catch(()=>{});
+  ctx.answerCbQuery().catch(()=>{}); // 🚀 استجابة فورية
   try {
      const userId = String(ctx.from.id); initUser(userId);
      if (usersDb[userId].isBanned) return;
 
-     await ensureServicesLoaded(); // 🚀 تحميل سريع للبيانات قبل التنفيذ
+     if (cachedServices.length === 0) {
+         await ctx.editMessageText('⏳ لحظات...').catch(()=>{});
+         await backgroundServiceUpdate();
+     }
 
      const srvId = ctx.match[1];
      const srv = cachedServices.find(s => String(s.id) === String(srvId));
@@ -1045,7 +1068,12 @@ bot.on('text', async (ctx, next) => {
         userRequestLocks[userId] = true;
 
         try {
-             await ensureServicesLoaded(); // 🚀 تحديث سريع قبل الشراء
+             if (cachedServices.length === 0) {
+                 await ctx.reply('⏳ جاري التحديث السريع للأسعار...').catch(()=>{});
+                 await backgroundServiceUpdate(); 
+             } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
+                 backgroundServiceUpdate(); // 🚀 تحديث في الخلفية
+             }
 
              const srv = cachedServices.find(s => String(s.id) === String(srvId));
              if (!srv) {
