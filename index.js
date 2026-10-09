@@ -33,27 +33,30 @@ let customProductMarkups = {};
 let localInventory = {}; 
 
 let botStates = {
-    deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "",
-    buyQty: {} // 👈 حالة جديدة لتسجيل الخدمة التي يتم تحديد كميتها
+    deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "", buyQty: {} 
 };
 
-// قفل أمني لمنع هجمات النقر المزدوج
 const userRequestLocks = {};
 
 async function connectDB() {
     if (!isDbConnected) {
-        if (!client.topology || !client.topology.isConnected()) {
-            await client.connect();
+        try {
+            if (!client.topology || !client.topology.isConnected()) {
+                await client.connect();
+            }
+            const database = client.db("xprostore");
+            dbCollection = database.collection("botData");
+            isDbConnected = true;
+            console.log("✅ متصل بقاعدة بيانات MongoDB السحابية بنجاح!");
+        } catch (e) {
+            console.error("DB Connection Error:", e);
         }
-        const database = client.db("xprostore");
-        dbCollection = database.collection("botData");
-        isDbConnected = true;
-        console.log("✅ متصل بقاعدة بيانات MongoDB السحابية بنجاح!");
     }
 }
 
 async function loadDatabase() {
     await connectDB();
+    if (!dbCollection) return;
     const data = await dbCollection.findOne({ _id: "main_data" });
     if (data) {
         usersDb = data.usersDb || {};
@@ -67,7 +70,20 @@ async function loadDatabase() {
         maintenanceMode = data.maintenanceMode || false;
         customProductMarkups = data.customProductMarkups || {};
         localInventory = data.localInventory || {};
-        botStates = data.botStates || { deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "", buyQty: {} };
+        
+        // 🛡️ إصلاح الثغرة الصامتة: التأكد من بناء الذاكرة بشكل سليم حتى لو البيانات القديمة ناقصة
+        const loadedStates = data.botStates || {};
+        botStates = {
+            deposit: loadedStates.deposit || {},
+            broadcast: loadedStates.broadcast || {},
+            promo: loadedStates.promo || {},
+            search: loadedStates.search || {},
+            adminInput: loadedStates.adminInput || {},
+            adminLogin: loadedStates.adminLogin || {},
+            adminSession: loadedStates.adminSession || {},
+            lastReportDate: loadedStates.lastReportDate || "",
+            buyQty: loadedStates.buyQty || {} // 👈 الجزء الذي كان يسبب الانهيار
+        };
     }
 }
 
@@ -75,7 +91,9 @@ function saveDatabase() {
     try {
         const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates };
         const savePromise = connectDB().then(() => {
-            return dbCollection.updateOne({ _id: "main_data" }, { $set: data }, { upsert: true });
+            if (dbCollection) {
+                return dbCollection.updateOne({ _id: "main_data" }, { $set: data }, { upsert: true });
+            }
         }).catch(e => console.error('DB Save Error:', e));
         
         pendingSaves.push(savePromise); 
@@ -96,8 +114,8 @@ server.listen(PORT, '0.0.0.0', () => {
     }, 4 * 60 * 1000); 
 }).on('error', (err) => {});
 
-process.on('uncaughtException', (err) => {});
-process.on('unhandledRejection', (reason, promise) => {});
+process.on('uncaughtException', (err) => { console.error(err); });
+process.on('unhandledRejection', (reason, promise) => { console.error(reason); });
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
@@ -109,12 +127,14 @@ let lastCategoriesFetchTime = 0;
 let cachedServices = [];
 
 function clearUserStates(userId) {
-    const idStr = String(userId);
-    delete botStates.deposit[idStr];
-    delete botStates.promo[idStr];
-    delete botStates.search[idStr];
-    delete botStates.buyQty[idStr];
-    saveDatabase();
+    try {
+        const idStr = String(userId);
+        if (botStates.deposit) delete botStates.deposit[idStr];
+        if (botStates.promo) delete botStates.promo[idStr];
+        if (botStates.search) delete botStates.search[idStr];
+        if (botStates.buyQty) delete botStates.buyQty[idStr]; 
+        saveDatabase();
+    } catch (e) {}
 }
 
 function logAdminAction(adminId, action) {
@@ -365,7 +385,9 @@ bot.start((ctx) => {
     }
 
     ctx.reply('أهلاً بك في متجر الخدمات الرقمية! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
-  } catch (err) {}
+  } catch (err) {
+      console.error(err);
+  }
 });
 
 function calculateRetailPrice(service, user, quantity = 1) {
@@ -382,7 +404,7 @@ function calculateRetailPrice(service, user, quantity = 1) {
     if (user && user.isVip) markup = Math.max(0, markup - 5);
     let finalPrice = originalPrice * (1 + (markup / 100));
 
-    if (flashSale.active) {
+    if (flashSale && flashSale.active) {
         if (Date.now() < flashSale.expiresAt) {
             finalPrice = finalPrice - (finalPrice * (flashSale.discount / 100));
         } else {
@@ -590,7 +612,7 @@ bot.action(/^setmarkup_(.+)$/, (ctx) => {
 bot.action(/^addstock_(.+)$/, (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     botStates.adminInput[ctx.from.id] = 'WAIT_ADD_STOCK_' + ctx.match[1]; saveDatabase();
-    ctx.editMessageText('📦 **إدارة المخزن المحلي لهذا المنتج:**\n\n➕ **للإضافة:** أرسل رسالة تحتوي على البيانات كاملة.\n👀 **للعرض:** أرسل كلمة `عرض` لمعرفة محتويات المخزن.\n🗑️ **للحذف:** أرسل كلمة `حذف الكل` لتفريغ مخزن هذا المنتج بالكامل.', {parse_mode: 'Markdown'}).catch(()=>{});
+    ctx.editMessageText('📦 **إدارة المخزن المحلي لهذا المنتج:**\n\n➕ **للإضافة:** أرسل العنصر كرسالة (تقدر تبعت أكتر من عنصر ورا بعض).\n👀 **للعرض:** أرسل كلمة `عرض` لمعرفة محتويات المخزن.\n🗑️ **للحذف:** أرسل كلمة `حذف الكل` لتفريغ مخزن هذا المنتج بالكامل.\n🔙 **للخروج:** أرسل كلمة `رجوع`', {parse_mode: 'Markdown'}).catch(()=>{});
 });
 
 bot.action('admin_pending_deposits', (ctx) => {
@@ -736,13 +758,11 @@ bot.on('text', async (ctx, next) => {
     if (usersDb[userId].isBanned) return;
     const text = ctx.message.text;
 
-    // 🛡️ استقبال الكمية مباشرة من العميل في رسالة
-    if (botStates.buyQty[userId]) {
+    if (botStates.buyQty && botStates.buyQty[userId]) {
         const srvId = botStates.buyQty[userId].srvId;
         const msgId = botStates.buyQty[userId].msgId;
         const qtyStr = text.trim();
         
-        // التحقق من أن المدخل رقم صحيح وموجب فقط
         if (!/^\d+$/.test(qtyStr) || parseInt(qtyStr) < 1) {
             return ctx.reply('❌ يرجى كتابة أرقام صحيحة فقط للكمية (مثال: 1, 5, 10).').catch(()=>{});
         }
@@ -760,7 +780,6 @@ bot.on('text', async (ctx, next) => {
         const price = calculateRetailPrice(srv, usersDb[userId], qty);
         const srvName = srv.name_ar || srv.name || srv.title;
 
-        // تعديل الرسالة الأصلية أو إرسال واحدة جديدة إذا تم حذف القديمة
         const summaryText = `⚠️ <b>تأكيد الطلب:</b>\n\n🛍 <b>الخدمة:</b> ${srvName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}\n🔢 <b>الكمية المطلوبة:</b> ${qty}\n💰 <b>إجمالي التكلفة:</b> <b>${price} EGP</b>`;
         const actionKeyboard = Markup.inlineKeyboard([
             [Markup.button.callback('✅ تأكيد الشراء', `exec_${srv.id}_${qty}`)],
@@ -775,7 +794,7 @@ bot.on('text', async (ctx, next) => {
         return; 
     }
 
-    if (botStates.promo[userId]) {
+    if (botStates.promo && botStates.promo[userId]) {
         delete botStates.promo[userId]; saveDatabase();
         const textCode = text.trim().toUpperCase();
 
@@ -805,7 +824,11 @@ bot.on('text', async (ctx, next) => {
 
     if (botStates.adminSession[userId] && botStates.adminInput[userId]) {
         const state = botStates.adminInput[userId];
-        delete botStates.adminInput[userId]; saveDatabase();
+
+        // 🛡️ تحسين للأدمن: لا تمسح الحالة في حالة إضافة المخزون لكي يتمكن من إضافة عناصر متتالية
+        if (!state.startsWith('WAIT_ADD_STOCK_') && !state.startsWith('WAIT_BROADCAST')) {
+            delete botStates.adminInput[userId];
+        }
 
         if (state === 'WAIT_CHARGE_USER') {
             const parts = text.trim().split(/\s+/);
@@ -894,13 +917,18 @@ bot.on('text', async (ctx, next) => {
         if (state.startsWith('WAIT_ADD_STOCK_')) {
             const srvId = String(state.split('WAIT_ADD_STOCK_')[1]);
 
+            if (text.trim() === 'إلغاء' || text.trim() === 'رجوع') {
+                delete botStates.adminInput[userId];
+                saveDatabase();
+                return showAdminPanel(ctx);
+            }
+
             if (text.trim() === 'عرض') {
                 if (!localInventory[srvId] || localInventory[srvId].length === 0) {
-                    return ctx.reply('📦 المخزن فارغ تماماً لهذا المنتج.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+                    return ctx.reply('📦 المخزن فارغ تماماً لهذا المنتج.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
                 }
                 let stockList = localInventory[srvId].map((item, idx) => `📦 **عنصر ${idx + 1}:**\n${item}`).join('\n\n');
                 if (stockList.length > 3800) stockList = stockList.substring(0, 3800) + '\n\n... (يوجد المزيد لكن تم إخفاؤه لعدم تجاوز حد الرسائل)';
-                
                 return ctx.reply(`📦 **المخزن الحالي لهذا المنتج (${localInventory[srvId].length} عنصر):**\n\n${stockList}`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]])});
             }
 
@@ -908,7 +936,7 @@ bot.on('text', async (ctx, next) => {
                 localInventory[srvId] = [];
                 saveDatabase();
                 logAdminAction(userId, `تفريغ مخزن المنتج ${srvId}`);
-                return ctx.reply('✅ تم تفريغ المخزن لهذا المنتج بنجاح!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+                return ctx.reply('✅ تم تفريغ المخزن لهذا المنتج بنجاح!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
 
             const item = text.trim();
@@ -916,7 +944,9 @@ bot.on('text', async (ctx, next) => {
             localInventory[srvId].push(item);
             saveDatabase();
             logAdminAction(userId, `إضافة 1 عنصر למخزن المنتج ${srvId}`);
-            return ctx.reply(`✅ تم حفظ الرسالة بالكامل كـ **عنصر واحد** في المخزن.\nإجمالي المخزون الحالي لهذا المنتج: *${localInventory[srvId].length}*`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+            
+            // رد سريع مع زر للخروج من الوضع
+            return ctx.reply(`✅ تم حفظ العنصر بنجاح!\n📦 إجمالي المخزون الحالي للمنتج: ${localInventory[srvId].length}\n\n(يمكنك إرسال العنصر التالي مباشرة، أو اضغط "رجوع" للعودة)`, Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
         }
 
         if (state === 'WAIT_USER_MSG') {
@@ -993,7 +1023,7 @@ bot.on('text', async (ctx, next) => {
         }
     }
 
-    if (botStates.search[userId]) {
+    if (botStates.search && botStates.search[userId]) {
         delete botStates.search[userId]; saveDatabase();
         const query = text.toLowerCase();
         if (!cachedServices || cachedServices.length === 0) cachedServices = await fetchAllServices();
@@ -1003,11 +1033,11 @@ bot.on('text', async (ctx, next) => {
         return ctx.reply('🔍 نتائج البحث:', Markup.inlineKeyboard(buttons)).catch(()=>{});
     }
 
-    if (botStates.adminLogin[userId] === 'WAIT_EMAIL') {
+    if (botStates.adminLogin && botStates.adminLogin[userId] === 'WAIT_EMAIL') {
       if (text.trim() === ADMIN_EMAIL) { botStates.adminLogin[userId] = 'WAIT_PASS'; saveDatabase(); return ctx.reply('🔒 أرسل كلمة المرور:').catch(()=>{}); } 
       else { botStates.adminLogin[userId] = null; saveDatabase(); return ctx.reply('❌ بريد خاطئ.').catch(()=>{}); }
     }
-    if (botStates.adminLogin[userId] === 'WAIT_PASS') {
+    if (botStates.adminLogin && botStates.adminLogin[userId] === 'WAIT_PASS') {
       if (text.trim() === ADMIN_PASS) {
         botStates.adminLogin[userId] = null; botStates.adminSession[userId] = true;
         initUser(userId); usersDb[userId].uid = 1001; saveDatabase();
@@ -1015,7 +1045,7 @@ bot.on('text', async (ctx, next) => {
       } else { botStates.adminLogin[userId] = null; saveDatabase(); return ctx.reply('❌ كلمة مرور خاطئة.').catch(()=>{}); }
     }
 
-    if (botStates.broadcast[userId]) {
+    if (botStates.broadcast && botStates.broadcast[userId]) {
         if (text.trim() === 'إلغاء') { delete botStates.broadcast[userId]; saveDatabase(); return ctx.reply('✅ تم الإلغاء.'); }
         
         ctx.reply('⏳ جاري إرسال الإذاعة لجميع العملاء... (تتم ببطء لتجنب حظر تليجرام)').catch(()=>{});
@@ -1024,14 +1054,14 @@ bot.on('text', async (ctx, next) => {
             if (String(usersDb[tgId].uid) !== '1001') {
                 bot.telegram.sendMessage(tgId, '📢 **إذاعة:**\n\n' + text).catch(() => {});
                 count++;
-                if (count % 15 === 0) await new Promise(r => setTimeout(r, 200)); 
+                if (count % 20 === 0) await new Promise(r => setTimeout(r, 1000)); 
             }
         }
         delete botStates.broadcast[userId]; saveDatabase(); 
         return ctx.reply('✅ تم الإرسال للجميع بنجاح.');
     }
 
-    if (botStates.deposit[userId]) {
+    if (botStates.deposit && botStates.deposit[userId]) {
       const state = botStates.deposit[userId];
       if (state.step === 'WAIT_AMOUNT') {
         const amount = parseFloat(text);
@@ -1203,11 +1233,10 @@ bot.action('main_menu', (ctx) => {
 
 bot.action('cancel_action', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
-    clearUserStates(ctx.from.id); // 👈 تنظيف حالة إدخال الكمية عند الإلغاء
+    clearUserStates(ctx.from.id);
     ctx.deleteMessage().catch(()=>{});
 });
 
-// 🛡️ التعديل الجذري: طلب الكمية كرسالة نصية 
 bot.action(/^buyact_(.+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{});
   try {
@@ -1223,7 +1252,6 @@ bot.action(/^buyact_(.+)$/, async (ctx) => {
      const price = calculateRetailPrice(srv, usersDb[userId], 1);
      const srvName = srv.name_ar || srv.name || srv.title;
 
-     // إرسال رسالة تطلب الكمية وتسجيلها في حالة العميل
      const msg = await ctx.editMessageText(`⚠️ <b>إدخال الكمية المطلوبة:</b>\n\n🛍 <b>الخدمة:</b> ${srvName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}\n💰 السعر للقطعة: <b>${price} EGP</b>\n\n✍️ <b>من فضلك، أرسل الكمية المطلوبة الآن في رسالة (أرقام فقط):</b>`, 
         {
           parse_mode: 'HTML',
@@ -1458,4 +1486,9 @@ export default async function handler(req, res) {
   } else {
     res.status(200).send('Bot is running on Vercel with MongoDB! 🚀');
   }
+}
+
+// 🛡️ تشغيل البوت محلياً أو على سيرفر عادي (بدون تعارض مع Vercel)
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    bot.launch().then(() => console.log('🚀 Bot launched via Long Polling!'));
 }
