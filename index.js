@@ -33,7 +33,7 @@ let customProductMarkups = {};
 let localInventory = {}; 
 
 let botStates = {
-    deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "", buyQty: {} 
+    deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "", buyQty: {}, ordersPage: {} 
 };
 
 const userRequestLocks = {};
@@ -71,7 +71,6 @@ async function loadDatabase() {
         customProductMarkups = data.customProductMarkups || {};
         localInventory = data.localInventory || {};
         
-        // 🛡️ إصلاح الثغرة الصامتة: التأكد من بناء الذاكرة بشكل سليم حتى لو البيانات القديمة ناقصة
         const loadedStates = data.botStates || {};
         botStates = {
             deposit: loadedStates.deposit || {},
@@ -82,7 +81,8 @@ async function loadDatabase() {
             adminLogin: loadedStates.adminLogin || {},
             adminSession: loadedStates.adminSession || {},
             lastReportDate: loadedStates.lastReportDate || "",
-            buyQty: loadedStates.buyQty || {} // 👈 الجزء الذي كان يسبب الانهيار
+            buyQty: loadedStates.buyQty || {},
+            ordersPage: loadedStates.ordersPage || {}
         };
     }
 }
@@ -428,25 +428,109 @@ bot.hears(/^💰 حسابي$/, (ctx) => {
   } catch(e){}
 });
 
+// ==========================================
+// 🛡️ نظام طلباتي المطور (بالصفحات والأزرار) 🛡️
+// ==========================================
+function getOrdersPage(userId, page) {
+    const orders = usersDb[userId].orders || [];
+    const reversedOrders = [...orders].reverse(); // أحدث الطلبات تظهر أولاً
+    const totalOrders = reversedOrders.length;
+    const itemsPerPage = 10;
+    const totalPages = Math.ceil(totalOrders / itemsPerPage) || 1;
+    const currentPage = Math.min(Math.max(page, 1), totalPages);
+
+    if (!botStates.ordersPage) botStates.ordersPage = {};
+    botStates.ordersPage[userId] = currentPage;
+
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = Math.min(startIndex + itemsPerPage, totalOrders);
+    const pageOrders = reversedOrders.slice(startIndex, endIndex);
+
+    let text = `🛒 <b>طلباتي (${currentPage}/${totalPages}):</b>\n\n`;
+    let buttons = [];
+
+    pageOrders.forEach((order, index) => {
+        const actualIndex = totalOrders - 1 - (startIndex + index);
+        let safeName = order.name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        text += `🛍 ${safeName} - مكتمل\n`;
+        
+        let buttonText = `🛍 ${safeName}`;
+        if (buttonText.length > 35) buttonText = buttonText.substring(0, 33) + '..';
+        
+        buttons.push([Markup.button.callback(buttonText, `ord_det_${actualIndex}`)]);
+    });
+
+    let paginationRow = [];
+    if (currentPage > 1) {
+        paginationRow.push(Markup.button.callback('▶️ السابق', `ord_pg_${currentPage - 1}`));
+    }
+    paginationRow.push(Markup.button.callback(`صفحة ${currentPage} من ${totalPages}`, 'noop'));
+    if (currentPage < totalPages) {
+        paginationRow.push(Markup.button.callback('التالي ◀️', `ord_pg_${currentPage + 1}`));
+    }
+
+    if (totalPages > 1) buttons.push(paginationRow);
+    buttons.push([Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]);
+
+    return { text, keyboard: Markup.inlineKeyboard(buttons) };
+}
+
 bot.hears(/^🛒 طلباتي$/, (ctx) => {
     try {
-      const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
-      if (usersDb[userId].isBanned) return;
-      const userOrders = usersDb[userId].orders || [];
-      if (userOrders.length === 0) return ctx.reply('🛒 لم تقم بأي عمليات شراء حتى الآن.').catch(()=>{});
-      
-      const lastOrders = userOrders.slice(-5).reverse();
-      let message = '🛒 **آخر عمليات الشراء الخاصة بك:**\n\n';
-      lastOrders.forEach(order => { 
-          message += `🛍 <b>الخدمة:</b> ${order.name.replace(/</g, '&lt;').replace(/>/g, '&gt;')}\n💰 <b>السعر:</b> ${parseFloat(order.price).toFixed(2)} EGP\n🕒 <b>التاريخ:</b> ${order.date}\n`;
-          if (order.details && order.details.trim() !== '') {
-              message += `📌 <b>البيانات المسلمة:</b>\n<code>${order.details}</code>\n`;
-          }
-          message += '━━━━━━━━━━━━\n'; 
-      });
-      ctx.reply(message, { parse_mode: 'HTML' }).catch(()=>{});
+        const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
+        if (usersDb[userId].isBanned) return;
+        const orders = usersDb[userId].orders || [];
+        if (orders.length === 0) return ctx.reply('🛒 لم تقم بأي عمليات شراء حتى الآن.').catch(()=>{});
+
+        const { text, keyboard } = getOrdersPage(userId, 1);
+        ctx.reply(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
     } catch(e){}
 });
+
+bot.action(/^ord_pg_(\d+)$/, (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    try {
+        const userId = String(ctx.from.id);
+        const page = parseInt(ctx.match[1]);
+        const { text, keyboard } = getOrdersPage(userId, page);
+        ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
+    } catch(e){}
+});
+
+bot.action(/^ord_det_(\d+)$/, (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    try {
+        const userId = String(ctx.from.id);
+        const orderIndex = parseInt(ctx.match[1]);
+        const order = usersDb[userId].orders[orderIndex];
+
+        if (!order) return ctx.editMessageText('❌ الطلب غير موجود.').catch(()=>{});
+
+        const safeName = order.name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        let detailsText = `📦 <b>تفاصيل الطلب:</b>\n\n` +
+                          `🛍 <b>الخدمة:</b> ${safeName}\n` +
+                          `💰 <b>السعر:</b> ${parseFloat(order.price).toFixed(2)} EGP\n` +
+                          `🕒 <b>التاريخ:</b> ${order.date}\n` +
+                          `🟢 <b>الحالة:</b> مكتمل\n\n`;
+
+        if (order.details && order.details.trim() !== '') {
+            detailsText += `📌 <b>البيانات المسلمة:</b>\n<code>${order.details}</code>\n`;
+        }
+
+        const returnPage = (botStates.ordersPage && botStates.ordersPage[userId]) ? botStates.ordersPage[userId] : 1;
+        
+        ctx.editMessageText(detailsText, {
+            parse_mode: 'HTML',
+            ...Markup.inlineKeyboard([
+                [Markup.button.callback('🔙 رجوع للطلبات', `ord_pg_${returnPage}`)],
+                [Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]
+            ])
+        }).catch(()=>{});
+
+    } catch(e){}
+});
+
+bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
 bot.hears(/^📜 سجل المحفظة$/, (ctx) => {
     try {
@@ -764,34 +848,177 @@ bot.on('text', async (ctx, next) => {
         const qtyStr = text.trim();
         
         if (!/^\d+$/.test(qtyStr) || parseInt(qtyStr) < 1) {
-            return ctx.reply('❌ يرجى كتابة أرقام صحيحة فقط للكمية (مثال: 1, 5, 10).').catch(()=>{});
+            return ctx.reply('❌ يرجى كتابة أرقام صحيحة وموجبة فقط للكمية (مثال: 1, 5, 10).').catch(()=>{});
         }
         
         const qty = parseInt(qtyStr);
         delete botStates.buyQty[userId];
         saveDatabase();
 
-        if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
-        const srv = cachedServices.find(s => String(s.id) === String(srvId));
-        if (!srv) {
-            return ctx.reply('❌ الخدمة غير موجودة.').catch(()=>{});
+        if (userRequestLocks[userId]) {
+            return ctx.reply('⚠️ جاري تنفيذ طلبك السابق، الرجاء الانتظار...').catch(()=>{});
         }
-
-        const price = calculateRetailPrice(srv, usersDb[userId], qty);
-        const srvName = srv.name_ar || srv.name || srv.title;
-
-        const summaryText = `⚠️ <b>تأكيد الطلب:</b>\n\n🛍 <b>الخدمة:</b> ${srvName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}\n🔢 <b>الكمية المطلوبة:</b> ${qty}\n💰 <b>إجمالي التكلفة:</b> <b>${price} EGP</b>`;
-        const actionKeyboard = Markup.inlineKeyboard([
-            [Markup.button.callback('✅ تأكيد الشراء', `exec_${srv.id}_${qty}`)],
-            [Markup.button.callback('❌ إلغاء', 'cancel_action')]
-        ]);
+        userRequestLocks[userId] = true;
 
         try {
-            await ctx.telegram.editMessageText(ctx.chat.id, msgId, null, summaryText, { parse_mode: 'HTML', ...actionKeyboard });
-        } catch (e) {
-            await ctx.reply(summaryText, { parse_mode: 'HTML', ...actionKeyboard }).catch(()=>{});
+             if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
+             const srv = cachedServices.find(s => String(s.id) === String(srvId));
+             if (!srv) {
+                 ctx.reply('❌ الخدمة غير موجودة أو تم حذفها من المزود.').catch(()=>{});
+                 return;
+             }
+
+             if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
+                 cachedServices = await fetchAllServices();
+                 lastCategoriesFetchTime = Date.now();
+             }
+
+             const retailPrice = parseFloat(calculateRetailPrice(srv, usersDb[userId], qty));
+             
+             const parseCost = parseFloat(srv.price_amount || srv.price || 0);
+             const originalCost = isNaN(parseCost) ? 0 : parseCost * qty;
+             const exactProfit = retailPrice - originalCost;
+             
+             const userBalance = usersDb[userId].balance;
+             const name = srv.name_ar || srv.name || srv.title;
+             const safeName = name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+             if (userBalance < retailPrice) {
+               const diff = (retailPrice - userBalance).toFixed(2);
+               return ctx.reply(`❌ <b>رصيدك غير كافٍ لإتمام الطلب!</b>\n\n💳 رصيدك الحالي: <b>${userBalance.toFixed(2)} EGP</b>\n💰 المبلغ المطلـوب: <b>${retailPrice.toFixed(2)} EGP</b>\n⚠️ متبقي عليك: <b>${diff} EGP</b> فقط لشراء الخدمة.\n\nاشحن الفرق الآن وتابع طلبك فوراً!`,
+                 {
+                   parse_mode: 'HTML',
+                   ...Markup.inlineKeyboard([
+                       [Markup.button.callback('💳 شحن المحفظة (فودافون كاش)', 'main_categories')],
+                       [Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]
+                   ])
+                 }
+               ).catch(()=>{});
+             }
+
+             let processingMsg = await ctx.reply('⏳ جاري تنفيذ الطلب واستخراج بيانات الخدمة...').catch(()=>{});
+
+             const hasLocalStock = localInventory[String(srv.id)] && localInventory[String(srv.id)].length >= qty;
+
+             if (hasLocalStock) {
+                 const deliveredItems = localInventory[String(srv.id)].splice(0, qty);
+                 
+                 usersDb[userId].balance -= retailPrice;
+                 usersDb[userId].totalSpent += retailPrice;
+                 usersDb[userId].walletHistory.push({ type: `شراء محلي (${name})`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+                 
+                 const safeDetails = deliveredItems.join('\n\n');
+                 usersDb[userId].orders.push({ name: `${name} (${qty}x)`, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }), details: safeDetails });
+                 saveDatabase();
+
+                 let deliveryMsg = `✅ <b>تم الشراء بنجاح</b>\n\n📦 <b>رقم الطلب:</b> #LOCAL-${Math.floor(1000 + Math.random() * 9000)}\n\n` +
+                                   `🛍️ <b>الخدمة:</b> ${safeName}\n🔢 <b>الكمية:</b> ${qty}\n🟢 <b>الحالة:</b> مكتمل فوراً\n💰 <b>المدفوع:</b> ${retailPrice} EGP\n\n` +
+                                   `📋 <b>العناصر المسلمة:</b>\n<code>${safeDetails.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>`;
+
+                 if(processingMsg) {
+                     await ctx.telegram.editMessageText(ctx.chat.id, processingMsg.message_id, null, deliveryMsg, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]])}).catch(()=>{});
+                 } else {
+                     await ctx.reply(deliveryMsg, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]])}).catch(()=>{});
+                 }
+
+                 notifyAdmin(`👑 <b>عملية بيع من المخزن المحلي:</b>\n🛍 ${safeName}\n💰 ${retailPrice} EGP\n📦 متبقي في المخزن: ${localInventory[String(srv.id)].length}`);
+                 return; 
+             }
+
+             usersDb[userId].balance -= retailPrice;
+             saveDatabase();
+
+             try {
+                const orderResponse = await placeOrderWithBestProvider(srv, qty);
+
+                usersDb[userId].totalSpent += retailPrice;
+                usersDb[userId].walletHistory.push({ type: `شراء (${name} - ${qty}x)`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+
+                if (!usersDb[userId].isVip && usersDb[userId].totalSpent >= 500) {
+                    usersDb[userId].isVip = true;
+                    bot.telegram.sendMessage(userId, '👑 **تهانينا!**\nتمت ترقية حسابك إلى **VIP** لتحقيقك مشتريات بـ 500 EGP. ستحصل على أسعار مخفضة تلقائياً!').catch(()=>{});
+                }
+                
+                const currentOrder = { name: `${name} (${qty}x)`, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }), details: "جاري المعالجة من المزود..." };
+                usersDb[userId].orders.push(currentOrder);
+                saveDatabase(); 
+
+                let orderId = orderResponse.data?.order?.id || orderResponse.data?.id || orderResponse.data?.order_id || Math.floor(10000 + Math.random() * 90000);
+                let rawDetails = null;
+
+                await new Promise(resolve => setTimeout(resolve, 1500));
+
+                try {
+                    const source = srv.providerSource || 'api1';
+                    const clientApi = source === 'api2' ? apiClient2 : apiClient1;
+                    const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : `/orders/${orderId}`;
+                    const getOrderRes = await clientApi.get(fetchOrderPath);
+                    const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
+                    rawDetails = extractUsefulData(orderData);
+                } catch(e) {
+                    console.log('تأخير في المزود لجلب الطلب: ' + orderId);
+                }
+
+                if (!rawDetails || rawDetails.trim() === '') {
+                    rawDetails = extractUsefulData(orderResponse.data?.order || orderResponse.data?.data || orderResponse.data);
+                }
+
+                let deliveryMsg = `✅ <b>تم الشراء بنجاح</b>\n\n📦 <b>رقم الطلب:</b> #${orderId}\n\n` +
+                                  `🛍️ <b>الخدمة:</b> ${safeName}\n` +
+                                  `🔢 <b>الكمية:</b> ${qty}\n\n` +
+                                  `💰 <b>المبلغ المخصوم:</b> ${retailPrice} EGP\n\n`;
+
+                if (rawDetails && rawDetails !== '{}' && rawDetails !== 'null' && rawDetails.trim() !== '') {
+                    const safeRawText = String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    deliveryMsg += `📋 <b>العناصر المسلمة:</b>\n${safeRawText}\n\n` +
+                                   `📌 <b>البيانات المسلمة (اضغط للنسخ):</b>\n<code>${safeRawText}</code>`;
+                    
+                    const lastIndex = usersDb[userId].orders.length - 1;
+                    if (lastIndex >= 0) { usersDb[userId].orders[lastIndex].details = safeRawText; saveDatabase(); }
+                } else {
+                    deliveryMsg += `📋 <b>العناصر المسلمة:</b>\n✅ تم تنفيذ الطلب بنجاح.`;
+                }
+
+                if(processingMsg) {
+                    await ctx.telegram.editMessageText(ctx.chat.id, processingMsg.message_id, null, deliveryMsg, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 العودة إلى الطلبات', 'main_menu'), Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]])}).catch(()=>{});
+                } else {
+                    await ctx.reply(deliveryMsg, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 العودة إلى الطلبات', 'main_menu'), Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]])}).catch(()=>{});
+                }
+
+                const adminLogMsg = `👑 <b>إشعار شراء جديد:</b>\n\n` +
+                                    `📦 <b>رقم الطلب:</b> #${orderId}\n` +
+                                    `🛍 <b>الخدمة:</b> ${safeName}\n` +
+                                    `👤 <b>المشتري (ID):</b> <code>${usersDb[userId].uid}</code>\n` +
+                                    `💰 <b>المدفوع:</b> ${retailPrice} EGP\n\n` +
+                                    (rawDetails ? `📌 <b>البيانات:</b>\n<code>${String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>` : '');
+                notifyAdmin(adminLogMsg);
+
+            } catch (error) {
+                usersDb[userId].balance += retailPrice;
+                
+                const lastIndex = usersDb[userId].orders.length - 1;
+                if (lastIndex >= 0) { 
+                    usersDb[userId].orders[lastIndex].details = "❌ فشل الشراء وتم استرداد المبلغ بالكامل"; 
+                    usersDb[userId].orders[lastIndex].profit = 0; 
+                }
+                saveDatabase();
+                
+                let apiErrorMsg = error.response?.data?.message || error.response?.data?.error || error.message || "عطل غير معروف";
+                if (typeof apiErrorMsg === 'object') { apiErrorMsg = JSON.stringify(apiErrorMsg); }
+                
+                let failMsg = `❌ فشل الشراء من المزود الأساسي.\n\n⚠️ السبب: ${apiErrorMsg}\n\n✅ <b>تم استرجاع مبلغ (${retailPrice} EGP) إلى محفظتك بنجاح.</b>`;
+                if(processingMsg) {
+                    await ctx.telegram.editMessageText(ctx.chat.id, processingMsg.message_id, null, failMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]]) }).catch(()=>{});
+                } else {
+                    await ctx.reply(failMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]]) }).catch(()=>{});
+                }
+            }
+        } catch (err){
+            console.error('Buy General Error:', err.message);
+        } finally {
+            delete userRequestLocks[userId];
         }
-        return; 
+        return;
     }
 
     if (botStates.promo && botStates.promo[userId]) {
@@ -825,7 +1052,6 @@ bot.on('text', async (ctx, next) => {
     if (botStates.adminSession[userId] && botStates.adminInput[userId]) {
         const state = botStates.adminInput[userId];
 
-        // 🛡️ تحسين للأدمن: لا تمسح الحالة في حالة إضافة المخزون لكي يتمكن من إضافة عناصر متتالية
         if (!state.startsWith('WAIT_ADD_STOCK_') && !state.startsWith('WAIT_BROADCAST')) {
             delete botStates.adminInput[userId];
         }
@@ -945,7 +1171,6 @@ bot.on('text', async (ctx, next) => {
             saveDatabase();
             logAdminAction(userId, `إضافة 1 عنصر למخزن المنتج ${srvId}`);
             
-            // رد سريع مع زر للخروج من الوضع
             return ctx.reply(`✅ تم حفظ العنصر بنجاح!\n📦 إجمالي المخزون الحالي للمنتج: ${localInventory[srvId].length}\n\n(يمكنك إرسال العنصر التالي مباشرة، أو اضغط "رجوع" للعودة)`, Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
         }
 
@@ -1080,392 +1305,6 @@ bot.on('text', async (ctx, next) => {
   } catch(e) {}
 });
 
-bot.action(/approve_dep_(\d+)_([\d.]+)/, async (ctx) => {
-  ctx.answerCbQuery().catch(()=>{});
-  try {
-    const targetUserId = ctx.match[1]; const amount = parseFloat(ctx.match[2]);
-    initUser(targetUserId); usersDb[targetUserId].balance += amount; 
-    usersDb[targetUserId].walletHistory.push({ type: 'شحن فودافون كاش', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
-    pendingDeposits = pendingDeposits.filter(d => String(d.userId) !== String(targetUserId)); saveDatabase();
-    
-    const referrerTelegramId = usersDb[targetUserId].referredBy;
-    if (referrerTelegramId && usersDb[referrerTelegramId]) {
-        const bonus = amount * 0.02; usersDb[referrerTelegramId].balance += bonus;
-        usersDb[referrerTelegramId].walletHistory.push({ type: 'عمولة إحالة 2%', amount: bonus, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
-        bot.telegram.sendMessage(referrerTelegramId, `🎉 **عمولة دعوة أصدقاء جديدة!**\n💰 حصلت على: *${bonus.toFixed(2)} EGP*`, { parse_mode: 'Markdown' }).catch(() => {});
-    }
-    ctx.editMessageText(`✅ تمت الموافقة وإضافة مبلغ *${amount} EGP* للمستخدم.`, { parse_mode: 'Markdown' }).catch(()=>{});
-    bot.telegram.sendMessage(targetUserId, `🎉 **تم شحن محفظتك بنجاح!**\n💰 تمت إضافة: *${amount} EGP*`, { parse_mode: 'Markdown' }).catch(() => {});
-  } catch(err) {}
-});
-
-bot.action(/reject_dep_(\d+)/, async (ctx) => {
-  ctx.answerCbQuery().catch(()=>{});
-  try {
-    const targetUserId = ctx.match[1];
-    pendingDeposits = pendingDeposits.filter(d => String(d.userId) !== String(targetUserId)); saveDatabase();
-    ctx.editMessageText('❌ تم رفض الطلب.').catch(()=>{});
-    bot.telegram.sendMessage(targetUserId, '❌ عذراً، تم رفض طلب الشحن لعدم صحة بيانات التحويل.').catch(() => {});
-  } catch(err) {}
-});
-
-bot.hears(/^🛍 الخدمات$/, showCategories);
-bot.action('main_categories', showCategories);
-
-async function showCategories(ctx) {
-  const userId = String(ctx.from.id);
-  let loadingMsgId = null;
-  try {
-    initUser(userId); clearUserStates(userId);
-    
-    if (usersDb[userId].isBanned) return ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
-    if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
-
-    if(ctx.callbackQuery) { 
-        await ctx.answerCbQuery().catch(()=>{}); 
-        await ctx.editMessageText('⏳ جاري جلب الأقسام...').catch(()=>{}); 
-    } else { 
-        const msg = await ctx.reply('⏳ جاري جلب الأقسام...').catch(()=>{}); 
-        if(msg) loadingMsgId = msg.message_id; 
-    }
-
-    if (cachedServices.length === 0 || (Date.now() - lastCategoriesFetchTime > categoryCacheTime)) {
-        cachedServices = await fetchAllServices(); 
-        lastCategoriesFetchTime = Date.now();
-    }
-
-    if (cachedServices.length === 0) {
-        const errorMsg = '⚠️ تعذر جلب الخدمات حالياً، يرجى المحاولة بعد قليل.';
-        const retryKeyboard = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
-        if(ctx.callbackQuery) return ctx.editMessageText(errorMsg, retryKeyboard).catch(()=>{});
-        else if(loadingMsgId) return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, errorMsg, retryKeyboard).catch(()=>{});
-        else return ctx.reply(errorMsg, retryKeyboard).catch(()=>{});
-    }
-
-    let fetchedCategories = [];
-    cachedServices.forEach(s => {
-      let catStr = getServiceCategory(s);
-      if (catStr && !fetchedCategories.includes(catStr)) fetchedCategories.push(catStr);
-    });
-
-    let categories = [];
-    preferredCategoriesOrder.forEach(cat => {
-        if (fetchedCategories.includes(cat)) categories.push(cat);
-    });
-
-    fetchedCategories.forEach(cat => {
-        if (!categories.includes(cat) && cat !== 'أخرى') categories.push(cat);
-    });
-
-    if (fetchedCategories.includes('أخرى') && !categories.includes('أخرى')) categories.push('أخرى');
-
-    let buttons = [];
-    for (let i = 0; i < categories.length; i += 2) {
-      const row = [];
-      row.push(Markup.button.callback((categoryEmojis[categories[i]] || '📦') + ' ' + categories[i], 'cat_' + i));
-      if (i + 1 < categories.length) row.push(Markup.button.callback((categoryEmojis[categories[i+1]] || '📦') + ' ' + categories[i+1], 'cat_' + (i + 1)));
-      buttons.push(row);
-    }
-    buttons.push([Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]);
-    const keyboard = Markup.inlineKeyboard(buttons);
-
-    usersDb[userId].tempCategories = categories;
-    saveDatabase();
-
-    if(ctx.callbackQuery) { 
-        return ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{}); 
-    } else if(loadingMsgId) { 
-        return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, 'اختر الفئة:', keyboard).catch(()=>{}); 
-    } else { 
-        return ctx.reply('اختر الفئة:', keyboard).catch(()=>{}); 
-    }
-
-  } catch (error) {
-    console.error("showCategories Error:", error);
-    const errMsg = '❌ حدث خطأ مؤقت أثناء جلب الأقسام، يرجى المحاولة مجدداً.';
-    const retryBtn = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
-    if(ctx.callbackQuery) {
-        ctx.editMessageText(errMsg, retryBtn).catch(()=>{});
-    } else if (loadingMsgId) {
-        ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, errMsg, retryBtn).catch(()=>{});
-    } else {
-        ctx.reply(errMsg, retryBtn).catch(()=>{});
-    }
-  }
-}
-
-bot.action(/^cat_(\d+)$/, async (ctx) => {
-  ctx.answerCbQuery().catch(()=>{});
-  try {
-    const userId = String(ctx.from.id); initUser(userId);
-    if (usersDb[userId].isBanned) return;
-
-    const catIndex = parseInt(ctx.match[1]);
-    const selectedCategory = usersDb[userId].tempCategories ? usersDb[userId].tempCategories[catIndex] : null;
-    
-    if (!selectedCategory || !cachedServices || cachedServices.length === 0) { 
-        cachedServices = await fetchAllServices(); 
-        return ctx.editMessageText('⚠️ يرجى إعادة فتح الأقسام من البداية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
-    }
-
-    const categoryServices = cachedServices.filter(s => {
-      let cat = getServiceCategory(s);
-      return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
-    });
-
-    if (categoryServices.length === 0) return ctx.editMessageText('لا توجد خدمات حالياً في هذا القسم.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
-
-    let buttons = categoryServices.map(srv => [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ' - ' + calculateRetailPrice(srv, usersDb[userId], 1) + ' EGP', `buyact_${srv.id}`)]);
-    buttons.push([Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]);
-
-    ctx.editMessageText(`📦 خدمات قسم *${selectedCategory}*:`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
-  } catch(err) {}
-});
-
-bot.action('main_menu', (ctx) => {
-  ctx.answerCbQuery().catch(()=>{});
-  try {
-    const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
-    if (usersDb[userId].isBanned) return;
-    ctx.deleteMessage().catch(()=>{}); ctx.reply('القائمة الرئيسية 🚀', getMainMenu()).catch(()=>{});
-  } catch(e){}
-});
-
-bot.action('cancel_action', (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    clearUserStates(ctx.from.id);
-    ctx.deleteMessage().catch(()=>{});
-});
-
-bot.action(/^buyact_(.+)$/, async (ctx) => {
-  ctx.answerCbQuery().catch(()=>{});
-  try {
-     const userId = String(ctx.from.id); initUser(userId);
-     if (usersDb[userId].isBanned) return;
-
-     if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
-
-     const srvId = ctx.match[1];
-     const srv = cachedServices.find(s => String(s.id) === String(srvId));
-     if(!srv) return ctx.editMessageText('الخدمة غير موجودة').catch(()=>{});
-
-     const price = calculateRetailPrice(srv, usersDb[userId], 1);
-     const srvName = srv.name_ar || srv.name || srv.title;
-
-     const msg = await ctx.editMessageText(`⚠️ <b>إدخال الكمية المطلوبة:</b>\n\n🛍 <b>الخدمة:</b> ${srvName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}\n💰 السعر للقطعة: <b>${price} EGP</b>\n\n✍️ <b>من فضلك، أرسل الكمية المطلوبة الآن في رسالة (أرقام فقط):</b>`, 
-        {
-          parse_mode: 'HTML',
-          ...Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء العملية', 'cancel_action')]])
-        }
-     ).catch(e => { if (!e.message.includes('not modified')) console.error(e); });
-
-     if (msg) {
-         botStates.buyQty[userId] = { srvId: String(srv.id), msgId: msg.message_id };
-         saveDatabase();
-     }
-  } catch(err){}
-});
-
-function extractUsefulData(obj) {
-    if (!obj) return null;
-    if (typeof obj === 'string' || typeof obj === 'number') return String(obj);
-    let extracted = [];
-    const ignoreKeys = ['id', 'order', 'orders', 'order_id', 'status', 'created_at', 'updated_at', 'service_id', 'quantity', 'price', 'user_id', 'api', 'api_id', 'api_order_id', 'api_service_id', 'currency', 'charge', 'remains', 'start_count', 'link', 'cost', 'old_charge'];
-    
-    function deepExtract(currentObj) {
-        if (currentObj === null || currentObj === undefined) return;
-        if (typeof currentObj === 'string' || typeof currentObj === 'number') {
-            let str = String(currentObj).trim();
-            if (str.length > 0 && str !== '0' && str !== '0.00' && str !== '0.0') {
-                extracted.push(str);
-            }
-        } else if (Array.isArray(currentObj)) {
-            currentObj.forEach(deepExtract);
-        } else if (typeof currentObj === 'object') {
-            for (let key in currentObj) {
-                if (ignoreKeys.includes(key.toLowerCase())) continue;
-                deepExtract(currentObj[key]);
-            }
-        }
-    }
-    
-    deepExtract(obj);
-    if (extracted.length === 0) return null;
-    return [...new Set(extracted)].join('\n');
-}
-
-bot.action(/^exec_(.+)_(-?\d+)$/, async (ctx) => {
-  const userId = String(ctx.from.id); 
-  
-  if (userRequestLocks[userId]) {
-      return ctx.answerCbQuery('⚠️ جاري تنفيذ طلبك السابق، الرجاء الانتظار...', { show_alert: true }).catch(()=>{});
-  }
-  userRequestLocks[userId] = true;
-  ctx.answerCbQuery().catch(()=>{});
-
-  try {
-     initUser(userId);
-     if (usersDb[userId].isBanned) return;
-
-     const srvId = ctx.match[1];
-     let qty = parseInt(ctx.match[2]);
-     
-     if (isNaN(qty) || qty < 1) {
-         return ctx.editMessageText('❌ كمية غير صالحة.').catch(()=>{});
-     }
-
-     if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
-     const srv = cachedServices.find(s => String(s.id) === String(srvId));
-     if (!srv) {
-         ctx.editMessageText('❌ الخدمة غير موجودة أو تم حذفها من المزود.').catch(()=>{});
-         return;
-     }
-
-     if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-         cachedServices = await fetchAllServices();
-         lastCategoriesFetchTime = Date.now();
-     }
-
-     const retailPrice = parseFloat(calculateRetailPrice(srv, usersDb[userId], qty));
-     
-     const parseCost = parseFloat(srv.price_amount || srv.price || 0);
-     const originalCost = isNaN(parseCost) ? 0 : parseCost * qty;
-     const exactProfit = retailPrice - originalCost;
-     
-     const userBalance = usersDb[userId].balance;
-     const name = srv.name_ar || srv.name || srv.title;
-     const safeName = name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-     if (userBalance < retailPrice) {
-       const diff = (retailPrice - userBalance).toFixed(2);
-       return ctx.editMessageText(`❌ <b>رصيدك غير كافٍ لإتمام الطلب!</b>\n\n💳 رصيدك الحالي: <b>${userBalance.toFixed(2)} EGP</b>\n💰 المبلغ المطلـوب: <b>${retailPrice.toFixed(2)} EGP</b>\n⚠️ متبقي عليك: <b>${diff} EGP</b> فقط لشراء الخدمة.\n\nاشحن الفرق الآن وتابع طلبك فوراً!`,
-         {
-           parse_mode: 'HTML',
-           ...Markup.inlineKeyboard([
-               [Markup.button.callback('💳 شحن المحفظة (فودافون كاش)', 'main_categories')],
-               [Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]
-           ])
-         }
-       ).catch(()=>{});
-     }
-
-     await ctx.editMessageText('⏳ جاري تنفيذ الطلب واستخراج بيانات الخدمة...').catch(()=>{});
-
-     const hasLocalStock = localInventory[String(srv.id)] && localInventory[String(srv.id)].length >= qty;
-
-     if (hasLocalStock) {
-         const deliveredItems = localInventory[String(srv.id)].splice(0, qty);
-         
-         usersDb[userId].balance -= retailPrice;
-         usersDb[userId].totalSpent += retailPrice;
-         usersDb[userId].walletHistory.push({ type: `شراء محلي (${name})`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
-         
-         const safeDetails = deliveredItems.join('\n\n');
-         usersDb[userId].orders.push({ name: `${name} (${qty}x)`, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }), details: safeDetails });
-         saveDatabase();
-
-         let deliveryMsg = `📦 <b>رقم الطلب:</b> #LOCAL-${Math.floor(1000 + Math.random() * 9000)}\n\n` +
-                           `🛍️ <b>الخدمة:</b> ${safeName}\n🔢 <b>الكمية:</b> ${qty}\n🟢 <b>الحالة:</b> مكتمل فوراً\n💰 <b>المدفوع:</b> ${retailPrice} EGP\n\n` +
-                           `📋 <b>العناصر المسلمة:</b>\n<code>${safeDetails.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>`;
-
-         await ctx.editMessageText(deliveryMsg, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]])}).catch(()=>{});
-         notifyAdmin(`👑 <b>عملية بيع من المخزن المحلي:</b>\n🛍 ${safeName}\n💰 ${retailPrice} EGP\n📦 متبقي في المخزن: ${localInventory[String(srv.id)].length}`);
-         return; 
-     }
-
-     usersDb[userId].balance -= retailPrice;
-     saveDatabase();
-
-     try {
-        const orderResponse = await placeOrderWithBestProvider(srv, qty);
-
-        usersDb[userId].totalSpent += retailPrice;
-        usersDb[userId].walletHistory.push({ type: `شراء (${name} - ${qty}x)`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
-
-        if (!usersDb[userId].isVip && usersDb[userId].totalSpent >= 500) {
-            usersDb[userId].isVip = true;
-            bot.telegram.sendMessage(userId, '👑 **تهانينا!**\nتمت ترقية حسابك إلى **VIP** لتحقيقك مشتريات بـ 500 EGP. ستحصل على أسعار مخفضة تلقائياً!').catch(()=>{});
-        }
-        
-        const currentOrder = { name: `${name} (${qty}x)`, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }), details: "جاري المعالجة من المزود..." };
-        usersDb[userId].orders.push(currentOrder);
-        saveDatabase(); 
-
-        let orderId = orderResponse.data?.order?.id || orderResponse.data?.id || orderResponse.data?.order_id || Math.floor(10000 + Math.random() * 90000);
-        let rawDetails = null;
-
-        await new Promise(resolve => setTimeout(resolve, 1500));
-
-        try {
-            const source = srv.providerSource || 'api1';
-            const clientApi = source === 'api2' ? apiClient2 : apiClient1;
-            const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : `/orders/${orderId}`;
-            const getOrderRes = await clientApi.get(fetchOrderPath);
-            const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
-            rawDetails = extractUsefulData(orderData);
-        } catch(e) {
-            console.log('تأخير في المزود لجلب الطلب: ' + orderId);
-        }
-
-        if (!rawDetails || rawDetails.trim() === '') {
-            rawDetails = extractUsefulData(orderResponse.data?.order || orderResponse.data?.data || orderResponse.data);
-        }
-
-        let deliveryMsg = `📦 <b>رقم الطلب:</b> #${orderId}\n\n` +
-                          `🛍️ <b>الخدمة:</b> ${safeName}\n` +
-                          `🔢 <b>الكمية:</b> ${qty}\n\n` +
-                          `🟢 <b>الحالة:</b> مكتمل\n\n` +
-                          `💰 <b>المبلغ المخصوم:</b> ${retailPrice} EGP\n\n`;
-
-        if (rawDetails && rawDetails !== '{}' && rawDetails !== 'null' && rawDetails.trim() !== '') {
-            const safeRawText = String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            deliveryMsg += `📋 <b>العناصر المسلمة:</b>\n${safeRawText}\n\n` +
-                           `📌 <b>البيانات المسلمة (اضغط للنسخ):</b>\n<code>${safeRawText}</code>`;
-            
-            const lastIndex = usersDb[userId].orders.length - 1;
-            if (lastIndex >= 0) { usersDb[userId].orders[lastIndex].details = safeRawText; saveDatabase(); }
-        } else {
-            deliveryMsg += `📋 <b>العناصر المسلمة:</b>\n✅ تم تنفيذ الطلب بنجاح.`;
-        }
-
-        await ctx.editMessageText(deliveryMsg, { 
-            parse_mode: 'HTML',
-            disable_web_page_preview: true,
-            ...Markup.inlineKeyboard([
-                [Markup.button.callback('🔙 العودة إلى الطلبات', 'main_menu'), Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]
-            ])
-        }).catch(()=>{});
-
-        const adminLogMsg = `👑 <b>إشعار شراء جديد:</b>\n\n` +
-                            `📦 <b>رقم الطلب:</b> #${orderId}\n` +
-                            `🛍 <b>الخدمة:</b> ${safeName}\n` +
-                            `👤 <b>المشتري (ID):</b> <code>${usersDb[userId].uid}</code>\n` +
-                            `💰 <b>المدفوع:</b> ${retailPrice} EGP\n\n` +
-                            (rawDetails ? `📌 <b>البيانات:</b>\n<code>${String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>` : '');
-        notifyAdmin(adminLogMsg);
-
-     } catch (error) {
-        usersDb[userId].balance += retailPrice;
-        
-        const lastIndex = usersDb[userId].orders.length - 1;
-        if (lastIndex >= 0) { 
-            usersDb[userId].orders[lastIndex].details = "❌ فشل الشراء وتم استرداد المبلغ بالكامل"; 
-            usersDb[userId].orders[lastIndex].profit = 0; 
-        }
-        saveDatabase();
-        
-        let apiErrorMsg = error.response?.data?.message || error.response?.data?.error || error.message || "عطل غير معروف";
-        if (typeof apiErrorMsg === 'object') { apiErrorMsg = JSON.stringify(apiErrorMsg); }
-        
-        await ctx.editMessageText(`❌ فشل الشراء من المزود الأساسي.\n\n⚠️ السبب: ${apiErrorMsg}\n\n✅ <b>تم استرجاع مبلغ (${retailPrice} EGP) إلى محفظتك بنجاح.</b>`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]]) }).catch(()=>{});
-     }
-  } catch (err){
-      console.error('Buy General Error:', err.message);
-  } finally {
-      delete userRequestLocks[userId];
-  }
-});
-
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
@@ -1488,7 +1327,6 @@ export default async function handler(req, res) {
   }
 }
 
-// 🛡️ تشغيل البوت محلياً أو على سيرفر عادي (بدون تعارض مع Vercel)
 if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     bot.launch().then(() => console.log('🚀 Bot launched via Long Polling!'));
 }
