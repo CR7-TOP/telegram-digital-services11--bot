@@ -418,7 +418,11 @@ function calculateRetailPrice(service, user, quantity = 1) {
   }
 }
 
-bot.hears(/^💰 حسابي$/, (ctx) => {
+// ==========================================
+// 🛡️ قسم القوائم الرئيسية (تم التعديل لتجاهل الإيموجي وحل مشكلة عدم الاستجابة) 🛡️
+// ==========================================
+
+bot.hears(/حسابي/, (ctx) => {
   try {
     const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
     const user = usersDb[userId];
@@ -428,12 +432,9 @@ bot.hears(/^💰 حسابي$/, (ctx) => {
   } catch(e){}
 });
 
-// ==========================================
-// 🛡️ نظام طلباتي المطور (بالصفحات والأزرار) 🛡️
-// ==========================================
 function getOrdersPage(userId, page) {
     const orders = usersDb[userId].orders || [];
-    const reversedOrders = [...orders].reverse(); // أحدث الطلبات تظهر أولاً
+    const reversedOrders = [...orders].reverse(); 
     const totalOrders = reversedOrders.length;
     const itemsPerPage = 10;
     const totalPages = Math.ceil(totalOrders / itemsPerPage) || 1;
@@ -475,7 +476,7 @@ function getOrdersPage(userId, page) {
     return { text, keyboard: Markup.inlineKeyboard(buttons) };
 }
 
-bot.hears(/^🛒 طلباتي$/, (ctx) => {
+bot.hears(/طلباتي/, (ctx) => {
     try {
         const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
         if (usersDb[userId].isBanned) return;
@@ -487,52 +488,7 @@ bot.hears(/^🛒 طلباتي$/, (ctx) => {
     } catch(e){}
 });
 
-bot.action(/^ord_pg_(\d+)$/, (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    try {
-        const userId = String(ctx.from.id);
-        const page = parseInt(ctx.match[1]);
-        const { text, keyboard } = getOrdersPage(userId, page);
-        ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
-    } catch(e){}
-});
-
-bot.action(/^ord_det_(\d+)$/, (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    try {
-        const userId = String(ctx.from.id);
-        const orderIndex = parseInt(ctx.match[1]);
-        const order = usersDb[userId].orders[orderIndex];
-
-        if (!order) return ctx.editMessageText('❌ الطلب غير موجود.').catch(()=>{});
-
-        const safeName = order.name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        let detailsText = `📦 <b>تفاصيل الطلب:</b>\n\n` +
-                          `🛍 <b>الخدمة:</b> ${safeName}\n` +
-                          `💰 <b>السعر:</b> ${parseFloat(order.price).toFixed(2)} EGP\n` +
-                          `🕒 <b>التاريخ:</b> ${order.date}\n` +
-                          `🟢 <b>الحالة:</b> مكتمل\n\n`;
-
-        if (order.details && order.details.trim() !== '') {
-            detailsText += `📌 <b>البيانات المسلمة:</b>\n<code>${order.details}</code>\n`;
-        }
-
-        const returnPage = (botStates.ordersPage && botStates.ordersPage[userId]) ? botStates.ordersPage[userId] : 1;
-        
-        ctx.editMessageText(detailsText, {
-            parse_mode: 'HTML',
-            ...Markup.inlineKeyboard([
-                [Markup.button.callback('🔙 رجوع للطلبات', `ord_pg_${returnPage}`)],
-                [Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]
-            ])
-        }).catch(()=>{});
-
-    } catch(e){}
-});
-
-bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
-
-bot.hears(/^📜 سجل المحفظة$/, (ctx) => {
+bot.hears(/سجل المحفظة/, (ctx) => {
     try {
       const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
@@ -546,7 +502,7 @@ bot.hears(/^📜 سجل المحفظة$/, (ctx) => {
     } catch(e){}
 });
 
-bot.hears(/^📞 الدعم الفني$/, (ctx) => {
+bot.hears(/الدعم الفني/, (ctx) => {
     try {
       const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
@@ -560,7 +516,7 @@ bot.hears(/^📞 الدعم الفني$/, (ctx) => {
     } catch(e){}
 });
 
-bot.hears(/^🔗 دعوة الأصدقاء \(اربح 2%\)$/, (ctx) => {
+bot.hears(/دعوة الأصدقاء/, (ctx) => {
     try {
       const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
@@ -569,7 +525,7 @@ bot.hears(/^🔗 دعوة الأصدقاء \(اربح 2%\)$/, (ctx) => {
     } catch(e){}
 });
 
-bot.hears(/^🔍 بحث عن خدمة$/, (ctx) => {
+bot.hears(/بحث عن خدمة/, (ctx) => {
     try {
       const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
@@ -578,7 +534,7 @@ bot.hears(/^🔍 بحث عن خدمة$/, (ctx) => {
     } catch(e){}
 });
 
-bot.hears(/^💳 شحن المحفظة \(فودافون كاش\)$/, (ctx) => {
+bot.hears(/شحن المحفظة/, (ctx) => {
   try {
     const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
     if (usersDb[userId].isBanned) return;
@@ -587,7 +543,7 @@ bot.hears(/^💳 شحن المحفظة \(فودافون كاش\)$/, (ctx) => {
   } catch(e){}
 });
 
-bot.hears(/^🎟 استخدام كود خصم$/, (ctx) => { 
+bot.hears(/استخدام كود خصم/, (ctx) => { 
     try {
       const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
       if (usersDb[userId].isBanned) return;
@@ -595,6 +551,91 @@ bot.hears(/^🎟 استخدام كود خصم$/, (ctx) => {
       ctx.reply('🎟️ **استخدام كود خصم أو قسيمة شحن:**\n\nمن فضلك أرسل الكود الآن في رسالة:', {parse_mode: 'Markdown'}).catch(()=>{}); 
     } catch(e){}
 });
+
+async function showCategories(ctx) {
+  const userId = String(ctx.from.id);
+  let loadingMsgId = null;
+  try {
+    initUser(userId); clearUserStates(userId);
+    
+    if (usersDb[userId].isBanned) return ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
+    if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
+
+    if(ctx.callbackQuery) { 
+        await ctx.answerCbQuery().catch(()=>{}); 
+        await ctx.editMessageText('⏳ جاري جلب الأقسام...').catch(()=>{}); 
+    } else { 
+        const msg = await ctx.reply('⏳ جاري جلب الأقسام...').catch(()=>{}); 
+        if(msg) loadingMsgId = msg.message_id; 
+    }
+
+    if (cachedServices.length === 0 || (Date.now() - lastCategoriesFetchTime > categoryCacheTime)) {
+        cachedServices = await fetchAllServices(); 
+        lastCategoriesFetchTime = Date.now();
+    }
+
+    if (cachedServices.length === 0) {
+        const errorMsg = '⚠️ تعذر جلب الخدمات حالياً، يرجى المحاولة بعد قليل.';
+        const retryKeyboard = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
+        if(ctx.callbackQuery) return ctx.editMessageText(errorMsg, retryKeyboard).catch(()=>{});
+        else if(loadingMsgId) return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, errorMsg, retryKeyboard).catch(()=>{});
+        else return ctx.reply(errorMsg, retryKeyboard).catch(()=>{});
+    }
+
+    let fetchedCategories = [];
+    cachedServices.forEach(s => {
+      let catStr = getServiceCategory(s);
+      if (catStr && !fetchedCategories.includes(catStr)) fetchedCategories.push(catStr);
+    });
+
+    let categories = [];
+    preferredCategoriesOrder.forEach(cat => {
+        if (fetchedCategories.includes(cat)) categories.push(cat);
+    });
+
+    fetchedCategories.forEach(cat => {
+        if (!categories.includes(cat) && cat !== 'أخرى') categories.push(cat);
+    });
+
+    if (fetchedCategories.includes('أخرى') && !categories.includes('أخرى')) categories.push('أخرى');
+
+    let buttons = [];
+    for (let i = 0; i < categories.length; i += 2) {
+      const row = [];
+      row.push(Markup.button.callback((categoryEmojis[categories[i]] || '📦') + ' ' + categories[i], 'cat_' + i));
+      if (i + 1 < categories.length) row.push(Markup.button.callback((categoryEmojis[categories[i+1]] || '📦') + ' ' + categories[i+1], 'cat_' + (i + 1)));
+      buttons.push(row);
+    }
+    buttons.push([Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]);
+    const keyboard = Markup.inlineKeyboard(buttons);
+
+    usersDb[userId].tempCategories = categories;
+    saveDatabase();
+
+    if(ctx.callbackQuery) { 
+        return ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{}); 
+    } else if(loadingMsgId) { 
+        return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, 'اختر الفئة:', keyboard).catch(()=>{}); 
+    } else { 
+        return ctx.reply('اختر الفئة:', keyboard).catch(()=>{}); 
+    }
+
+  } catch (error) {
+    console.error("showCategories Error:", error);
+    const errMsg = '❌ حدث خطأ مؤقت أثناء جلب الأقسام، يرجى المحاولة مجدداً.';
+    const retryBtn = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
+    if(ctx.callbackQuery) {
+        ctx.editMessageText(errMsg, retryBtn).catch(()=>{});
+    } else if (loadingMsgId) {
+        ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, errMsg, retryBtn).catch(()=>{});
+    } else {
+        ctx.reply(errMsg, retryBtn).catch(()=>{});
+    }
+  }
+}
+
+bot.hears(/الخدمات/, showCategories);
+bot.action('main_categories', showCategories);
 
 function sendDepositNotification(req) {
   try {
@@ -835,17 +876,162 @@ bot.action('admin_broadcast', (ctx) => {
     ctx.editMessageText('📢 أرسل رسالة الإذاعة (أو اكتب `إلغاء`):', { ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{}); 
 });
 
+bot.action(/^ord_pg_(\d+)$/, (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    try {
+        const userId = String(ctx.from.id);
+        const page = parseInt(ctx.match[1]);
+        const { text, keyboard } = getOrdersPage(userId, page);
+        ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
+    } catch(e){}
+});
 
+bot.action(/^ord_det_(\d+)$/, (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    try {
+        const userId = String(ctx.from.id);
+        const orderIndex = parseInt(ctx.match[1]);
+        const order = usersDb[userId].orders[orderIndex];
+
+        if (!order) return ctx.editMessageText('❌ الطلب غير موجود.').catch(()=>{});
+
+        const safeName = order.name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        let detailsText = `📦 <b>تفاصيل الطلب:</b>\n\n` +
+                          `🛍 <b>الخدمة:</b> ${safeName}\n` +
+                          `💰 <b>السعر:</b> ${parseFloat(order.price).toFixed(2)} EGP\n` +
+                          `🕒 <b>التاريخ:</b> ${order.date}\n` +
+                          `🟢 <b>الحالة:</b> مكتمل\n\n`;
+
+        if (order.details && order.details.trim() !== '') {
+            detailsText += `📌 <b>البيانات المسلمة:</b>\n<code>${order.details}</code>\n`;
+        }
+
+        const returnPage = (botStates.ordersPage && botStates.ordersPage[userId]) ? botStates.ordersPage[userId] : 1;
+        
+        ctx.editMessageText(detailsText, {
+            parse_mode: 'HTML',
+            ...Markup.inlineKeyboard([
+                [Markup.button.callback('🔙 رجوع للطلبات', `ord_pg_${returnPage}`)],
+                [Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]
+            ])
+        }).catch(()=>{});
+
+    } catch(e){}
+});
+
+bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
+
+bot.action(/^cat_(\d+)$/, async (ctx) => {
+  ctx.answerCbQuery().catch(()=>{});
+  try {
+    const userId = String(ctx.from.id); initUser(userId);
+    if (usersDb[userId].isBanned) return;
+
+    const catIndex = parseInt(ctx.match[1]);
+    const selectedCategory = usersDb[userId].tempCategories ? usersDb[userId].tempCategories[catIndex] : null;
+    
+    if (!selectedCategory || !cachedServices || cachedServices.length === 0) { 
+        cachedServices = await fetchAllServices(); 
+        return ctx.editMessageText('⚠️ يرجى إعادة فتح الأقسام من البداية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
+    }
+
+    const categoryServices = cachedServices.filter(s => {
+      let cat = getServiceCategory(s);
+      return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
+    });
+
+    if (categoryServices.length === 0) return ctx.editMessageText('لا توجد خدمات حالياً في هذا القسم.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
+
+    let buttons = categoryServices.map(srv => [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ' - ' + calculateRetailPrice(srv, usersDb[userId], 1) + ' EGP', `buyact_${srv.id}`)]);
+    buttons.push([Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]);
+
+    ctx.editMessageText(`📦 خدمات قسم *${selectedCategory}*:`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+  } catch(err) {}
+});
+
+bot.action('cancel_action', (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    clearUserStates(ctx.from.id);
+    ctx.deleteMessage().catch(()=>{});
+});
+
+bot.action(/^buyact_(.+)$/, async (ctx) => {
+  ctx.answerCbQuery().catch(()=>{});
+  try {
+     const userId = String(ctx.from.id); initUser(userId);
+     if (usersDb[userId].isBanned) return;
+
+     if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
+
+     const srvId = ctx.match[1];
+     const srv = cachedServices.find(s => String(s.id) === String(srvId));
+     if(!srv) return ctx.editMessageText('الخدمة غير موجودة').catch(()=>{});
+
+     const price = calculateRetailPrice(srv, usersDb[userId], 1);
+     const srvName = srv.name_ar || srv.name || srv.title;
+
+     const msg = await ctx.editMessageText(`⚠️ <b>إدخال الكمية المطلوبة:</b>\n\n🛍 <b>الخدمة:</b> ${srvName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}\n💰 السعر للقطعة: <b>${price} EGP</b>\n\n✍️ <b>من فضلك، أرسل الكمية المطلوبة الآن في رسالة (أرقام فقط):</b>`, 
+        {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء العملية', 'cancel_action')]])
+        }
+     ).catch(e => { if (!e.message.includes('not modified')) console.error(e); });
+
+     if (msg) {
+         botStates.buyQty[userId] = { srvId: String(srv.id), msgId: msg.message_id };
+         saveDatabase();
+     }
+  } catch(err){}
+});
+
+function extractUsefulData(obj) {
+    if (!obj) return null;
+    if (typeof obj === 'string' || typeof obj === 'number') return String(obj);
+    let extracted = [];
+    const ignoreKeys = ['id', 'order', 'orders', 'order_id', 'status', 'created_at', 'updated_at', 'service_id', 'quantity', 'price', 'user_id', 'api', 'api_id', 'api_order_id', 'api_service_id', 'currency', 'charge', 'remains', 'start_count', 'link', 'cost', 'old_charge'];
+    
+    function deepExtract(currentObj) {
+        if (currentObj === null || currentObj === undefined) return;
+        if (typeof currentObj === 'string' || typeof currentObj === 'number') {
+            let str = String(currentObj).trim();
+            if (str.length > 0 && str !== '0' && str !== '0.00' && str !== '0.0') {
+                extracted.push(str);
+            }
+        } else if (Array.isArray(currentObj)) {
+            currentObj.forEach(deepExtract);
+        } else if (typeof currentObj === 'object') {
+            for (let key in currentObj) {
+                if (ignoreKeys.includes(key.toLowerCase())) continue;
+                deepExtract(currentObj[key]);
+            }
+        }
+    }
+    
+    deepExtract(obj);
+    if (extracted.length === 0) return null;
+    return [...new Set(extracted)].join('\n');
+}
+
+// ==========================================
+// 🛡️ صائد النصوص والحماية من فخ التجميد 🛡️
+// ==========================================
 bot.on('text', async (ctx, next) => {
   try {
     const userId = String(ctx.from.id); initUser(userId);
     if (usersDb[userId].isBanned) return;
-    const text = ctx.message.text;
+    const text = ctx.message.text.trim();
+
+    // 🛡️ القاطع الذكي: لو أرسل اليوزر اسم زرار من المنيو، نخرج من أي انتظار وننفذ الزرار فورا
+    const menuCommands = ['الخدمات', 'طلباتي', 'حسابي', 'سجل المحفظة', 'شحن المحفظة', 'استخدام كود', 'دعوة الأصدقاء', 'الدعم الفني', 'بحث'];
+    if (menuCommands.some(cmd => text.includes(cmd))) {
+        clearUserStates(userId);
+        return next(); // الذهاب للأوامر الرئيسية
+    }
 
     if (botStates.buyQty && botStates.buyQty[userId]) {
         const srvId = botStates.buyQty[userId].srvId;
         const msgId = botStates.buyQty[userId].msgId;
-        const qtyStr = text.trim();
+        const qtyStr = text;
         
         if (!/^\d+$/.test(qtyStr) || parseInt(qtyStr) < 1) {
             return ctx.reply('❌ يرجى كتابة أرقام صحيحة وموجبة فقط للكمية (مثال: 1, 5, 10).').catch(()=>{});
@@ -1044,7 +1230,7 @@ bot.on('text', async (ctx, next) => {
         return ctx.reply('❌ الكود الذي أدخلته غير صحيح أو منتهي الصلاحية.');
     }
 
-    if (text.trim() === 'Ahmed/') {
+    if (text === 'Ahmed/') {
         botStates.adminLogin[userId] = 'WAIT_EMAIL'; saveDatabase();
         return ctx.reply('🔐 **تسجيل دخول الأدمن**\n\nيرجى إرسال البريد الإلكتروني (Email):').catch(()=>{});
     }
@@ -1057,7 +1243,7 @@ bot.on('text', async (ctx, next) => {
         }
 
         if (state === 'WAIT_CHARGE_USER') {
-            const parts = text.trim().split(/\s+/);
+            const parts = text.split(/\s+/);
             if (parts.length < 2) return ctx.reply('❌ صيغة غير صحيحة. استخدم: `الآيدي المبلغ`', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             const targetUid = parts[0].trim();
             const amount = parseFloat(parts[1]);
@@ -1077,7 +1263,7 @@ bot.on('text', async (ctx, next) => {
         }
 
         if (state === 'WAIT_PROMO_CREATE') {
-            const parts = text.trim().split(/\s+/); 
+            const parts = text.split(/\s+/); 
             if (parts.length < 2) return ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             const code = parts[0].toUpperCase(); const amount = parseFloat(parts[1]);
             if (isNaN(amount) || amount <= 0) return ctx.reply('❌ القيمة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
@@ -1086,7 +1272,7 @@ bot.on('text', async (ctx, next) => {
         }
 
         if (state === 'WAIT_VOUCHER_CREATE') {
-            const parts = text.trim().split(/\s+/); 
+            const parts = text.split(/\s+/); 
             if (parts.length < 2) return ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             const code = parts[0].toUpperCase(); const amount = parseFloat(parts[1]);
             if (isNaN(amount) || amount <= 0) return ctx.reply('❌ القيمة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
@@ -1095,7 +1281,7 @@ bot.on('text', async (ctx, next) => {
         }
 
         if (state === 'WAIT_BAN_USER') {
-            const targetUid = text.trim();
+            const targetUid = text;
             const targetUser = getUserByUid(targetUid);
             if (!targetUser) return ctx.reply('❌ لم يتم العثور على عميل.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
             targetUser.user.isBanned = true; saveDatabase();
@@ -1103,7 +1289,7 @@ bot.on('text', async (ctx, next) => {
         }
 
         if (state === 'WAIT_UNBAN_USER') {
-            const targetUid = text.trim();
+            const targetUid = text;
             const targetUser = getUserByUid(targetUid);
             if (!targetUser) return ctx.reply('❌ لم يتم العثور على عميل.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
             targetUser.user.isBanned = false; saveDatabase();
@@ -1125,7 +1311,7 @@ bot.on('text', async (ctx, next) => {
         if (state.startsWith('WAIT_SET_MARKUP_')) {
             const srvId = String(state.split('WAIT_SET_MARKUP_')[1]);
 
-            if (text.trim() === 'حذف') {
+            if (text === 'حذف') {
                 delete customProductMarkups[srvId];
                 saveDatabase();
                 return ctx.reply('✅ تم مسح النسبة المخصصة! المنتج سيعود لاستخدام النسبة العامة للمتجر.', {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
@@ -1143,13 +1329,13 @@ bot.on('text', async (ctx, next) => {
         if (state.startsWith('WAIT_ADD_STOCK_')) {
             const srvId = String(state.split('WAIT_ADD_STOCK_')[1]);
 
-            if (text.trim() === 'إلغاء' || text.trim() === 'رجوع') {
+            if (text === 'إلغاء' || text === 'رجوع') {
                 delete botStates.adminInput[userId];
                 saveDatabase();
                 return showAdminPanel(ctx);
             }
 
-            if (text.trim() === 'عرض') {
+            if (text === 'عرض') {
                 if (!localInventory[srvId] || localInventory[srvId].length === 0) {
                     return ctx.reply('📦 المخزن فارغ تماماً لهذا المنتج.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
                 }
@@ -1158,14 +1344,14 @@ bot.on('text', async (ctx, next) => {
                 return ctx.reply(`📦 **المخزن الحالي لهذا المنتج (${localInventory[srvId].length} عنصر):**\n\n${stockList}`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]])});
             }
 
-            if (text.trim() === 'حذف الكل') {
+            if (text === 'حذف الكل') {
                 localInventory[srvId] = [];
                 saveDatabase();
                 logAdminAction(userId, `تفريغ مخزن المنتج ${srvId}`);
                 return ctx.reply('✅ تم تفريغ المخزن لهذا المنتج بنجاح!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
 
-            const item = text.trim();
+            const item = text;
             if (!localInventory[srvId]) localInventory[srvId] = [];
             localInventory[srvId].push(item);
             saveDatabase();
@@ -1193,7 +1379,7 @@ bot.on('text', async (ctx, next) => {
         }
 
         if (state === 'WAIT_CUSTOM_MARKUP') {
-            if (text.trim() === 'حذف الكل') {
+            if (text === 'حذف الكل') {
                 customMarkups = {};
                 saveDatabase();
                 logAdminAction(userId, 'مسح جميع نسب الأقسام المخصصة');
@@ -1220,7 +1406,7 @@ bot.on('text', async (ctx, next) => {
         }
 
         if (state === 'WAIT_FLASH_SALE') {
-            const parts = text.trim().split(/\s+/);
+            const parts = text.split(/\s+/);
             if (parts.length < 2) return ctx.reply('❌ صيغة غير صحيحة. أرسل: `النسبة الساعات` (مثال: `20 1`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
             const discountVal = parseFloat(parts[0]); const hoursVal = parseFloat(parts[1]);
             
@@ -1259,11 +1445,11 @@ bot.on('text', async (ctx, next) => {
     }
 
     if (botStates.adminLogin && botStates.adminLogin[userId] === 'WAIT_EMAIL') {
-      if (text.trim() === ADMIN_EMAIL) { botStates.adminLogin[userId] = 'WAIT_PASS'; saveDatabase(); return ctx.reply('🔒 أرسل كلمة المرور:').catch(()=>{}); } 
+      if (text === ADMIN_EMAIL) { botStates.adminLogin[userId] = 'WAIT_PASS'; saveDatabase(); return ctx.reply('🔒 أرسل كلمة المرور:').catch(()=>{}); } 
       else { botStates.adminLogin[userId] = null; saveDatabase(); return ctx.reply('❌ بريد خاطئ.').catch(()=>{}); }
     }
     if (botStates.adminLogin && botStates.adminLogin[userId] === 'WAIT_PASS') {
-      if (text.trim() === ADMIN_PASS) {
+      if (text === ADMIN_PASS) {
         botStates.adminLogin[userId] = null; botStates.adminSession[userId] = true;
         initUser(userId); usersDb[userId].uid = 1001; saveDatabase();
         ctx.reply('✅ تم تسجيل الدخول.').catch(()=>{}); return showAdminPanel(ctx);
@@ -1271,7 +1457,7 @@ bot.on('text', async (ctx, next) => {
     }
 
     if (botStates.broadcast && botStates.broadcast[userId]) {
-        if (text.trim() === 'إلغاء') { delete botStates.broadcast[userId]; saveDatabase(); return ctx.reply('✅ تم الإلغاء.'); }
+        if (text === 'إلغاء') { delete botStates.broadcast[userId]; saveDatabase(); return ctx.reply('✅ تم الإلغاء.'); }
         
         ctx.reply('⏳ جاري إرسال الإذاعة لجميع العملاء... (تتم ببطء لتجنب حظر تليجرام)').catch(()=>{});
         let count = 0;
