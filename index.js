@@ -19,6 +19,7 @@ const client = new MongoClient(MONGODB_URI);
 let dbCollection = null;
 let pendingSaves = []; 
 let isDbConnected = false;
+let isDataLoaded = false; // 🚀 مفتاح السرعة: منع تحميل الداتا مع كل رسالة
 
 let usersDb = {};
 let globalMarkupPercent = 15;
@@ -55,6 +56,8 @@ async function connectDB() {
 }
 
 async function loadDatabase() {
+    if (isDataLoaded) return; // 🚀 لو الداتا متحملة مسبقاً، متضيعش وقت وحملها من الرام فوراً
+    
     await connectDB();
     if (!dbCollection) return;
     const data = await dbCollection.findOne({ _id: "main_data" });
@@ -85,6 +88,7 @@ async function loadDatabase() {
             ordersPage: loadedStates.ordersPage || {}
         };
     }
+    isDataLoaded = true; // 🚀 حفظنا إن الداتا اتحملت خلاص
 }
 
 function saveDatabase() {
@@ -306,6 +310,22 @@ async function fetchAllServices() {
     return services;
 }
 
+// 🚀 نظام التحديث في الخلفية (Background Sync) لسرعة استجابة لا مثيل لها
+async function ensureServicesLoaded() {
+    if (cachedServices.length === 0) {
+        cachedServices = await fetchAllServices();
+        lastCategoriesFetchTime = Date.now();
+    } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
+        // تحديث خفي في الخلفية دون تعطيل المستخدم
+        fetchAllServices().then(services => {
+            if (services && services.length > 0) {
+                cachedServices = services;
+                lastCategoriesFetchTime = Date.now();
+            }
+        }).catch(()=>{});
+    }
+}
+
 async function placeOrderWithBestProvider(srv, qty) {
     const source = srv.providerSource || 'api1';
     const parsedQty = parseInt(qty) || 1;
@@ -417,10 +437,6 @@ function calculateRetailPrice(service, user, quantity = 1) {
     return '0.00';
   }
 }
-
-// ==========================================
-// 🛡️ قسم القوائم الرئيسية (تم التعديل لتجاهل الإيموجي وحل مشكلة عدم الاستجابة) 🛡️
-// ==========================================
 
 bot.hears(/حسابي/, (ctx) => {
   try {
@@ -561,24 +577,13 @@ async function showCategories(ctx) {
     if (usersDb[userId].isBanned) return ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
-    if(ctx.callbackQuery) { 
-        await ctx.answerCbQuery().catch(()=>{}); 
-        await ctx.editMessageText('⏳ جاري جلب الأقسام...').catch(()=>{}); 
-    } else { 
-        const msg = await ctx.reply('⏳ جاري جلب الأقسام...').catch(()=>{}); 
-        if(msg) loadingMsgId = msg.message_id; 
-    }
-
-    if (cachedServices.length === 0 || (Date.now() - lastCategoriesFetchTime > categoryCacheTime)) {
-        cachedServices = await fetchAllServices(); 
-        lastCategoriesFetchTime = Date.now();
-    }
+    // 🚀 تحديث سريع: استخدام Cache مباشرة قبل الطباعة لجعلها لحظية
+    await ensureServicesLoaded();
 
     if (cachedServices.length === 0) {
         const errorMsg = '⚠️ تعذر جلب الخدمات حالياً، يرجى المحاولة بعد قليل.';
         const retryKeyboard = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
         if(ctx.callbackQuery) return ctx.editMessageText(errorMsg, retryKeyboard).catch(()=>{});
-        else if(loadingMsgId) return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, errorMsg, retryKeyboard).catch(()=>{});
         else return ctx.reply(errorMsg, retryKeyboard).catch(()=>{});
     }
 
@@ -614,8 +619,6 @@ async function showCategories(ctx) {
 
     if(ctx.callbackQuery) { 
         return ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{}); 
-    } else if(loadingMsgId) { 
-        return ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, 'اختر الفئة:', keyboard).catch(()=>{}); 
     } else { 
         return ctx.reply('اختر الفئة:', keyboard).catch(()=>{}); 
     }
@@ -626,8 +629,6 @@ async function showCategories(ctx) {
     const retryBtn = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
     if(ctx.callbackQuery) {
         ctx.editMessageText(errMsg, retryBtn).catch(()=>{});
-    } else if (loadingMsgId) {
-        ctx.telegram.editMessageText(ctx.chat.id, loadingMsgId, null, errMsg, retryBtn).catch(()=>{});
     } else {
         ctx.reply(errMsg, retryBtn).catch(()=>{});
     }
@@ -743,7 +744,7 @@ bot.action(/^addstock_(.+)$/, (ctx) => {
 bot.action('admin_pending_deposits', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
-        if (!pendingDeposits || pendingDeposits.length === 0) return ctx.editMessageText('💳 **طلبات الشحن المعلقة:**\n\nلا توجد طلبات شحن معلقة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
+        if (!pendingDeposits || pendingDeposits.length === 0) return ctx.editMessageText('💳 **طلبات الشحن المعلقة:**\n\nلا توجد طلبات الشحن المعلقة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
         let msg = '💳 **طلبات الشحن المعلقة (' + pendingDeposits.length + '):**\n\n';
         let inlineButtons = [];
         pendingDeposits.forEach((req, idx) => {
@@ -930,8 +931,9 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
     const catIndex = parseInt(ctx.match[1]);
     const selectedCategory = usersDb[userId].tempCategories ? usersDb[userId].tempCategories[catIndex] : null;
     
-    if (!selectedCategory || !cachedServices || cachedServices.length === 0) { 
-        cachedServices = await fetchAllServices(); 
+    await ensureServicesLoaded(); // 🚀 تحديث سريع للبيانات
+
+    if (!selectedCategory || cachedServices.length === 0) { 
         return ctx.editMessageText('⚠️ يرجى إعادة فتح الأقسام من البداية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
     }
 
@@ -961,7 +963,7 @@ bot.action(/^buyact_(.+)$/, async (ctx) => {
      const userId = String(ctx.from.id); initUser(userId);
      if (usersDb[userId].isBanned) return;
 
-     if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
+     await ensureServicesLoaded(); // 🚀 تحميل سريع للبيانات قبل التنفيذ
 
      const srvId = ctx.match[1];
      const srv = cachedServices.find(s => String(s.id) === String(srvId));
@@ -1012,20 +1014,16 @@ function extractUsefulData(obj) {
     return [...new Set(extracted)].join('\n');
 }
 
-// ==========================================
-// 🛡️ صائد النصوص والحماية من فخ التجميد 🛡️
-// ==========================================
 bot.on('text', async (ctx, next) => {
   try {
     const userId = String(ctx.from.id); initUser(userId);
     if (usersDb[userId].isBanned) return;
     const text = ctx.message.text.trim();
 
-    // 🛡️ القاطع الذكي: لو أرسل اليوزر اسم زرار من المنيو، نخرج من أي انتظار وننفذ الزرار فورا
     const menuCommands = ['الخدمات', 'طلباتي', 'حسابي', 'سجل المحفظة', 'شحن المحفظة', 'استخدام كود', 'دعوة الأصدقاء', 'الدعم الفني', 'بحث'];
     if (menuCommands.some(cmd => text.includes(cmd))) {
         clearUserStates(userId);
-        return next(); // الذهاب للأوامر الرئيسية
+        return next(); 
     }
 
     if (botStates.buyQty && botStates.buyQty[userId]) {
@@ -1047,16 +1045,12 @@ bot.on('text', async (ctx, next) => {
         userRequestLocks[userId] = true;
 
         try {
-             if (!cachedServices || cachedServices.length === 0) { cachedServices = await fetchAllServices(); }
+             await ensureServicesLoaded(); // 🚀 تحديث سريع قبل الشراء
+
              const srv = cachedServices.find(s => String(s.id) === String(srvId));
              if (!srv) {
                  ctx.reply('❌ الخدمة غير موجودة أو تم حذفها من المزود.').catch(()=>{});
                  return;
-             }
-
-             if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-                 cachedServices = await fetchAllServices();
-                 lastCategoriesFetchTime = Date.now();
              }
 
              const retailPrice = parseFloat(calculateRetailPrice(srv, usersDb[userId], qty));
@@ -1209,7 +1203,7 @@ bot.on('text', async (ctx, next) => {
 
     if (botStates.promo && botStates.promo[userId]) {
         delete botStates.promo[userId]; saveDatabase();
-        const textCode = text.trim().toUpperCase();
+        const textCode = text.toUpperCase();
 
         if (vouchers[textCode]) {
             if (vouchers[textCode].isUsed) return ctx.reply('❌ عذراً، كارت الشحن هذا تم استخدامه مسبقاً.').catch(()=>{});
