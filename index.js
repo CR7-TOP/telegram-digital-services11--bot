@@ -234,21 +234,18 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 المزود الأول
 const apiClient1 = axios.create({
   baseURL: 'https://xprostore.store/api/v1',
   headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' },
   timeout: 5000
 });
 
-// 🌐 المزود الثاني
 const apiClient2 = axios.create({
   baseURL: 'https://zfourstore.up.railway.app/api/v1',
   headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' },
   timeout: 5000
 });
 
-// 🌐 المزود الثالث (Dantehub) - بمفتاح مباشر لتخطي مشكلة Vercel
 const API_KEY_3 = process.env.PROVIDER3_API_KEY || 'dh_live_51fc2511f39790176ec4d956a92c10492a22858859ae0a79';
 const apiClient3 = axios.create({
   baseURL: 'https://dantehub.shop/api/public/v1',
@@ -266,21 +263,40 @@ function generateStableId(nameStr) {
     return Math.abs(hash).toString();
 }
 
+// 🚀 تحديث الدالة دي عشان تدمج خدمات المزود التالت في الأقسام الأصلية بتاعتك
 function detectCategoryFromName(name) {
     let n = name.toLowerCase();
-    if (n.includes('gemini')) return 'جيميناي';
-    if (n.includes('gpt')) return 'شات GPT';
-    if (n.includes('canva')) return 'كانفا';
-    if (n.includes('adobe')) return 'ادوبي';
-    if (n.includes('duolingo')) return 'دوولينجو';
-    if (n.includes('capcut')) return 'كاب كات';
+    if (n.includes('gemini') || n.includes('جيميناي')) return 'جيميناي';
+    if (n.includes('gpt') || n.includes('chatgpt') || n.includes('شات gpt')) return 'شات GPT';
+    if (n.includes('canva') || n.includes('كانفا')) return 'كانفا';
+    if (n.includes('adobe') || n.includes('ادوبي')) return 'ادوبي';
+    if (n.includes('duolingo') || n.includes('دوولينجو')) return 'دوولينجو';
+    if (n.includes('capcut') || n.includes('كاب كات')) return 'كاب كات';
     if (n.includes('spotify')) return 'Spotify';
-    if (n.includes('netflix')) return 'Netflix';
+    if (n.includes('netflix') || n.includes('نتفلكس')) return 'Netflix';
     if (n.includes('crunchyroll')) return 'Crunchyroll';
-    if (n.includes('microsoft') || n.includes('office')) return 'مايكروسوفت';
-    if (n.includes('coursera')) return 'edX Premium';
-    if (n.includes('prime')) return 'Prime Video';
-    if (n.includes('notion')) return 'نوشن';
+    if (n.includes('microsoft') || n.includes('office') || n.includes('مايكروسوفت') || n.includes('windows')) return 'مايكروسوفت';
+    if (n.includes('coursera') || n.includes('كورسيرا') || n.includes('edx')) return 'edX Premium';
+    if (n.includes('prime') || n.includes('amazon prime')) return 'Prime Video';
+    if (n.includes('notion') || n.includes('نوشن')) return 'نوشن';
+    if (n.includes('claude')) return 'Claude';
+    if (n.includes('grok')) return 'جروك';
+    if (n.includes('perplexity')) return 'Perplexity';
+    if (n.includes('nordvpn')) return 'NordVPN';
+    if (n.includes('youtube')) return 'YouTube Premium';
+    if (n.includes('apple')) return 'Apple';
+    if (n.includes('elevenlabs')) return 'ElevenLabs';
+    if (n.includes('leonardo')) return 'Leonardo.Ai';
+    if (n.includes('cursor')) return 'Cursor';
+    if (n.includes('lovable')) return 'Lovable';
+    if (n.includes('replit')) return 'Replit';
+    if (n.includes('figma')) return 'Figma';
+    if (n.includes('bolt')) return 'Bolt';
+    if (n.includes('kling')) return 'Kling';
+    if (n.includes('gamma')) return 'Gamma';
+    if (n.includes('manus')) return 'Manus';
+    if (n.includes('wispr')) return 'Wispr Flow';
+    if (n.includes('quillbot')) return 'QuillBot';
     if (/\bapi\b/i.test(n) || n.includes('خدمات برمجة')) return 'خدمات API';
     return 'أخرى';
 }
@@ -288,7 +304,13 @@ function detectCategoryFromName(name) {
 function getServiceCategory(s) {
   try {
     let cat = s.category_name || s.category_ar || s.category_title || (typeof s.category === 'object' ? (s.category?.name || s.category?.name_ar || s.category?.title) : s.category);
-    return cat ? String(cat).trim() : 'أخرى';
+    // 🚀 تطبيق الدمج على كل الخدمات
+    if (cat) {
+       let smartCat = detectCategoryFromName(cat) !== 'أخرى' ? detectCategoryFromName(cat) : detectCategoryFromName(s.name || s.title || '');
+       if (smartCat !== 'أخرى') return smartCat;
+       return String(cat).trim();
+    }
+    return 'أخرى';
   } catch(e) { return 'أخرى'; }
 }
 
@@ -336,7 +358,6 @@ async function fetchAllServices() {
         } catch(e) {}
     }
 
-    // 🚀 كود ذكي للمزود الثالث: لو فشل في جلب Services هيجرب Products
     let danteData = null;
     if (res3Result.status === 'fulfilled') {
         danteData = res3Result.value.data;
@@ -358,7 +379,7 @@ async function fetchAllServices() {
                     item.providerSource = 'api3'; 
                     item.name = item.name || item.name_ar || item.title || "خدمة بدون اسم";
                     item.id = String(item.id || item.service_id || item.product_id || item.uuid || item.code || generateStableId(item.name));
-                    item.category = item.category || item.category_name || detectCategoryFromName(item.name);
+                    item.category = detectCategoryFromName(item.name) !== 'أخرى' ? detectCategoryFromName(item.name) : (item.category || item.category_name || 'أخرى');
                     let rawPriceUSD = parseFloat(item.price || item.rate || item.price_amount || 0);
                     
                     if (rawPriceUSD < 10) { 
@@ -418,18 +439,22 @@ async function placeOrderWithBestProvider(srv, qty) {
 
 const preferredCategoriesOrder = [
     'شات GPT', 'كانفا', 'E SIM', 'جيميناي', 'Netflix', 'Spotify', 'كاب كات', 
-    'ادوبي', 'دوولينجو', 'تيليجرام', 'مايكروسوفت', 'نوشن', 'اكسبريس VPN', 
-    'HMA VPN', 'جيميل', 'ايكلاود', 'جروك', 'Leonardo.Ai', 'Zoom', 'iLovePDF', 
+    'ادوبي', 'دوولينجو', 'تيليجرام', 'مايكروسوفت', 'نوشن', 'Claude', 'Perplexity', 'Apple',
+    'YouTube Premium', 'NordVPN', 'Leonardo.Ai', 'ElevenLabs', 'Cursor', 'Lovable',
+    'اكسبريس VPN', 'HMA VPN', 'جيميل', 'ايكلاود', 'جروك', 'Zoom', 'iLovePDF', 
     'Envato', 'Grammarly', 'edX Premium', 'HBO MAX', 'Prime Video', 
     'Crunchyroll', 'Peacock', 'Autodesk', 'JetBrains', 'Miro', 'Framer', 
-    'Avira', 'خدمات API', 'أخرى'
+    'Avira', 'Figma', 'Bolt', 'Kling', 'Gamma', 'Manus', 'Wispr Flow', 'QuillBot', 'Replit', 'خدمات API', 'أخرى'
 ];
 
+// 🚀 إضافة الإيموجيهات للأقسام الجديدة اللي ظهرت في الصورة
 const categoryEmojis = {
-  'شات GPT': '🤖', 'جيميناي': '✨', 'كاب كات': '✂', 'جروك': '🌌', 'ادوبي': '🎨', 'كانفا': '🖌', 'نوشن': '📝', 'Leonardo.Ai': '🤖',
+  'شات GPT': '🤖', 'جيميناي': '✨', 'كاب كات': '✂', 'جروك': '🌌', 'ادوبي': '🎨', 'كانفا': '🖌', 'نوشن': '📝', 'Leonardo.Ai': '🖼️',
   'دوولينجو': '🦉', 'تيليجرام': '✈', 'مايكروسوفت': '💻', 'Miro': '🗺', 'Zoom': '📹', 'iLovePDF': '📄', 'Envato': '🍃', 'Grammarly': '✍',
   'Autodesk': '🏗', 'JetBrains': '💻', 'edX Premium': '🎓', 'Peacock': '🦚', 'HBO MAX': '🎬', 'Paramount+': '⛰', 'Framer': '⚡',
   'Avira': '☂️', 'HMA VPN': '🌍', 'اكسبريس VPN': '🛡', 'جيميل': '📧', 'ايكلاود': '☁', 'E SIM': '📱', 'Spotify': '🎧', 'Netflix': '🍿', 'Crunchyroll': '🍘', 'Prime Video': '🎬',
+  'Claude': '🧠', 'Perplexity': '🔎', 'Apple': '🍎', 'YouTube Premium': '▶️', 'NordVPN': '🔒', 'ElevenLabs': '🎙️', 'Cursor': '⌨️', 
+  'Lovable': '❤️', 'Figma': '📐', 'Bolt': '⚡', 'Kling': '🎞️', 'Gamma': '📊', 'Manus': '📝', 'Wispr Flow': '🌊', 'QuillBot': '🤖', 'Replit': '💻',
   'خدمات API': '🔌', 'أخرى': '📦'
 };
 
@@ -1083,7 +1108,6 @@ bot.action('admin_pending_deposits', (ctx) => {
     } catch(e) {}
 });
 
-// 🚀 فحص الأرصدة للمزودين الثلاثة (مع نظام كشف الأخطاء)
 bot.action('admin_check_api_balance', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1107,7 +1131,6 @@ bot.action('admin_check_api_balance', async (ctx) => {
     } catch(e) {}
 });
 
-// 🚀 فحص الحالة للمزودين الثلاثة (مع نظام كشف الأخطاء)
 bot.action('admin_check_api_status', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
