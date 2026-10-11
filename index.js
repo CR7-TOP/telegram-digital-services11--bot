@@ -238,22 +238,22 @@ function getUserByUid(targetUid) {
 const apiClient1 = axios.create({
   baseURL: 'https://xprostore.store/api/v1',
   headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' },
-  timeout: 4500
+  timeout: 5000
 });
 
 // 🌐 المزود الثاني
 const apiClient2 = axios.create({
   baseURL: 'https://zfourstore.up.railway.app/api/v1',
   headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' },
-  timeout: 4500
+  timeout: 5000
 });
 
-// 🌐 المزود الثالث (الجديد: Dantehub)
+// 🌐 المزود الثالث (Dantehub) - بمفتاح مباشر لتخطي مشكلة Vercel
 const API_KEY_3 = process.env.PROVIDER3_API_KEY || 'dh_live_51fc2511f39790176ec4d956a92c10492a22858859ae0a79';
 const apiClient3 = axios.create({
   baseURL: 'https://dantehub.shop/api/public/v1',
   headers: { 'Authorization': 'Bearer ' + API_KEY_3, 'Content-Type': 'application/json' },
-  timeout: 4500
+  timeout: 8000
 });
 
 function generateStableId(nameStr) {
@@ -297,10 +297,9 @@ async function fetchAllServices() {
     const [res1Result, res2Result, res3Result] = await Promise.allSettled([
         apiClient1.get('/services?limit=1000'),
         apiClient2.get('/products'),
-        apiClient3.get('/services?limit=1000') // 🚀 جلب الخدمات من المزود الثالث
+        apiClient3.get('/services?limit=1000') 
     ]);
 
-    // معالجة المزود الأول
     if (res1Result.status === 'fulfilled') {
         try {
             let s1 = res1Result.value.data?.data || res1Result.value.data?.services || res1Result.value.data;
@@ -315,7 +314,6 @@ async function fetchAllServices() {
         } catch(e) {}
     }
 
-    // معالجة المزود الثاني
     if (res2Result.status === 'fulfilled') {
         try {
             let s2 = res2Result.value.data?.data || res2Result.value.data?.products || res2Result.value.data?.services || res2Result.value.data;
@@ -338,10 +336,20 @@ async function fetchAllServices() {
         } catch(e) {}
     }
 
-    // معالجة المزود الثالث (الجديد)
+    // 🚀 كود ذكي للمزود الثالث: لو فشل في جلب Services هيجرب Products
+    let danteData = null;
     if (res3Result.status === 'fulfilled') {
+        danteData = res3Result.value.data;
+    } else {
+        try { 
+            const fallback = await apiClient3.get('/products?limit=1000'); 
+            danteData = fallback.data; 
+        } catch(e) {}
+    }
+
+    if (danteData) {
         try {
-            let s3 = res3Result.value.data?.data || res3Result.value.data?.services || res3Result.value.data;
+            let s3 = danteData.data || danteData.services || danteData.products || danteData;
             if (!Array.isArray(s3) && typeof s3 === 'object') {
                 for (let key in s3) { if (Array.isArray(s3[key])) { s3 = s3[key]; break; } }
             }
@@ -396,7 +404,6 @@ async function placeOrderWithBestProvider(srv, qty) {
              quantity: parsedQty 
          });
     } else if (source === 'api3') {
-         // 🚀 طلب شراء من المزود الثالث
          return await apiClient3.post('/orders', { 
              service_id: srvIdConverted, 
              quantity: parsedQty 
@@ -1076,34 +1083,52 @@ bot.action('admin_pending_deposits', (ctx) => {
     } catch(e) {}
 });
 
-// 🚀 فحص الأرصدة للمزودين الثلاثة
+// 🚀 فحص الأرصدة للمزودين الثلاثة (مع نظام كشف الأخطاء)
 bot.action('admin_check_api_balance', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
         ctx.editMessageText('⏳ جاري الاتصال بالمزودين...').catch(()=>{});
         let msg = '💰 **أرصدة المزودين:**\n\n';
         try { const res1 = await apiClient1.get('/me/wallet'); msg += `🔹 المزود الأول: *${parseFloat(res1.data?.data?.balance || res1.data?.balance || 0).toFixed(2)} EGP*\n`; } 
-        catch(e) { msg += `🔹 المزود الأول: خطأ ❌\n`; }
+        catch(e) { msg += `🔹 المزود الأول: خطأ ❌ (${e.response?.status || e.message})\n`; }
+        
         try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود الثاني: *$${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}*\n`; } 
-        catch(e) { msg += `🔹 المزود الثاني: خطأ ❌\n`; }
+        catch(e) { msg += `🔹 المزود الثاني: خطأ ❌ (${e.response?.status || e.message})\n`; }
+        
         try { const res3 = await apiClient3.get('/me/wallet'); msg += `🔹 المزود الثالث (Dantehub): *${parseFloat(res3.data?.data?.balance || res3.data?.balance || 0).toFixed(2)}*\n`; } 
-        catch(e) { msg += `🔹 المزود الثالث (Dantehub): خطأ ❌\n`; }
+        catch(e) { 
+            try {
+                const res3b = await apiClient3.get('/balance'); msg += `🔹 المزود الثالث (Dantehub): *${parseFloat(res3b.data?.data?.balance || res3b.data?.balance || 0).toFixed(2)}*\n`;
+            } catch(err) {
+                msg += `🔹 المزود الثالث (Dantehub): خطأ ❌ (${err.response?.status || err.message})\n`; 
+            }
+        }
         ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
 });
 
-// 🚀 فحص الحالة للمزودين الثلاثة
+// 🚀 فحص الحالة للمزودين الثلاثة (مع نظام كشف الأخطاء)
 bot.action('admin_check_api_status', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
         ctx.editMessageText('⏳ جاري فحص استجابة سيرفرات المزودين...').catch(()=>{});
         let msg = '🟢 **حالة سيرفرات المزودين (API):**\n\n';
+        
         try { const start1 = Date.now(); await apiClient1.get('/services?limit=1'); msg += `🔹 المزود الأول: يعمل ✅ (${Date.now() - start1}ms)\n`; } 
-        catch(e) { msg += `🔹 المزود الأول: متعطل ❌\n`; }
+        catch(e) { msg += `🔹 المزود الأول: متعطل ❌ (الخطأ: ${e.response?.status || e.message})\n`; }
+        
         try { const start2 = Date.now(); await apiClient2.get('/products'); msg += `🔹 المزود الثاني: يعمل ✅ (${Date.now() - start2}ms)\n`; } 
-        catch(e) { msg += `🔹 المزود الثاني: متعطل ❌\n`; }
-        try { const start3 = Date.now(); await apiClient3.get('/services?limit=1'); msg += `🔹 المزود الثالث (Dantehub): يعمل ✅ (${Date.now() - start3}ms)\n`; } 
-        catch(e) { msg += `🔹 المزود الثالث (Dantehub): متعطل ❌\n`; }
+        catch(e) { msg += `🔹 المزود الثاني: متعطل ❌ (الخطأ: ${e.response?.status || e.message})\n`; }
+        
+        try { const start3 = Date.now(); await apiClient3.get('/services?limit=1'); msg += `🔹 المزود الثالث: يعمل ✅ (${Date.now() - start3}ms)\n`; } 
+        catch(e) { 
+            try {
+                const start3b = Date.now(); await apiClient3.get('/products'); msg += `🔹 المزود الثالث: يعمل ✅ (${Date.now() - start3b}ms)\n`; 
+            } catch (err) {
+                msg += `🔹 المزود الثالث: متعطل ❌ (الخطأ: ${err.response?.status || err.message})\n`; 
+            }
+        }
+        
         ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
 });
