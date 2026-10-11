@@ -263,7 +263,7 @@ function generateStableId(nameStr) {
     return Math.abs(hash).toString();
 }
 
-// 🚀 تحديث الدالة دي عشان تدمج خدمات المزود التالت في الأقسام الأصلية بتاعتك
+// 🚀 الكشف الذكي لاسم القسم لتنظيف القديم ودمج الجديد
 function detectCategoryFromName(name) {
     let n = name.toLowerCase();
     if (n.includes('gemini') || n.includes('جيميناي')) return 'جيميناي';
@@ -297,6 +297,10 @@ function detectCategoryFromName(name) {
     if (n.includes('manus')) return 'Manus';
     if (n.includes('wispr')) return 'Wispr Flow';
     if (n.includes('quillbot')) return 'QuillBot';
+    if (n.includes('higgsfield')) return 'Higgsfield';
+    if (n.includes('proton')) return 'Proton';
+    if (n.includes('n8n')) return 'n8n';
+    if (n.includes('railway')) return 'Railway';
     if (/\bapi\b/i.test(n) || n.includes('خدمات برمجة')) return 'خدمات API';
     return 'أخرى';
 }
@@ -304,7 +308,6 @@ function detectCategoryFromName(name) {
 function getServiceCategory(s) {
   try {
     let cat = s.category_name || s.category_ar || s.category_title || (typeof s.category === 'object' ? (s.category?.name || s.category?.name_ar || s.category?.title) : s.category);
-    // 🚀 تطبيق الدمج على كل الخدمات
     if (cat) {
        let smartCat = detectCategoryFromName(cat) !== 'أخرى' ? detectCategoryFromName(cat) : detectCategoryFromName(s.name || s.title || '');
        if (smartCat !== 'أخرى') return smartCat;
@@ -312,6 +315,24 @@ function getServiceCategory(s) {
     }
     return 'أخرى';
   } catch(e) { return 'أخرى'; }
+}
+
+// 🚀 نظام تحديد الإيموجي المناسب لكل خدمة بناءً على اسمها
+function detectServiceEmoji(name) {
+    const n = name.toLowerCase();
+    if(n.includes('apple') || n.includes('mac')) return '🍎';
+    if(n.includes('music') || n.includes('spotify')) return '🎵';
+    if(n.includes('video') || n.includes('netflix') || n.includes('youtube') || n.includes('prime')) return '🎬';
+    if(n.includes('vpn') || n.includes('nord') || n.includes('proton')) return '🛡️';
+    if(n.includes('ai') || n.includes('gpt') || n.includes('bot') || n.includes('claude') || n.includes('gemini')) return '🤖';
+    if(n.includes('pdf') || n.includes('doc')) return '📄';
+    if(n.includes('cloud') || n.includes('drive')) return '☁️';
+    if(n.includes('edu') || n.includes('learn') || n.includes('course') || n.includes('duolingo')) return '🎓';
+    if(n.includes('game') || n.includes('play')) return '🎮';
+    if(n.includes('code') || n.includes('api') || n.includes('dev') || n.includes('cursor') || n.includes('replit')) return '💻';
+    if(n.includes('design') || n.includes('art') || n.includes('draw') || n.includes('figma') || n.includes('canva') || n.includes('adobe')) return '🎨';
+    if(n.includes('voice') || n.includes('audio') || n.includes('eleven')) return '🎙️';
+    return '🔹'; // إيموجي افتراضي لو الخدمة مفيهاش كلمة مميزة
 }
 
 async function fetchAllServices() {
@@ -444,10 +465,11 @@ const preferredCategoriesOrder = [
     'اكسبريس VPN', 'HMA VPN', 'جيميل', 'ايكلاود', 'جروك', 'Zoom', 'iLovePDF', 
     'Envato', 'Grammarly', 'edX Premium', 'HBO MAX', 'Prime Video', 
     'Crunchyroll', 'Peacock', 'Autodesk', 'JetBrains', 'Miro', 'Framer', 
-    'Avira', 'Figma', 'Bolt', 'Kling', 'Gamma', 'Manus', 'Wispr Flow', 'QuillBot', 'Replit', 'خدمات API', 'أخرى'
+    'Avira', 'Figma', 'Bolt', 'Kling', 'Gamma', 'Manus', 'Wispr Flow', 'QuillBot', 'Replit', 
+    'Higgsfield', 'Proton', 'n8n', 'Railway', 'خدمات API', 'أخرى'
 ];
 
-// 🚀 إضافة الإيموجيهات للأقسام الجديدة اللي ظهرت في الصورة
+// 🚀 تحديث إيموجيهات الأقسام لتشمل كل الناقص في الصورة
 const categoryEmojis = {
   'شات GPT': '🤖', 'جيميناي': '✨', 'كاب كات': '✂', 'جروك': '🌌', 'ادوبي': '🎨', 'كانفا': '🖌', 'نوشن': '📝', 'Leonardo.Ai': '🖼️',
   'دوولينجو': '🦉', 'تيليجرام': '✈', 'مايكروسوفت': '💻', 'Miro': '🗺', 'Zoom': '📹', 'iLovePDF': '📄', 'Envato': '🍃', 'Grammarly': '✍',
@@ -455,6 +477,7 @@ const categoryEmojis = {
   'Avira': '☂️', 'HMA VPN': '🌍', 'اكسبريس VPN': '🛡', 'جيميل': '📧', 'ايكلاود': '☁', 'E SIM': '📱', 'Spotify': '🎧', 'Netflix': '🍿', 'Crunchyroll': '🍘', 'Prime Video': '🎬',
   'Claude': '🧠', 'Perplexity': '🔎', 'Apple': '🍎', 'YouTube Premium': '▶️', 'NordVPN': '🔒', 'ElevenLabs': '🎙️', 'Cursor': '⌨️', 
   'Lovable': '❤️', 'Figma': '📐', 'Bolt': '⚡', 'Kling': '🎞️', 'Gamma': '📊', 'Manus': '📝', 'Wispr Flow': '🌊', 'QuillBot': '🤖', 'Replit': '💻',
+  'Higgsfield': '🚀', 'Proton': '🔒', 'n8n': '⚙️', 'Railway': '🚂',
   'خدمات API': '🔌', 'أخرى': '📦'
 };
 
@@ -830,9 +853,6 @@ function showAdminPanel(ctx) {
   } catch(e){}
 }
 
-// ==========================================
-// 🚀 نظام إدارة المخفي/الظاهر المرئي للأدمن
-// ==========================================
 bot.action('admin_hide_cats', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -913,9 +933,9 @@ bot.action(/^thide_(.+)$/, async (ctx) => {
         const srvId = ctx.match[1];
         
         if (hiddenServices.includes(srvId)) {
-            hiddenServices = hiddenServices.filter(id => id !== srvId); // إظهار
+            hiddenServices = hiddenServices.filter(id => id !== srvId); 
         } else {
-            hiddenServices.push(srvId); // إخفاء
+            hiddenServices.push(srvId); 
         }
         saveDatabase();
 
@@ -941,9 +961,6 @@ bot.action(/^thide_(.+)$/, async (ctx) => {
     } catch(e) {}
 });
 
-// ==========================================
-// 🚀 نظام تحديد الأسعار الثابتة المرئي (الجديد)
-// ==========================================
 bot.action('admin_fixed_price', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1296,6 +1313,7 @@ bot.action(/^ord_det_(\d+)$/, (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
+// 🚀 الكود المسؤول عن عرض قائمة الخدمات بأسماء كاملة مقصوصة وإيموجي ذكي
 bot.action(/^cat_(\d+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1324,7 +1342,17 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
 
     if (categoryServices.length === 0) return ctx.editMessageText('لا توجد خدمات حالياً في هذا القسم.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
 
-    let buttons = categoryServices.map(srv => [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ' - ' + calculateRetailPrice(srv, usersDb[userId], 1) + ' EGP', `buyact_${srv.id}`)]);
+    // 🚀 تطبيق شكل الزرار الجديد
+    let buttons = categoryServices.map(srv => {
+        let srvName = srv.name_ar || srv.name || srv.title || 'خدمة';
+        let emoji = detectServiceEmoji(srvName);
+        let cleanName = srvName;
+        // 🚀 قص الاسم لو أطول من 26 حرف عشان شكله يبقى شيك في الزرار وميضربش ايرور
+        if (cleanName.length > 26) cleanName = cleanName.substring(0, 24) + '..';
+        let price = calculateRetailPrice(srv, usersDb[userId], 1);
+        
+        return [Markup.button.callback(`${emoji} ${cleanName} - ${price} EGP`, `buyact_${srv.id}`)];
+    });
     buttons.push([Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]);
 
     ctx.editMessageText(`📦 خدمات قسم *${selectedCategory}*:`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
