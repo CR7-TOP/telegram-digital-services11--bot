@@ -33,7 +33,7 @@ let customProductMarkups = {};
 let localInventory = {}; 
 
 let botStates = {
-    deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "", buyQty: {}, ordersPage: {} 
+    deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "", buyQty: {}, ordersPage: {}, tempStock: {} 
 };
 
 const userRequestLocks = {};
@@ -58,7 +58,6 @@ async function loadDatabase() {
     await connectDB();
     if (!dbCollection) return;
     
-    // 🚀 سرعة البوت: منع تحميل الداتا من الصفر مع كل ضغطة زرار طالما هي موجودة في الذاكرة
     if (Object.keys(usersDb).length > 0) return; 
 
     const data = await dbCollection.findOne({ _id: "main_data" });
@@ -86,7 +85,8 @@ async function loadDatabase() {
             adminSession: loadedStates.adminSession || {},
             lastReportDate: loadedStates.lastReportDate || "",
             buyQty: loadedStates.buyQty || {},
-            ordersPage: loadedStates.ordersPage || {}
+            ordersPage: loadedStates.ordersPage || {},
+            tempStock: loadedStates.tempStock || {}
         };
     }
 }
@@ -138,6 +138,7 @@ function clearUserStates(userId) {
         if (botStates.promo) delete botStates.promo[idStr];
         if (botStates.search) delete botStates.search[idStr];
         if (botStates.buyQty) delete botStates.buyQty[idStr]; 
+        if (botStates.tempStock) delete botStates.tempStock[idStr];
         saveDatabase();
     } catch (e) {}
 }
@@ -384,7 +385,7 @@ bot.start((ctx) => {
     const userId = String(ctx.from.id); initUser(userId); 
     clearUserStates(userId);
 
-    if (usersDb[userId].isBanned) return ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
+    if (usersDb[userId].isBanned) return ctx.reply('❌ عذراً، تم حظرك من استخدام this البوت.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
     const isNewUser = !usersDb[userId].referredBy && userId;
@@ -649,6 +650,16 @@ bot.hears(/الخدمات/, showCategories);
 bot.action('main_categories', (ctx) => {
     ctx.answerCbQuery().catch(()=>{}); 
     showCategories(ctx);
+});
+
+bot.action('main_menu', (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    try {
+      const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
+      if (usersDb[userId].isBanned) return;
+      ctx.deleteMessage().catch(()=>{}); 
+      ctx.reply('القائمة الرئيسية 🚀', getMainMenu()).catch(()=>{});
+    } catch(e){}
 });
 
 function sendDepositNotification(req) {
@@ -1007,6 +1018,39 @@ bot.action(/^buyact_(.+)$/, async (ctx) => {
   } catch(err){}
 });
 
+// 🛡️ أكشن تأكيد إضافة العنصر للمخزن
+bot.action('confirm_stock_add', (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    const userId = String(ctx.from.id);
+    const temp = botStates.tempStock[userId];
+    
+    if (!temp) return ctx.editMessageText('❌ انتهت صلاحية هذا الأمر أو تم تنفيذه مسبقاً.').catch(()=>{});
+
+    const srvId = temp.srvId;
+    const item = temp.itemText;
+
+    if (!localInventory[srvId]) localInventory[srvId] = [];
+    localInventory[srvId].push(item);
+    
+    delete botStates.tempStock[userId];
+    saveDatabase();
+    logAdminAction(userId, `إضافة 1 عنصر למخزن المنتج ${srvId}`);
+
+    ctx.editMessageText(`✅ تم حفظ العنصر بنجاح!\n📦 إجمالي المخزون الحالي للمنتج: ${localInventory[srvId].length}\n\n(يمكنك إرسال العنصر التالي مباشرة، أو اضغط "رجوع" للعودة)`, Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
+});
+
+// 🛡️ أكشن إلغاء إضافة العنصر للمخزن
+bot.action('cancel_stock_add', (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    const userId = String(ctx.from.id);
+    if (botStates.tempStock && botStates.tempStock[userId]) {
+        delete botStates.tempStock[userId];
+        saveDatabase();
+    }
+    ctx.editMessageText('❌ تم إلغاء إضافة العنصر.\nيمكنك إرسال عنصر جديد أو الضغط على "رجوع" للعودة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
+});
+
+
 function extractUsefulData(obj) {
     if (!obj) return null;
     if (typeof obj === 'string' || typeof obj === 'number') return String(obj);
@@ -1118,7 +1162,7 @@ bot.on('text', async (ctx, next) => {
                  saveDatabase();
 
                  let deliveryMsg = `✅ <b>تم الشراء بنجاح</b>\n\n📦 <b>رقم الطلب:</b> #LOCAL-${Math.floor(1000 + Math.random() * 9000)}\n\n` +
-                                   `🛍️ <b>الخدمة:</b> ${safeName}\n🔢 <b>الكمية:</b> ${qty}\n🟢 <b>الحالة:</b> مكت فوراً\n💰 <b>المدفوع:</b> ${retailPrice} EGP\n\n` +
+                                   `🛍️ <b>الخدمة:</b> ${safeName}\n🔢 <b>الكمية:</b> ${qty}\n🟢 <b>الحالة:</b> مكتمل فوراً\n💰 <b>المدفوع:</b> ${retailPrice} EGP\n\n` +
                                    `📋 <b>العناصر المسلمة:</b>\n<code>${safeDetails.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>`;
 
                  if(processingMsg) {
@@ -1371,13 +1415,18 @@ bot.on('text', async (ctx, next) => {
                 return ctx.reply('✅ تم تفريغ المخزن لهذا المنتج بنجاح!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
 
+            // 🛡️ التعديل الجديد: طلب تأكيد قبل الحفظ لمنع إضافة نصوص بالخطأ
             const item = text;
-            if (!localInventory[srvId]) localInventory[srvId] = [];
-            localInventory[srvId].push(item);
+            botStates.tempStock = botStates.tempStock || {};
+            botStates.tempStock[userId] = { srvId: srvId, itemText: item };
             saveDatabase();
-            logAdminAction(userId, `إضافة 1 عنصر למخزن المنتج ${srvId}`);
             
-            return ctx.reply(`✅ تم حفظ العنصر بنجاح!\n📦 إجمالي المخزون الحالي للمنتج: ${localInventory[srvId].length}\n\n(يمكنك إرسال العنصر التالي مباشرة، أو اضغط "رجوع" للعودة)`, Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            return ctx.reply(`⚠️ **هل أنت متأكد من حفظ هذا العنصر في المخزن؟**\n\n<code>${item.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>`, {
+                parse_mode: 'HTML',
+                ...Markup.inlineKeyboard([
+                    [Markup.button.callback('✅ تأكيد الحفظ', 'confirm_stock_add'), Markup.button.callback('❌ إلغاء', 'cancel_stock_add')]
+                ])
+            });
         }
 
         if (state === 'WAIT_USER_MSG') {
@@ -1509,35 +1558,6 @@ bot.on('text', async (ctx, next) => {
 
     return next();
   } catch(e) {}
-});
-
-bot.action(/^approve_dep_(-?\d+)_([\d.]+)$/, async (ctx) => {
-  ctx.answerCbQuery('⏳ جاري التنفيذ...').catch(()=>{}); // 🚀 استجابة فورية للزر لمنع التعليق
-  try {
-    const targetUserId = ctx.match[1]; const amount = parseFloat(ctx.match[2]);
-    initUser(targetUserId); usersDb[targetUserId].balance += amount; 
-    usersDb[targetUserId].walletHistory.push({ type: 'شحن فودافون كاش', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
-    pendingDeposits = pendingDeposits.filter(d => String(d.userId) !== String(targetUserId)); saveDatabase();
-    
-    const referrerTelegramId = usersDb[targetUserId].referredBy;
-    if (referrerTelegramId && usersDb[referrerTelegramId]) {
-        const bonus = amount * 0.02; usersDb[referrerTelegramId].balance += bonus;
-        usersDb[referrerTelegramId].walletHistory.push({ type: 'عمولة إحالة 2%', amount: bonus, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
-        bot.telegram.sendMessage(referrerTelegramId, `🎉 **عمولة دعوة أصدقاء جديدة!**\n💰 حصلت على: *${bonus.toFixed(2)} EGP*`, { parse_mode: 'Markdown' }).catch(() => {});
-    }
-    ctx.editMessageText(`✅ تمت الموافقة وإضافة مبلغ *${amount} EGP* للمستخدم.`, { parse_mode: 'Markdown' }).catch(()=>{});
-    bot.telegram.sendMessage(targetUserId, `🎉 **تم شحن محفظتك بنجاح!**\n💰 تمت إضافة: *${amount} EGP*`, { parse_mode: 'Markdown' }).catch(() => {});
-  } catch(err) {}
-});
-
-bot.action(/^reject_dep_(-?\d+)$/, async (ctx) => {
-  ctx.answerCbQuery('⏳ جاري التنفيذ...').catch(()=>{}); // 🚀 استجابة فورية للزر
-  try {
-    const targetUserId = ctx.match[1];
-    pendingDeposits = pendingDeposits.filter(d => String(d.userId) !== String(targetUserId)); saveDatabase();
-    ctx.editMessageText('❌ تم رفض الطلب.').catch(()=>{});
-    bot.telegram.sendMessage(targetUserId, '❌ عذراً، تم رفض طلب الشحن لعدم صحة بيانات التحويل.').catch(() => {});
-  } catch(err) {}
 });
 
 export default async function handler(req, res) {
