@@ -32,11 +32,11 @@ let maintenanceMode = false;
 let customProductMarkups = {}; 
 let localInventory = {}; 
 let adCampaigns = {}; 
-let hiddenServices = []; // 🚀 قائمة المنتجات المخفية
-let fixedPrices = {}; // 🚀 أسعار المنتجات الثابتة
+let hiddenServices = []; 
+let fixedPrices = {}; 
 
 let botStates = {
-    deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "", buyQty: {}, ordersPage: {}, tempStock: {} 
+    deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "", buyQty: {}, ordersPage: {}, tempStock: {}, adminTempCats: {}, lastAdminCat: {}, lastAdminCatFixed: {}
 };
 
 const userRequestLocks = {};
@@ -92,7 +92,10 @@ async function loadDatabase() {
             lastReportDate: loadedStates.lastReportDate || "",
             buyQty: loadedStates.buyQty || {},
             ordersPage: loadedStates.ordersPage || {},
-            tempStock: loadedStates.tempStock || {}
+            tempStock: loadedStates.tempStock || {},
+            adminTempCats: loadedStates.adminTempCats || {},
+            lastAdminCat: loadedStates.lastAdminCat || {},
+            lastAdminCatFixed: loadedStates.lastAdminCatFixed || {}
         };
     }
 }
@@ -147,6 +150,9 @@ function clearUserStates(userId) {
         if (botStates.tempStock) delete botStates.tempStock[idStr];
         if (botStates.adminInput) delete botStates.adminInput[idStr]; 
         if (botStates.broadcast) delete botStates.broadcast[idStr];
+        if (botStates.adminTempCats) delete botStates.adminTempCats[idStr];
+        if (botStates.lastAdminCat) delete botStates.lastAdminCat[idStr];
+        if (botStates.lastAdminCatFixed) delete botStates.lastAdminCatFixed[idStr];
         saveDatabase();
     } catch (e) {}
 }
@@ -431,7 +437,6 @@ function calculateRetailPrice(service, user, quantity = 1) {
   try {
     const srvIdStr = String(service.id);
     
-    // 🛡️ فحص السعر الثابت أولاً
     if (fixedPrices && fixedPrices[srvIdStr] !== undefined) {
         let fp = parseFloat(fixedPrices[srvIdStr]);
         if (flashSale && flashSale.active && Date.now() < flashSale.expiresAt) {
@@ -621,9 +626,7 @@ async function showCategories(ctx) {
 
     let fetchedCategories = [];
     cachedServices.forEach(s => {
-      // 🛡️ عدم عرض الأقسام التي تحتوي على منتجات مخفية بالكامل
-      if (hiddenServices && hiddenServices.includes(String(s.id))) return;
-      
+      if (hiddenServices && hiddenServices.includes(String(s.id))) return; 
       let catStr = getServiceCategory(s);
       if (catStr && !fetchedCategories.includes(catStr)) fetchedCategories.push(catStr);
     });
@@ -699,6 +702,9 @@ function showAdminPanel(ctx) {
         if (botStates.adminInput) delete botStates.adminInput[userIdStr];
         if (botStates.broadcast) delete botStates.broadcast[userIdStr];
         if (botStates.tempStock) delete botStates.tempStock[userIdStr];
+        if (botStates.adminTempCats) delete botStates.adminTempCats[userIdStr];
+        if (botStates.lastAdminCat) delete botStates.lastAdminCat[userIdStr];
+        if (botStates.lastAdminCatFixed) delete botStates.lastAdminCatFixed[userIdStr];
         saveDatabase();
     }
 
@@ -730,7 +736,8 @@ function showAdminPanel(ctx) {
         [Markup.button.callback('💳 طلبات الشحن المعلقة (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
-        [Markup.button.callback('💲 تحديد سعر ثابت لمنتج', 'admin_fixed_price'), Markup.button.callback('👁️ إخفاء/إظهار منتج', 'admin_hide_service')],
+        // 🚀 تحديث الأزرار لتشغيل النظام المرئي الجديد للأسعار والإخفاء
+        [Markup.button.callback('💲 تحديد سعر ثابت لمنتج', 'admin_fixed_price'), Markup.button.callback('👁️ إخفاء/إظهار منتج', 'admin_hide_cats')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
         [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_promo')],
         [Markup.button.callback('✉ مراسلة عميل بالـ ID', 'admin_msg_by_id'), Markup.button.callback('👥 شحن رصيد بالـ ID', 'admin_charge_by_id')], 
@@ -745,6 +752,200 @@ function showAdminPanel(ctx) {
     else { ctx.reply(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{}); }
   } catch(e){}
 }
+
+// ==========================================
+// 🚀 نظام إدارة المخفي/الظاهر المرئي للأدمن
+// ==========================================
+bot.action('admin_hide_cats', async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    try {
+        const userId = String(ctx.from.id);
+        if (cachedServices.length === 0) await backgroundServiceUpdate();
+
+        let fetchedCategories = [];
+        cachedServices.forEach(s => {
+            let catStr = getServiceCategory(s);
+            if (catStr && !fetchedCategories.includes(catStr)) fetchedCategories.push(catStr);
+        });
+
+        let categories = [];
+        preferredCategoriesOrder.forEach(cat => {
+            if (fetchedCategories.includes(cat)) categories.push(cat);
+        });
+        fetchedCategories.forEach(cat => {
+            if (!categories.includes(cat) && cat !== 'أخرى') categories.push(cat);
+        });
+        if (fetchedCategories.includes('أخرى') && !categories.includes('أخرى')) categories.push('أخرى');
+
+        if (!botStates.adminTempCats) botStates.adminTempCats = {};
+        botStates.adminTempCats[userId] = categories;
+        saveDatabase();
+
+        let buttons = [];
+        for (let i = 0; i < categories.length; i += 2) {
+            const row = [];
+            row.push(Markup.button.callback('📁 ' + categories[i], 'admin_hcat_' + i));
+            if (i + 1 < categories.length) row.push(Markup.button.callback('📁 ' + categories[i+1], 'admin_hcat_' + (i + 1)));
+            buttons.push(row);
+        }
+        buttons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
+
+        ctx.editMessageText('👁️ <b>إدارة إخفاء وإظهار المنتجات:</b>\nاختر القسم الذي تريد تعديل خدماته:', { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+    } catch (e) {}
+});
+
+bot.action(/^admin_hcat_(\d+)$/, async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    try {
+        const userId = String(ctx.from.id);
+        const catIndex = parseInt(ctx.match[1]);
+        
+        if (!botStates.adminTempCats || !botStates.adminTempCats[userId]) return ctx.editMessageText('❌ انتهت الجلسة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_hide_cats')]])).catch(()=>{});
+        
+        const selectedCategory = botStates.adminTempCats[userId][catIndex];
+        if (!botStates.lastAdminCat) botStates.lastAdminCat = {};
+        botStates.lastAdminCat[userId] = catIndex; 
+        saveDatabase();
+
+        if (cachedServices.length === 0) await backgroundServiceUpdate();
+
+        const categoryServices = cachedServices.filter(s => {
+            let cat = getServiceCategory(s);
+            return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
+        });
+
+        if (categoryServices.length === 0) return ctx.editMessageText('لا توجد خدمات حالياً في هذا القسم.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'admin_hide_cats')]])).catch(()=>{});
+
+        let buttons = categoryServices.map(srv => {
+            const isHidden = hiddenServices.includes(String(srv.id));
+            const prefix = isHidden ? '🔴 مخفي: ' : '🟢 ظاهر: ';
+            let btnText = prefix + (srv.name_ar || srv.name || srv.title);
+            if (btnText.length > 40) btnText = btnText.substring(0, 38) + '..'; 
+            return [Markup.button.callback(btnText, `thide_${srv.id}`)];
+        });
+        buttons.push([Markup.button.callback('🔙 رجوع لأقسام الإخفاء', 'admin_hide_cats')]);
+
+        ctx.editMessageText(`👁️ خدمات قسم <b>${selectedCategory}</b>:\n\nاضغط على أي خدمة لتغيير حالتها (ظاهر/مخفي):`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+    } catch(e) {}
+});
+
+bot.action(/^thide_(.+)$/, async (ctx) => {
+    ctx.answerCbQuery('⏳ جاري تغيير حالة المنتج...').catch(()=>{});
+    try {
+        const userId = String(ctx.from.id);
+        const srvId = ctx.match[1];
+        
+        if (hiddenServices.includes(srvId)) {
+            hiddenServices = hiddenServices.filter(id => id !== srvId); // إظهار
+        } else {
+            hiddenServices.push(srvId); // إخفاء
+        }
+        saveDatabase();
+
+        const catIndex = botStates.lastAdminCat ? botStates.lastAdminCat[userId] : null;
+        if (catIndex !== undefined && catIndex !== null && botStates.adminTempCats && botStates.adminTempCats[userId]) {
+            const selectedCategory = botStates.adminTempCats[userId][catIndex];
+            const categoryServices = cachedServices.filter(s => {
+                let cat = getServiceCategory(s);
+                return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
+            });
+
+            let buttons = categoryServices.map(srv => {
+                const isHidden = hiddenServices.includes(String(srv.id));
+                const prefix = isHidden ? '🔴 مخفي: ' : '🟢 ظاهر: ';
+                let btnText = prefix + (srv.name_ar || srv.name || srv.title);
+                if (btnText.length > 40) btnText = btnText.substring(0, 38) + '..';
+                return [Markup.button.callback(btnText, `thide_${srv.id}`)];
+            });
+            buttons.push([Markup.button.callback('🔙 رجوع لأقسام الإخفاء', 'admin_hide_cats')]);
+
+            ctx.editMessageText(`👁️ خدمات قسم <b>${selectedCategory}</b>:\n\nاضغط على أي خدمة لتغيير حالتها (ظاهر/مخفي):`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+        }
+    } catch(e) {}
+});
+
+// ==========================================
+// 🚀 نظام تحديد الأسعار الثابتة المرئي (الجديد)
+// ==========================================
+bot.action('admin_fixed_price', async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    try {
+        const userId = String(ctx.from.id);
+        if (cachedServices.length === 0) await backgroundServiceUpdate();
+
+        let fetchedCategories = [];
+        cachedServices.forEach(s => {
+            let catStr = getServiceCategory(s);
+            if (catStr && !fetchedCategories.includes(catStr)) fetchedCategories.push(catStr);
+        });
+
+        let categories = [];
+        preferredCategoriesOrder.forEach(cat => {
+            if (fetchedCategories.includes(cat)) categories.push(cat);
+        });
+        fetchedCategories.forEach(cat => {
+            if (!categories.includes(cat) && cat !== 'أخرى') categories.push(cat);
+        });
+        if (fetchedCategories.includes('أخرى') && !categories.includes('أخرى')) categories.push('أخرى');
+
+        if (!botStates.adminTempCats) botStates.adminTempCats = {};
+        botStates.adminTempCats[userId] = categories;
+        saveDatabase();
+
+        let buttons = [];
+        for (let i = 0; i < categories.length; i += 2) {
+            const row = [];
+            row.push(Markup.button.callback('📁 ' + categories[i], 'admin_fcat_' + i));
+            if (i + 1 < categories.length) row.push(Markup.button.callback('📁 ' + categories[i+1], 'admin_fcat_' + (i + 1)));
+            buttons.push(row);
+        }
+        buttons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
+
+        ctx.editMessageText('💲 <b>إدارة الأسعار الثابتة:</b>\nاختر القسم الذي تريد تعديل أسعار خدماته:', { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+    } catch (e) {}
+});
+
+bot.action(/^admin_fcat_(\d+)$/, async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    try {
+        const userId = String(ctx.from.id);
+        const catIndex = parseInt(ctx.match[1]);
+        
+        if (!botStates.adminTempCats || !botStates.adminTempCats[userId]) return ctx.editMessageText('❌ انتهت الجلسة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_fixed_price')]])).catch(()=>{});
+        
+        const selectedCategory = botStates.adminTempCats[userId][catIndex];
+        if (!botStates.lastAdminCatFixed) botStates.lastAdminCatFixed = {};
+        botStates.lastAdminCatFixed[userId] = catIndex; 
+        saveDatabase();
+
+        if (cachedServices.length === 0) await backgroundServiceUpdate();
+
+        const categoryServices = cachedServices.filter(s => {
+            let cat = getServiceCategory(s);
+            return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
+        });
+
+        if (categoryServices.length === 0) return ctx.editMessageText('لا توجد خدمات حالياً في هذا القسم.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'admin_fixed_price')]])).catch(()=>{});
+
+        let buttons = categoryServices.map(srv => {
+            const fp = fixedPrices[String(srv.id)];
+            const prefix = fp ? `[${fp}ج] ` : '⏳ ';
+            let btnText = prefix + (srv.name_ar || srv.name || srv.title);
+            if (btnText.length > 40) btnText = btnText.substring(0, 38) + '..'; 
+            return [Markup.button.callback(btnText, `setfixed_${srv.id}`)];
+        });
+        buttons.push([Markup.button.callback('🔙 رجوع لأقسام الأسعار', 'admin_fixed_price')]);
+
+        ctx.editMessageText(`💲 خدمات قسم <b>${selectedCategory}</b>:\n\nاضغط على أي خدمة لتحديد سعر ثابت لها (سيتجاهل نسبة الربح):`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+    } catch(e) {}
+});
+
+bot.action(/^setfixed_(.+)$/, (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_SET_FIXED_' + ctx.match[1]; saveDatabase();
+    ctx.editMessageText('💲 أرسل السعر الثابت الجديد للمنتج بالجنيه المصري (مثال: 150).\n\n🗑️ لإلغاء السعر الثابت والعودة لنظام النسبة المئوية، اكتب كلمة: `حذف`\n🔙 للإلغاء والرجوع، اكتب كلمة: `رجوع`', {parse_mode: 'Markdown'}).catch(()=>{});
+});
+
 
 bot.action('admin_ad_stats', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
@@ -802,38 +1003,11 @@ bot.action('admin_search_stock', (ctx) => {
     botStates.adminInput[ctx.from.id] = 'WAIT_SEARCH_STOCK'; saveDatabase();
     ctx.editMessageText('📦 أرسل اسم المنتج الذي تريد إدارة مخزونه المحلي:').catch(()=>{});
 });
-bot.action('admin_fixed_price', (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    botStates.adminInput[ctx.from.id] = 'WAIT_SEARCH_FIXED'; saveDatabase();
-    ctx.editMessageText('🔍 أرسل اسم المنتج الذي تريد تحديد **سعر ثابت** له:').catch(()=>{});
-});
-bot.action('admin_hide_service', (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    botStates.adminInput[ctx.from.id] = 'WAIT_SEARCH_HIDE'; saveDatabase();
-    ctx.editMessageText('🔍 أرسل اسم المنتج الذي تريد إخفاءه أو إظهاره للعملاء:').catch(()=>{});
-});
 
 bot.action(/^setmarkup_(.+)$/, (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     botStates.adminInput[ctx.from.id] = 'WAIT_SET_MARKUP_' + ctx.match[1]; saveDatabase();
     ctx.editMessageText('📈 أرسل النسبة المئوية للربح لهذا المنتج فقط (مثال: اكتب 50 لربح 50%).\n\n🗑️ لإلغاء النسبة المخصصة وجعل المنتج يتبع النسبة العامة، اكتب كلمة: `حذف`', {parse_mode: 'Markdown'}).catch(()=>{});
-});
-bot.action(/^setfixed_(.+)$/, (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    botStates.adminInput[ctx.from.id] = 'WAIT_SET_FIXED_' + ctx.match[1]; saveDatabase();
-    ctx.editMessageText('💲 أرسل السعر الثابت الجديد للمنتج بالجنيه المصري (مثال: 150).\n\n🗑️ لإلغاء السعر الثابت والعودة لنظام النسبة المئوية، اكتب كلمة: `حذف`', {parse_mode: 'Markdown'}).catch(()=>{});
-});
-bot.action(/^togglehide_(.+)$/, (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    const srvId = ctx.match[1];
-    if (hiddenServices.includes(srvId)) {
-        hiddenServices = hiddenServices.filter(id => id !== srvId);
-        ctx.editMessageText('✅ تم إظهار المنتج للعملاء مرة أخرى!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
-    } else {
-        hiddenServices.push(srvId);
-        ctx.editMessageText('🚫 تم إخفاء المنتج! لن يظهر للعملاء في الأقسام أو البحث.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
-    }
-    saveDatabase();
 });
 
 bot.action(/^addstock_(.+)$/, (ctx) => {
@@ -1436,7 +1610,7 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply(`✅ تم فك الحظر عن العميل \`${targetUid}\` بنجاح.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
-        if (state === 'WAIT_SEARCH_MARKUP' || state === 'WAIT_SEARCH_STOCK' || state === 'WAIT_SEARCH_FIXED' || state === 'WAIT_SEARCH_HIDE') {
+        if (state === 'WAIT_SEARCH_MARKUP' || state === 'WAIT_SEARCH_STOCK') {
             const query = text.toLowerCase();
             if (!cachedServices || cachedServices.length === 0) cachedServices = await fetchAllServices();
             const results = cachedServices.filter(s => (s.name_ar || s.name || s.title || '').toLowerCase().includes(query));
@@ -1444,13 +1618,9 @@ bot.on('text', async (ctx, next) => {
             
             let prefix = 'setmarkup_';
             if (state === 'WAIT_SEARCH_STOCK') prefix = 'addstock_';
-            if (state === 'WAIT_SEARCH_FIXED') prefix = 'setfixed_';
-            if (state === 'WAIT_SEARCH_HIDE') prefix = 'togglehide_';
 
             let buttons = results.slice(0, 15).map(srv => {
-                let extra = '';
-                if (state === 'WAIT_SEARCH_HIDE' && hiddenServices.includes(String(srv.id))) extra = ' [مخفي 🚫]';
-                return [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ` (${srv.providerSource})` + extra, prefix + srv.id)]
+                return [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ` (${srv.providerSource})`, prefix + srv.id)]
             });
             buttons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
             return ctx.reply('🔍 اختر المنتج من القائمة:', Markup.inlineKeyboard(buttons));
@@ -1474,22 +1644,54 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: *${percent}%*\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
+        // 🚀 تحديث نظام السعر الثابت: بعد الحفظ يرجعك لنفس القائمة
         if (state.startsWith('WAIT_SET_FIXED_')) {
             const srvId = String(state.split('WAIT_SET_FIXED_')[1]);
 
-            if (text === 'حذف') {
-                delete fixedPrices[srvId];
+            if (text === 'إلغاء' || text === 'رجوع') {
+                delete botStates.adminInput[userId];
                 saveDatabase();
-                return ctx.reply('✅ تم مسح السعر الثابت! المنتج سيعود لاستخدام نسبة الربح.', {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+            } else if (text === 'حذف') {
+                delete fixedPrices[srvId];
+                delete botStates.adminInput[userId];
+                saveDatabase();
+                logAdminAction(userId, `إلغاء السعر الثابت للمنتج ${srvId}`);
+                await ctx.reply('✅ تم مسح السعر الثابت! المنتج سيعود لاستخدام نسبة الربح.').catch(()=>{});
+            } else {
+                const price = parseFloat(text);
+                if (isNaN(price) || price < 0) {
+                    return ctx.reply('❌ يرجى إدخال رقم صحيح موجب أو كلمة "حذف" أو "رجوع".').catch(()=>{});
+                }
+                fixedPrices[srvId] = price;
+                delete botStates.adminInput[userId];
+                saveDatabase();
+                logAdminAction(userId, `تحديد سعر ثابت للمنتج ${srvId} بـ ${price} جنيه`);
+                await ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: *${price} EGP*`, {parse_mode: 'Markdown'}).catch(()=>{});
             }
 
-            const price = parseFloat(text);
-            if (isNaN(price) || price < 0) return ctx.reply('❌ يرجى إدخال رقم صحيح موجب أو كلمة "حذف".', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
-            
-            fixedPrices[srvId] = price;
-            saveDatabase();
-            logAdminAction(userId, `تحديد سعر ثابت للمنتج ${srvId} بـ ${price} جنيه`);
-            return ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: *${price} EGP*\n(لن يتأثر بتغير سعر المصدر ولا بنسب الربح العادية)`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+            // الرجوع التلقائي للقائمة
+            const catIndex = botStates.lastAdminCatFixed ? botStates.lastAdminCatFixed[userId] : null;
+            if (catIndex !== undefined && catIndex !== null && botStates.adminTempCats && botStates.adminTempCats[userId]) {
+                const selectedCategory = botStates.adminTempCats[userId][catIndex];
+                if (cachedServices.length === 0) await backgroundServiceUpdate();
+                const categoryServices = cachedServices.filter(s => {
+                    let cat = getServiceCategory(s);
+                    return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
+                });
+
+                let buttons = categoryServices.map(srv => {
+                    const fp = fixedPrices[String(srv.id)];
+                    const prefix = fp ? `[${fp}ج] ` : '⏳ ';
+                    let btnText = prefix + (srv.name_ar || srv.name || srv.title);
+                    if (btnText.length > 40) btnText = btnText.substring(0, 38) + '..'; 
+                    return [Markup.button.callback(btnText, `setfixed_${srv.id}`)];
+                });
+                buttons.push([Markup.button.callback('🔙 رجوع لأقسام الأسعار', 'admin_fixed_price')]);
+
+                return ctx.reply(`💲 خدمات قسم <b>${selectedCategory}</b>:\n\nاضغط على أي خدمة لتحديد سعر ثابت لها:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+            } else {
+                return showAdminPanel(ctx);
+            }
         }
 
         if (state.startsWith('WAIT_ADD_STOCK_')) {
