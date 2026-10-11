@@ -131,6 +131,7 @@ let lastCategoriesFetchTime = 0;
 let cachedServices = [];
 let isFetchingServices = false;
 
+// 🛡️ التعديل هنا: تصفير إجباري لكافة الحالات لمنع التداخل
 function clearUserStates(userId) {
     try {
         const idStr = String(userId);
@@ -139,6 +140,8 @@ function clearUserStates(userId) {
         if (botStates.search) delete botStates.search[idStr];
         if (botStates.buyQty) delete botStates.buyQty[idStr]; 
         if (botStates.tempStock) delete botStates.tempStock[idStr];
+        if (botStates.adminInput) delete botStates.adminInput[idStr]; 
+        if (botStates.broadcast) delete botStates.broadcast[idStr];
         saveDatabase();
     } catch (e) {}
 }
@@ -385,7 +388,7 @@ bot.start((ctx) => {
     const userId = String(ctx.from.id); initUser(userId); 
     clearUserStates(userId);
 
-    if (usersDb[userId].isBanned) return ctx.reply('❌ عذراً، تم حظرك من استخدام this البوت.').catch(()=>{});
+    if (usersDb[userId].isBanned) return ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
     const isNewUser = !usersDb[userId].referredBy && userId;
@@ -670,6 +673,15 @@ function sendDepositNotification(req) {
 
 function showAdminPanel(ctx) {
   try {
+    // 🛡️ تصفير أي حالات معلقة للأدمن بمجرد فتح اللوحة
+    const userIdStr = String(ctx.from ? ctx.from.id : (ctx.chat ? ctx.chat.id : ""));
+    if (userIdStr) {
+        if (botStates.adminInput) delete botStates.adminInput[userIdStr];
+        if (botStates.broadcast) delete botStates.broadcast[userIdStr];
+        if (botStates.tempStock) delete botStates.tempStock[userIdStr];
+        saveDatabase();
+    }
+
     let totalUsers = 0; let totalBalances = 0; let totalStoreSpent = 0; let totalOrdersCount = 0;
     for (let id in usersDb) { 
         totalUsers++; totalBalances += parseFloat(usersDb[id].balance || 0); totalStoreSpent += parseFloat(usersDb[id].totalSpent || 0); totalOrdersCount += (usersDb[id].orders ? usersDb[id].orders.length : 0);
@@ -1018,7 +1030,6 @@ bot.action(/^buyact_(.+)$/, async (ctx) => {
   } catch(err){}
 });
 
-// 🛡️ أكشن تأكيد إضافة العنصر للمخزن
 bot.action('confirm_stock_add', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     const userId = String(ctx.from.id);
@@ -1039,7 +1050,6 @@ bot.action('confirm_stock_add', (ctx) => {
     ctx.editMessageText(`✅ تم حفظ العنصر بنجاح!\n📦 إجمالي المخزون الحالي للمنتج: ${localInventory[srvId].length}\n\n(يمكنك إرسال العنصر التالي مباشرة، أو اضغط "رجوع" للعودة)`, Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
 });
 
-// 🛡️ أكشن إلغاء إضافة العنصر للمخزن
 bot.action('cancel_stock_add', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     const userId = String(ctx.from.id);
@@ -1415,7 +1425,6 @@ bot.on('text', async (ctx, next) => {
                 return ctx.reply('✅ تم تفريغ المخزن لهذا المنتج بنجاح!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
 
-            // 🛡️ التعديل الجديد: طلب تأكيد قبل الحفظ لمنع إضافة نصوص بالخطأ
             const item = text;
             botStates.tempStock = botStates.tempStock || {};
             botStates.tempStock[userId] = { srvId: srvId, itemText: item };
