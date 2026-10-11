@@ -234,15 +234,25 @@ function getUserByUid(targetUid) {
   return null;
 }
 
+// 🌐 المزود الأول
 const apiClient1 = axios.create({
   baseURL: 'https://xprostore.store/api/v1',
   headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' },
   timeout: 4500
 });
 
+// 🌐 المزود الثاني
 const apiClient2 = axios.create({
   baseURL: 'https://zfourstore.up.railway.app/api/v1',
   headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' },
+  timeout: 4500
+});
+
+// 🌐 المزود الثالث (الجديد: Dantehub)
+const API_KEY_3 = process.env.PROVIDER3_API_KEY || 'dh_live_51fc2511f39790176ec4d956a92c10492a22858859ae0a79';
+const apiClient3 = axios.create({
+  baseURL: 'https://dantehub.shop/api/public/v1',
+  headers: { 'Authorization': 'Bearer ' + API_KEY_3, 'Content-Type': 'application/json' },
   timeout: 4500
 });
 
@@ -284,11 +294,13 @@ function getServiceCategory(s) {
 
 async function fetchAllServices() {
     let services = [];
-    const [res1Result, res2Result] = await Promise.allSettled([
+    const [res1Result, res2Result, res3Result] = await Promise.allSettled([
         apiClient1.get('/services?limit=1000'),
-        apiClient2.get('/products')
+        apiClient2.get('/products'),
+        apiClient3.get('/services?limit=1000') // 🚀 جلب الخدمات من المزود الثالث
     ]);
 
+    // معالجة المزود الأول
     if (res1Result.status === 'fulfilled') {
         try {
             let s1 = res1Result.value.data?.data || res1Result.value.data?.services || res1Result.value.data;
@@ -303,6 +315,7 @@ async function fetchAllServices() {
         } catch(e) {}
     }
 
+    // معالجة المزود الثاني
     if (res2Result.status === 'fulfilled') {
         try {
             let s2 = res2Result.value.data?.data || res2Result.value.data?.products || res2Result.value.data?.services || res2Result.value.data;
@@ -324,6 +337,33 @@ async function fetchAllServices() {
             }
         } catch(e) {}
     }
+
+    // معالجة المزود الثالث (الجديد)
+    if (res3Result.status === 'fulfilled') {
+        try {
+            let s3 = res3Result.value.data?.data || res3Result.value.data?.services || res3Result.value.data;
+            if (!Array.isArray(s3) && typeof s3 === 'object') {
+                for (let key in s3) { if (Array.isArray(s3[key])) { s3 = s3[key]; break; } }
+            }
+            if (Array.isArray(s3)) {
+                s3.forEach(item => { 
+                    item.providerSource = 'api3'; 
+                    item.name = item.name || item.name_ar || item.title || "خدمة بدون اسم";
+                    item.id = String(item.id || item.service_id || item.product_id || item.uuid || item.code || generateStableId(item.name));
+                    item.category = item.category || item.category_name || detectCategoryFromName(item.name);
+                    let rawPriceUSD = parseFloat(item.price || item.rate || item.price_amount || 0);
+                    
+                    if (rawPriceUSD < 10) { 
+                        let egpPrice = (rawPriceUSD * USD_TO_EGP_RATE).toFixed(2);
+                        item.price = egpPrice;
+                        item.price_amount = egpPrice;
+                    }
+                });
+                services.push(...s3);
+            }
+        } catch(e) {}
+    }
+
     return services;
 }
 
@@ -353,6 +393,12 @@ async function placeOrderWithBestProvider(srv, qty) {
              service_id: srvIdConverted, 
              product_id: srvIdConverted,
              productId: srvIdConverted, 
+             quantity: parsedQty 
+         });
+    } else if (source === 'api3') {
+         // 🚀 طلب شراء من المزود الثالث
+         return await apiClient3.post('/orders', { 
+             service_id: srvIdConverted, 
              quantity: parsedQty 
          });
     } else {
@@ -736,7 +782,6 @@ function showAdminPanel(ctx) {
         [Markup.button.callback('💳 طلبات الشحن المعلقة (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
-        // 🚀 تحديث الأزرار لتشغيل النظام المرئي الجديد للأسعار والإخفاء
         [Markup.button.callback('💲 تحديد سعر ثابت لمنتج', 'admin_fixed_price'), Markup.button.callback('👁️ إخفاء/إظهار منتج', 'admin_hide_cats')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
         [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_promo')],
@@ -1031,6 +1076,7 @@ bot.action('admin_pending_deposits', (ctx) => {
     } catch(e) {}
 });
 
+// 🚀 فحص الأرصدة للمزودين الثلاثة
 bot.action('admin_check_api_balance', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1040,10 +1086,13 @@ bot.action('admin_check_api_balance', async (ctx) => {
         catch(e) { msg += `🔹 المزود الأول: خطأ ❌\n`; }
         try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود الثاني: *$${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}*\n`; } 
         catch(e) { msg += `🔹 المزود الثاني: خطأ ❌\n`; }
+        try { const res3 = await apiClient3.get('/me/wallet'); msg += `🔹 المزود الثالث (Dantehub): *${parseFloat(res3.data?.data?.balance || res3.data?.balance || 0).toFixed(2)}*\n`; } 
+        catch(e) { msg += `🔹 المزود الثالث (Dantehub): خطأ ❌\n`; }
         ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
 });
 
+// 🚀 فحص الحالة للمزودين الثلاثة
 bot.action('admin_check_api_status', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1053,6 +1102,8 @@ bot.action('admin_check_api_status', async (ctx) => {
         catch(e) { msg += `🔹 المزود الأول: متعطل ❌\n`; }
         try { const start2 = Date.now(); await apiClient2.get('/products'); msg += `🔹 المزود الثاني: يعمل ✅ (${Date.now() - start2}ms)\n`; } 
         catch(e) { msg += `🔹 المزود الثاني: متعطل ❌\n`; }
+        try { const start3 = Date.now(); await apiClient3.get('/services?limit=1'); msg += `🔹 المزود الثالث (Dantehub): يعمل ✅ (${Date.now() - start3}ms)\n`; } 
+        catch(e) { msg += `🔹 المزود الثالث (Dantehub): متعطل ❌\n`; }
         ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
 });
@@ -1450,7 +1501,7 @@ bot.on('text', async (ctx, next) => {
 
                 try {
                     const source = srv.providerSource || 'api1';
-                    const clientApi = source === 'api2' ? apiClient2 : apiClient1;
+                    const clientApi = source === 'api2' ? apiClient2 : (source === 'api3' ? apiClient3 : apiClient1);
                     const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : `/orders/${orderId}`;
                     const getOrderRes = await clientApi.get(fetchOrderPath);
                     const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
@@ -1644,7 +1695,6 @@ bot.on('text', async (ctx, next) => {
             return ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: *${percent}%*\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
-        // 🚀 تحديث نظام السعر الثابت: بعد الحفظ يرجعك لنفس القائمة
         if (state.startsWith('WAIT_SET_FIXED_')) {
             const srvId = String(state.split('WAIT_SET_FIXED_')[1]);
 
@@ -1669,7 +1719,6 @@ bot.on('text', async (ctx, next) => {
                 await ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: *${price} EGP*`, {parse_mode: 'Markdown'}).catch(()=>{});
             }
 
-            // الرجوع التلقائي للقائمة
             const catIndex = botStates.lastAdminCatFixed ? botStates.lastAdminCatFixed[userId] : null;
             if (catIndex !== undefined && catIndex !== null && botStates.adminTempCats && botStates.adminTempCats[userId]) {
                 const selectedCategory = botStates.adminTempCats[userId][catIndex];
