@@ -263,7 +263,7 @@ function generateStableId(nameStr) {
     return Math.abs(hash).toString();
 }
 
-// 🚀 تحديث الأسماء لتطابق الصورة بالضبط باللغة الإنجليزية
+// 🚀 تحديث جذري للأسماء عشان نلغي أي تكرار عربي وندمج كله صح
 function detectCategoryFromName(name) {
     let n = name.toLowerCase();
     if (n.includes('gemini') || n.includes('جيميناي')) return 'Gemini';
@@ -280,9 +280,11 @@ function detectCategoryFromName(name) {
     if (n.includes('coursera') || n.includes('كورسيرا') || n.includes('edx')) return 'Coursera';
     if (n.includes('notion') || n.includes('نوشن')) return 'Notion';
     if (n.includes('claude')) return 'Claude';
-    if (n.includes('grok')) return 'Grok';
+    if (n.includes('grok') || n.includes('جروك')) return 'Grok';
     if (n.includes('perplexity')) return 'Perplexity';
-    if (n.includes('nordvpn')) return 'NordVPN';
+    if (n.includes('nordvpn') || n.includes('nord')) return 'NordVPN';
+    if (n.includes('express') || n.includes('اكسبريس')) return 'ExpressVPN';
+    if (n.includes('hma')) return 'HMA VPN';
     if (n.includes('apple') || n.includes('music')) return 'Apple Music';
     if (n.includes('elevenlabs')) return 'ElevenLabs';
     if (n.includes('leonardo')) return 'Leonardo';
@@ -302,9 +304,16 @@ function detectCategoryFromName(name) {
     if (n.includes('railway')) return 'Railway';
     if (n.includes('autodesk') || n.includes('auto cad')) return 'Autodesk';
     if (n.includes('framer')) return 'Framer';
-    if (n.includes('email') || n.includes('gmail') || n.includes('icloud')) return 'Email';
+    if (n.includes('email') || n.includes('gmail') || n.includes('جيميل')) return 'Gmail';
+    if (n.includes('icloud') || n.includes('ايكلاود')) return 'iCloud';
+    if (n.includes('zoom') || n.includes('زوم')) return 'Zoom';
+    if (n.includes('pdf') || n.includes('ilovepdf')) return 'iLovePDF';
+    if (n.includes('avira') || n.includes('افيرا')) return 'Avira';
+    if (n.includes('miro') || n.includes('ميرو')) return 'Miro';
+    if (n.includes('jetbrains')) return 'JetBrains';
+    if (n.includes('sim') || n.includes('e sim')) return 'eSIM';
     if (n.includes('grammarly')) return 'Grammarly';
-    if (/\bapi\b/i.test(n) || n.includes('خدمات برمجة')) return 'خدمات API';
+    if (/\bapi\b/i.test(n) || n.includes('خدمات برمجة')) return 'API Services';
     return 'أخرى';
 }
 
@@ -320,21 +329,23 @@ function getServiceCategory(s) {
   } catch(e) { return 'أخرى'; }
 }
 
-// 🚀 نظام الإيموجي داخل زر الخدمة
 function detectServiceEmoji(name) {
     const n = name.toLowerCase();
     if(n.includes('apple') || n.includes('mac')) return '🎵';
     if(n.includes('music') || n.includes('spotify')) return '🎧';
     if(n.includes('video') || n.includes('netflix') || n.includes('youtube') || n.includes('prime')) return '▶️';
-    if(n.includes('vpn') || n.includes('nord') || n.includes('proton')) return '🔒';
+    if(n.includes('vpn') || n.includes('nord') || n.includes('proton') || n.includes('express')) return '🔒';
     if(n.includes('ai') || n.includes('gpt') || n.includes('bot') || n.includes('claude') || n.includes('gemini')) return '❇️';
     if(n.includes('pdf') || n.includes('doc') || n.includes('notion') || n.includes('manus')) return '📓';
-    if(n.includes('cloud') || n.includes('drive')) return '☁️';
+    if(n.includes('cloud') || n.includes('drive') || n.includes('icloud')) return '☁️';
     if(n.includes('edu') || n.includes('learn') || n.includes('course') || n.includes('duolingo') || n.includes('coursera')) return '🎓';
     if(n.includes('game') || n.includes('play')) return '🎮';
     if(n.includes('code') || n.includes('api') || n.includes('dev') || n.includes('cursor') || n.includes('replit')) return '🖱️';
     if(n.includes('design') || n.includes('art') || n.includes('draw') || n.includes('figma') || n.includes('canva') || n.includes('adobe')) return '🎨';
     if(n.includes('voice') || n.includes('audio') || n.includes('eleven')) return '🎙️';
+    if(n.includes('sim') || n.includes('mobile')) return '📱';
+    if(n.includes('mail') || n.includes('email')) return '📧';
+    if(n.includes('zoom') || n.includes('meeting')) return '📹';
     return '🔹'; 
 }
 
@@ -461,26 +472,29 @@ async function placeOrderWithBestProvider(srv, qty) {
     }
 }
 
-// 🚀 ترتيب الأقسام طبقاً للصورة بالضبط
+// 🚀 ترتيب كامل وشامل لكل الأقسام بالأسماء الإنجليزية
 const preferredCategoriesOrder = [
     'ChatGPT', 'Claude', 'Gemini', 'Grok', 'Notion', 'Perplexity', 'Cursor', 'CapCut', 
     'Canva', 'YouTube', 'Spotify', 'Adobe', 'Microsoft', 'Figma', 'Grammarly', 'Duolingo', 
     'Lovable', 'Apple Music', 'Coursera', 'ElevenLabs', 'Gamma', 'Kling', 'Leonardo', 
-    'Autodesk', 'Bolt', 'Email', 'Framer', 'Higgsfield', 'Manus', 'n8n', 'NordVPN', 
-    'Proton', 'QuillBot', 'Railway', 'Replit', 'Wispr Flow', 'Netflix', 'Crunchyroll', 'Prime Video', 'خدمات API', 'أخرى'
+    'Autodesk', 'Bolt', 'Gmail', 'Framer', 'Higgsfield', 'Manus', 'n8n', 'NordVPN', 
+    'ExpressVPN', 'HMA VPN', 'Proton', 'QuillBot', 'Railway', 'Replit', 'Wispr Flow', 
+    'Netflix', 'Crunchyroll', 'Prime Video', 'eSIM', 'iLovePDF', 'Avira', 'Miro', 
+    'JetBrains', 'iCloud', 'Zoom', 'API Services', 'أخرى'
 ];
 
-// 🚀 تحديث الإيموجيهات لتطابق ستايل الصورة
+// 🚀 ربط إيموجي مميز لكل قسم حرفياً
 const categoryEmojis = {
   'ChatGPT': '❇️', 'Claude': '🧠', 'Gemini': '✨', 'Grok': '✖️', 'Notion': '📓', 'Perplexity': '💠', 
   'Cursor': '🖱️', 'CapCut': '✂️', 'Canva': '🖌️', 'YouTube': '▶️', 'Spotify': '🎧', 'Adobe': '🅰️', 
   'Microsoft': '🪟', 'Figma': '🪄', 'Grammarly': '✍️', 'Duolingo': '🦉', 'Lovable': '❤️', 
   'Apple Music': '🎵', 'Coursera': '🎓', 'ElevenLabs': '🎙️', 'Gamma': '📊', 'Kling': '🎞️', 
-  'Leonardo': '🖼️', 'Autodesk': '🏗️', 'Bolt': '⚡', 'Email': '📧', 'Framer': '🖼️', 
-  'Higgsfield': '🚀', 'Manus': '📝', 'n8n': '⚙️', 'NordVPN': '🛡️', 'Proton': '🔒', 
-  'QuillBot': '🤖', 'Railway': '🚂', 'Replit': '💻', 'Wispr Flow': '🌊',
-  'Netflix': '🍿', 'Crunchyroll': '🍘', 'Prime Video': '🎬',
-  'خدمات API': '🔌', 'أخرى': '📦'
+  'Leonardo': '🖼️', 'Autodesk': '🏗️', 'Bolt': '⚡', 'Gmail': '📧', 'Framer': '🖼️', 
+  'Higgsfield': '🚀', 'Manus': '📝', 'n8n': '⚙️', 'NordVPN': '🛡️', 'ExpressVPN': '🛡️', 
+  'HMA VPN': '🌍', 'Proton': '🔒', 'QuillBot': '🤖', 'Railway': '🚂', 'Replit': '💻', 
+  'Wispr Flow': '🌊', 'Netflix': '🍿', 'Crunchyroll': '🍘', 'Prime Video': '🎬', 
+  'eSIM': '📱', 'iLovePDF': '📄', 'Avira': '☂️', 'Miro': '🗺️', 'JetBrains': '💻', 
+  'iCloud': '☁️', 'Zoom': '📹', 'API Services': '🔌', 'أخرى': '📦'
 };
 
 function getMainMenu() {
