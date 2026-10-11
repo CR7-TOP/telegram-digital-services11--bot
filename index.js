@@ -31,6 +31,7 @@ let adminAuditLogs = [];
 let maintenanceMode = false; 
 let customProductMarkups = {}; 
 let localInventory = {}; 
+let adCampaigns = {}; // 🚀 نظام تتبع الإعلانات الجديد
 
 let botStates = {
     deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "", buyQty: {}, ordersPage: {}, tempStock: {} 
@@ -73,6 +74,7 @@ async function loadDatabase() {
         maintenanceMode = data.maintenanceMode || false;
         customProductMarkups = data.customProductMarkups || {};
         localInventory = data.localInventory || {};
+        adCampaigns = data.adCampaigns || {}; // تحميل بيانات الإعلانات
         
         const loadedStates = data.botStates || {};
         botStates = {
@@ -93,7 +95,7 @@ async function loadDatabase() {
 
 function saveDatabase() {
     try {
-        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates };
+        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns };
         const savePromise = connectDB().then(() => {
             if (dbCollection) {
                 return dbCollection.updateOne({ _id: "main_data" }, { $set: data }, { upsert: true });
@@ -131,7 +133,6 @@ let lastCategoriesFetchTime = 0;
 let cachedServices = [];
 let isFetchingServices = false;
 
-// 🛡️ التعديل هنا: تصفير إجباري لكافة الحالات لمنع التداخل
 function clearUserStates(userId) {
     try {
         const idStr = String(userId);
@@ -200,7 +201,7 @@ function initUser(userId) {
         isUnique = true;
         for (let tgId in usersDb) { if (String(usersDb[tgId].uid) === String(newUid)) { isUnique = false; break; } }
       }
-      usersDb[idStr] = { uid: newUid, balance: 0, orders: [], walletHistory: [], isBanned: false, totalSpent: 0, isVip: false, referrals: 0, referredBy: null, tempCategories: [] }; 
+      usersDb[idStr] = { uid: newUid, balance: 0, orders: [], walletHistory: [], isBanned: false, totalSpent: 0, isVip: false, referrals: 0, referredBy: null, tempCategories: [], source: null }; 
       saveDatabase(); 
     } else {
         if (!usersDb[idStr].orders) usersDb[idStr].orders = [];
@@ -211,6 +212,7 @@ function initUser(userId) {
         if (usersDb[idStr].referrals === undefined) usersDb[idStr].referrals = 0;
         if (usersDb[idStr].referredBy === undefined) usersDb[idStr].referredBy = null;
         if (!usersDb[idStr].tempCategories) usersDb[idStr].tempCategories = [];
+        if (usersDb[idStr].source === undefined) usersDb[idStr].source = null;
     }
   } catch(e) {}
 }
@@ -385,27 +387,34 @@ bot.use(async (ctx, next) => {
 
 bot.start((ctx) => {
   try {
-    const userId = String(ctx.from.id); initUser(userId); 
+    const userId = String(ctx.from.id); 
+    initUser(userId); 
     clearUserStates(userId);
 
     if (usersDb[userId].isBanned) return ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
-    const isNewUser = !usersDb[userId].referredBy && userId;
     let payload = null;
     if (ctx.message && ctx.message.text) {
         const parts = ctx.message.text.split(' ');
         if (parts.length > 1) payload = parts[1];
     }
 
-    if (isNewUser && payload && payload.startsWith('ref_')) {
-        const referrerUid = payload.split('_')[1];
-        const referrer = getUserByUid(referrerUid);
-        if (referrer && String(referrerUid) !== String(usersDb[userId].uid)) {
-            usersDb[userId].referredBy = referrer.telegramId; 
-            referrer.user.referrals += 1;
+    // 🚀 تحديث: تتبع الإعلانات والـ Referrals
+    if (payload && !usersDb[userId].referredBy && !usersDb[userId].source) {
+        if (payload.startsWith('ref_')) {
+            const referrerUid = payload.split('_')[1];
+            const referrer = getUserByUid(referrerUid);
+            if (referrer && String(referrerUid) !== String(usersDb[userId].uid)) {
+                usersDb[userId].referredBy = referrer.telegramId; 
+                referrer.user.referrals += 1;
+                saveDatabase();
+                bot.telegram.sendMessage(referrer.telegramId, `🔔 قام صديق بالتسجيل عبر رابط الدعوة الخاص بك! ستكسب **2%** من كل عملية شحن يقوم بها.`).catch(()=>{});
+            }
+        } else if (payload.startsWith('ad_')) {
+            adCampaigns[payload] = (adCampaigns[payload] || 0) + 1;
+            usersDb[userId].source = payload;
             saveDatabase();
-            bot.telegram.sendMessage(referrer.telegramId, `🔔 قام صديق بالتسجيل عبر رابط الدعوة الخاص بك! ستكسب **2%** من كل عملية شحن يقوم بها.`).catch(()=>{});
         }
     }
 
@@ -673,7 +682,6 @@ function sendDepositNotification(req) {
 
 function showAdminPanel(ctx) {
   try {
-    // 🛡️ تصفير أي حالات معلقة للأدمن بمجرد فتح اللوحة
     const userIdStr = String(ctx.from ? ctx.from.id : (ctx.chat ? ctx.chat.id : ""));
     if (userIdStr) {
         if (botStates.adminInput) delete botStates.adminInput[userIdStr];
@@ -716,13 +724,30 @@ function showAdminPanel(ctx) {
         [Markup.button.callback('🛠️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
         [Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users'), Markup.button.callback('💸 تقرير الأرباح', 'admin_profit_report')],
         [Markup.button.callback('🚫 حظر مستخدم', 'admin_ban_user'), Markup.button.callback('✅ فك حظر مستخدم', 'admin_unban_user')],
-        [Markup.button.callback('📢 إرسال رسالة (إذاعة)', 'admin_broadcast'), Markup.button.callback('🚪 تسجيل خروج', 'admin_logout')]
+        [Markup.button.callback('📢 إرسال رسالة (إذاعة)', 'admin_broadcast'), Markup.button.callback('📈 إحصائيات الإعلانات', 'admin_ad_stats')],
+        [Markup.button.callback('🚪 تسجيل خروج', 'admin_logout')]
       ]);
 
     if(ctx.callbackQuery) { ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{}); }
     else { ctx.reply(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{}); }
   } catch(e){}
 }
+
+// 🚀 عرض تقرير الإعلانات
+bot.action('admin_ad_stats', (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    try {
+        let msg = '📈 **إحصائيات الحملات الإعلانية:**\n\n';
+        if (!adCampaigns || Object.keys(adCampaigns).length === 0) {
+            msg += 'لا توجد بيانات أو حملات حتى الآن.';
+        } else {
+            for (let camp in adCampaigns) {
+                msg += `🔹 إعلان (${camp}): دخول ${adCampaigns[camp]} عميل جديد\n`;
+            }
+        }
+        ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    } catch (e) {}
+});
 
 bot.action('admin_profit_report', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
