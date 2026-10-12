@@ -135,7 +135,6 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
 
-// 🚀 زيادة مدة حفظ الخدمات لـ 5 دقايق عشان البوت يبقى طلقة وميهنجش
 const categoryCacheTime = 300000; 
 let lastCategoriesFetchTime = 0;
 let cachedServices = [];
@@ -235,7 +234,6 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🚀 تقليل وقت الانتظار لـ 4500 ملي ثانية لمنع Vercel من قتل العملية (منع التهنيج)
 const apiClient1 = axios.create({
   baseURL: 'https://xprostore.store/api/v1',
   headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' },
@@ -473,14 +471,22 @@ async function placeOrderWithBestProvider(srv, qty) {
     }
 }
 
+// 🚀 ترتيب الأقسام من الأكثر شهرة وطلباً للأقل شهرة (حسب الطلب)
 const preferredCategoriesOrder = [
-    'ChatGPT', 'Claude', 'Gemini', 'Grok', 'Notion', 'Perplexity', 'Cursor', 'CapCut', 
-    'Canva', 'YouTube', 'Spotify', 'Adobe', 'Microsoft', 'Figma', 'Grammarly', 'Duolingo', 
-    'Lovable', 'Apple Music', 'Coursera', 'ElevenLabs', 'Gamma', 'Kling', 'Leonardo', 
-    'Autodesk', 'Bolt', 'Gmail', 'Framer', 'Higgsfield', 'Manus', 'n8n', 'NordVPN', 
-    'ExpressVPN', 'HMA VPN', 'Proton', 'QuillBot', 'Railway', 'Replit', 'Wispr Flow', 
-    'Netflix', 'Crunchyroll', 'Prime Video', 'eSIM', 'iLovePDF', 'Avira', 'Miro', 
-    'JetBrains', 'iCloud', 'Zoom', 'API Services', 'أخرى'
+    // 🌟 الأكثر شهرة وطلباً (الترفيه والأساسيات)
+    'ChatGPT', 'Netflix', 'YouTube', 'Spotify', 'Canva', 'CapCut', 'Microsoft', 
+    // 🤖 الذكاء الاصطناعي الرئيسي والبرامج اليومية
+    'Gemini', 'Claude', 'Adobe', 'Grammarly', 'Duolingo', 'Zoom', 'Gmail', 'iCloud', 
+    // 🛡️ خدمات الـ VPN والموسيقى والتطبيقات العملية
+    'ExpressVPN', 'NordVPN', 'Apple Music', 'Notion', 'iLovePDF', 'Coursera', 'Prime Video', 'Crunchyroll', 
+    // 🚀 أدوات الذكاء الاصطناعي المتقدمة والبرمجة والتصميم
+    'Perplexity', 'eSIM', 'ElevenLabs', 'Leonardo', 'Figma', 'QuillBot', 'Proton', 'Cursor', 'Grok', 'Replit', 
+    // 🛠️ أدوات التطور المعماري والحماية الإضافية
+    'JetBrains', 'Autodesk', 'Avira', 'HMA VPN', 
+    // 🧩 برامج وتطبيقات متخصصة جداً (الأقل شهرة للعامة)
+    'Gamma', 'Bolt', 'Framer', 'Kling', 'Miro', 'Lovable', 'n8n', 'Railway', 'Higgsfield', 'Wispr Flow', 'Manus', 
+    // 🔌 أخرى و API
+    'API Services', 'أخرى'
 ];
 
 const categoryEmojis = {
@@ -849,7 +855,7 @@ function showAdminPanel(ctx) {
                  `📱 رقم الكاش: <code>${vodafoneCashNumber}</code>`;
 
     const keyboard = Markup.inlineKeyboard([
-        [Markup.button.callback('🔄 تحديث وسحب الخدمات يدوياً', 'admin_force_refresh')], // 🚀 زرار التحديث السحري الجديد
+        [Markup.button.callback('🔄 تحديث وسحب الخدمات يدوياً', 'admin_force_refresh')],
         [Markup.button.callback('💳 طلبات الشحن المعلقة (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
@@ -869,11 +875,10 @@ function showAdminPanel(ctx) {
   } catch(e){}
 }
 
-// 🚀 الزرار السحري لتحديث الخدمات يدوياً لو المزود اتأخر
 bot.action('admin_force_refresh', async (ctx) => {
     ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
     try {
-        isFetchingServices = false; // فك التعليقة لو موجودة
+        isFetchingServices = false;
         await backgroundServiceUpdate();
         ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين في ذاكرة البوت.', { parse_mode: 'Markdown' }).catch(()=>{});
     } catch (e) {
@@ -1141,7 +1146,7 @@ bot.action(/^addstock_(.+)$/, (ctx) => {
 bot.action('admin_pending_deposits', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
-        if (!pendingDeposits || pendingDeposits.length === 0) return ctx.editMessageText('💳 **طلبات الشحن المعلقة:**\n\nلا توجد طلبات الشحن المعلقة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
+        if (!pendingDeposits || pendingDeposits.length === 0) return ctx.editMessageText('💳 **طلبات الشحن المعلقة:**\n\nلا توجد طلبات شحن معلقة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
         let msg = '💳 **طلبات الشحن المعلقة (' + pendingDeposits.length + '):**\n\n';
         let inlineButtons = [];
         pendingDeposits.forEach((req, idx) => {
