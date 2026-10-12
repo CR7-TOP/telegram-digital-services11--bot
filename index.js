@@ -135,7 +135,8 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
 
-const categoryCacheTime = 60000; 
+// 🚀 زيادة مدة حفظ الخدمات لـ 5 دقايق عشان البوت يبقى طلقة وميهنجش
+const categoryCacheTime = 300000; 
 let lastCategoriesFetchTime = 0;
 let cachedServices = [];
 let isFetchingServices = false;
@@ -234,23 +235,24 @@ function getUserByUid(targetUid) {
   return null;
 }
 
+// 🚀 تقليل وقت الانتظار لـ 4500 ملي ثانية لمنع Vercel من قتل العملية (منع التهنيج)
 const apiClient1 = axios.create({
   baseURL: 'https://xprostore.store/api/v1',
   headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' },
-  timeout: 5000
+  timeout: 4500
 });
 
 const apiClient2 = axios.create({
   baseURL: 'https://zfourstore.up.railway.app/api/v1',
   headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' },
-  timeout: 5000
+  timeout: 4500
 });
 
 const API_KEY_3 = process.env.PROVIDER3_API_KEY || 'dh_live_51fc2511f39790176ec4d956a92c10492a22858859ae0a79';
 const apiClient3 = axios.create({
   baseURL: 'https://dantehub.shop/api/public/v1',
   headers: { 'Authorization': 'Bearer ' + API_KEY_3, 'Content-Type': 'application/json' },
-  timeout: 8000
+  timeout: 4500
 });
 
 function generateStableId(nameStr) {
@@ -263,7 +265,6 @@ function generateStableId(nameStr) {
     return Math.abs(hash).toString();
 }
 
-// 🚀 تحديث جذري للأسماء عشان نلغي أي تكرار عربي وندمج كله صح
 function detectCategoryFromName(name) {
     let n = name.toLowerCase();
     if (n.includes('gemini') || n.includes('جيميناي')) return 'Gemini';
@@ -472,7 +473,6 @@ async function placeOrderWithBestProvider(srv, qty) {
     }
 }
 
-// 🚀 ترتيب كامل وشامل لكل الأقسام بالأسماء الإنجليزية
 const preferredCategoriesOrder = [
     'ChatGPT', 'Claude', 'Gemini', 'Grok', 'Notion', 'Perplexity', 'Cursor', 'CapCut', 
     'Canva', 'YouTube', 'Spotify', 'Adobe', 'Microsoft', 'Figma', 'Grammarly', 'Duolingo', 
@@ -483,7 +483,6 @@ const preferredCategoriesOrder = [
     'JetBrains', 'iCloud', 'Zoom', 'API Services', 'أخرى'
 ];
 
-// 🚀 ربط إيموجي مميز لكل قسم حرفياً
 const categoryEmojis = {
   'ChatGPT': '❇️', 'Claude': '🧠', 'Gemini': '✨', 'Grok': '✖️', 'Notion': '📓', 'Perplexity': '💠', 
   'Cursor': '🖱️', 'CapCut': '✂️', 'Canva': '🖌️', 'YouTube': '▶️', 'Spotify': '🎧', 'Adobe': '🅰️', 
@@ -724,9 +723,9 @@ async function showCategories(ctx) {
     if (cachedServices.length === 0) {
         let loadingMsgId;
         if(ctx.callbackQuery) { 
-            await ctx.editMessageText('⏳ جاري ربط السيرفرات (ثواني فقط)...').catch(()=>{}); 
+            await ctx.editMessageText('⏳ جاري ربط السيرفرات السريعة...').catch(()=>{}); 
         } else { 
-            const msg = await ctx.reply('⏳ جاري ربط السيرفرات (ثواني فقط)...').catch(()=>{}); 
+            const msg = await ctx.reply('⏳ جاري ربط السيرفرات السريعة...').catch(()=>{}); 
             if(msg) loadingMsgId = msg.message_id; 
         }
         await backgroundServiceUpdate(); 
@@ -850,6 +849,7 @@ function showAdminPanel(ctx) {
                  `📱 رقم الكاش: <code>${vodafoneCashNumber}</code>`;
 
     const keyboard = Markup.inlineKeyboard([
+        [Markup.button.callback('🔄 تحديث وسحب الخدمات يدوياً', 'admin_force_refresh')], // 🚀 زرار التحديث السحري الجديد
         [Markup.button.callback('💳 طلبات الشحن المعلقة (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
@@ -868,6 +868,18 @@ function showAdminPanel(ctx) {
     else { ctx.reply(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{}); }
   } catch(e){}
 }
+
+// 🚀 الزرار السحري لتحديث الخدمات يدوياً لو المزود اتأخر
+bot.action('admin_force_refresh', async (ctx) => {
+    ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
+    try {
+        isFetchingServices = false; // فك التعليقة لو موجودة
+        await backgroundServiceUpdate();
+        ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين في ذاكرة البوت.', { parse_mode: 'Markdown' }).catch(()=>{});
+    } catch (e) {
+        ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{});
+    }
+});
 
 bot.action('admin_hide_cats', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
@@ -1129,7 +1141,7 @@ bot.action(/^addstock_(.+)$/, (ctx) => {
 bot.action('admin_pending_deposits', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
-        if (!pendingDeposits || pendingDeposits.length === 0) return ctx.editMessageText('💳 **طلبات الشحن المعلقة:**\n\nلا توجد طلبات شحن معلقة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
+        if (!pendingDeposits || pendingDeposits.length === 0) return ctx.editMessageText('💳 **طلبات الشحن المعلقة:**\n\nلا توجد طلبات الشحن المعلقة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
         let msg = '💳 **طلبات الشحن المعلقة (' + pendingDeposits.length + '):**\n\n';
         let inlineButtons = [];
         pendingDeposits.forEach((req, idx) => {
@@ -1346,7 +1358,7 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
     }
 
     if (!selectedCategory || cachedServices.length === 0) { 
-        return ctx.editMessageText('⚠️ يرجى إعادة فتح الأقسام من البداية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
+        return ctx.editMessageText('⚠️ يرجى تحديث الأقسام من القائمة الرئيسية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
     }
 
     const categoryServices = cachedServices.filter(s => {
