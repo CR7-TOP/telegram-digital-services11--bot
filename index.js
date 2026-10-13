@@ -471,21 +471,13 @@ async function placeOrderWithBestProvider(srv, qty) {
     }
 }
 
-// 🚀 ترتيب الأقسام من الأكثر شهرة وطلباً للأقل شهرة (حسب الطلب)
 const preferredCategoriesOrder = [
-    // 🌟 الأكثر شهرة وطلباً (الترفيه والأساسيات)
     'ChatGPT', 'Netflix', 'YouTube', 'Spotify', 'Canva', 'CapCut', 'Microsoft', 
-    // 🤖 الذكاء الاصطناعي الرئيسي والبرامج اليومية
     'Gemini', 'Claude', 'Adobe', 'Grammarly', 'Duolingo', 'Zoom', 'Gmail', 'iCloud', 
-    // 🛡️ خدمات الـ VPN والموسيقى والتطبيقات العملية
     'ExpressVPN', 'NordVPN', 'Apple Music', 'Notion', 'iLovePDF', 'Coursera', 'Prime Video', 'Crunchyroll', 
-    // 🚀 أدوات الذكاء الاصطناعي المتقدمة والبرمجة والتصميم
     'Perplexity', 'eSIM', 'ElevenLabs', 'Leonardo', 'Figma', 'QuillBot', 'Proton', 'Cursor', 'Grok', 'Replit', 
-    // 🛠️ أدوات التطور المعماري والحماية الإضافية
     'JetBrains', 'Autodesk', 'Avira', 'HMA VPN', 
-    // 🧩 برامج وتطبيقات متخصصة جداً (الأقل شهرة للعامة)
     'Gamma', 'Bolt', 'Framer', 'Kling', 'Miro', 'Lovable', 'n8n', 'Railway', 'Higgsfield', 'Wispr Flow', 'Manus', 
-    // 🔌 أخرى و API
     'API Services', 'أخرى'
 ];
 
@@ -705,7 +697,8 @@ bot.hears(/شحن المحفظة/, (ctx) => {
     const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
     if (usersDb[userId].isBanned) return;
     botStates.deposit[userId] = { step: 'WAIT_AMOUNT' }; saveDatabase();
-    ctx.reply('💳 **شحن المحفظة عبر فودافون كاش**\n\nمن فضلك أكتب **المبلغ** الذي قمت بتحويله بالجنيه المصري (مثال: 100):').catch(()=>{});
+    // تغيير بسيط هنا عشان العميل يفهم إنه شحن آلي
+    ctx.reply('💳 **الشحن التلقائي السريع (فودافون كاش)**\n\nمن فضلك أكتب **المبلغ** اللي هتحوله بالجنيه المصري (مثال: 100):').catch(()=>{});
   } catch(e){}
 });
 
@@ -813,7 +806,8 @@ bot.action('main_menu', (ctx) => {
 
 function sendDepositNotification(req) {
   try {
-    notifyAdmin(`🔔 <b>طلب شحن محفظة جديد!</b>\n\n👤 المستخدم (ID): <code>${req.userUid}</code>\n💰 المبلغ المطلوب: <b>${req.amount} EGP</b>\n📱 الرقم المحول منه: <code>${req.senderNumber}</code>\n\nيرجى المراجعة من قسم (طلبات الشحن المعلقة):`);
+    // تم تعديل الرسالة للأدمن لأن الدفع بقى آلي
+    notifyAdmin(`🔔 <b>طلب شحن قيد الانتظار (سيتم تأكيده آلياً)</b>\n\n👤 المستخدم: <code>${req.userUid}</code>\n💰 المبلغ: <b>${req.amount} EGP</b>\n📱 من رقم: <code>${req.senderNumber}</code>\n\n(البوت في انتظار رسالة فودافون كاش للتأكيد وإضافة الرصيد)`);
   } catch(e) {}
 }
 
@@ -1299,6 +1293,55 @@ bot.action('admin_broadcast', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     botStates.broadcast[ctx.from.id] = true; saveDatabase();
     ctx.editMessageText('📢 أرسل رسالة الإذاعة (أو اكتب `إلغاء`):', { ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{}); 
+});
+
+bot.action(/^approve_dep_(.+)_(.+)$/, (ctx) => {
+    ctx.answerCbQuery('⏳ جاري شحن الرصيد للعميل...').catch(()=>{});
+    try {
+        const targetUserId = ctx.match[1];
+        const amount = parseFloat(ctx.match[2]);
+        
+        // مسح الطلب من قايمة المعلقات بناءً على الـ ID والمبلغ
+        const pendingIndex = pendingDeposits.findIndex(p => p.userId === targetUserId && parseFloat(p.amount) === amount);
+        
+        if (pendingIndex !== -1) {
+            pendingDeposits.splice(pendingIndex, 1);
+            
+            if (usersDb[targetUserId]) {
+                usersDb[targetUserId].balance += amount;
+                usersDb[targetUserId].walletHistory.push({ type: 'شحن فودافون كاش (يدوي)', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+                saveDatabase();
+                
+                bot.telegram.sendMessage(targetUserId, `🎉 **تم شحن رصيدك بنجاح!**\n💰 تمت إضافة: *${amount} EGP* لمحفظتك.\n✅ رصيدك الحالي: *${usersDb[targetUserId].balance.toFixed(2)} EGP*`, { parse_mode: 'Markdown' }).catch(()=>{});
+                
+                ctx.editMessageText(`✅ **تمت الموافقة بنجاح!**\n\nتم شحن ${amount} EGP للعميل (ID: ${usersDb[targetUserId].uid})`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) }).catch(()=>{});
+            } else {
+                ctx.editMessageText('❌ العميل غير موجود.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
+            }
+        } else {
+            ctx.editMessageText('❌ هذا الطلب غير موجود أو تم التعامل معه مسبقاً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
+        }
+    } catch(e) { console.error(e); }
+});
+
+bot.action(/^reject_dep_(.+)$/, (ctx) => {
+    ctx.answerCbQuery('تم الرفض').catch(()=>{});
+    try {
+        const targetUserId = ctx.match[1];
+        
+        const pendingIndex = pendingDeposits.findIndex(p => p.userId === targetUserId);
+        if (pendingIndex !== -1) {
+            const reqData = pendingDeposits[pendingIndex];
+            pendingDeposits.splice(pendingIndex, 1);
+            saveDatabase();
+            
+            bot.telegram.sendMessage(targetUserId, `❌ **تم رفض طلب الشحن الخاص بك.**\n\nيرجى التأكد من تحويل المبلغ بشكل صحيح والتواصل مع الدعم الفني إذا كانت هناك مشكلة.`, { parse_mode: 'Markdown' }).catch(()=>{});
+            
+            ctx.editMessageText(`❌ **تم رفض الطلب.**\n\nتم إلغاء شحن ${reqData.amount} EGP للعميل.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) }).catch(()=>{});
+        } else {
+            ctx.editMessageText('❌ هذا الطلب غير موجود.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
+        }
+    } catch(e) {}
 });
 
 bot.action(/^ord_pg_(\d+)$/, (ctx) => {
@@ -2005,11 +2048,11 @@ bot.on('text', async (ctx, next) => {
         const amount = parseFloat(text);
         if (isNaN(amount) || amount <= 0) return ctx.reply('❌ أدخل مبلغاً صحيحاً وموجباً:').catch(()=>{});
         state.amount = amount; state.step = 'WAIT_NUMBER'; saveDatabase();
-        return ctx.reply('💳 حول (' + amount + ' EGP) على رقم فودافون كاش:\n📱 `' + vodafoneCashNumber + '`\n\n**ثم أرسل الرقم الذي حوّلت منه:**', { parse_mode: 'Markdown' }).catch(()=>{});
+        return ctx.reply('💳 حول (' + amount + ' EGP) على رقم فودافون كاش:\n📱 `' + vodafoneCashNumber + '`\n\n**ثم أرسل الرقم الذي حوّلت منه (11 رقم):**', { parse_mode: 'Markdown' }).catch(()=>{});
       } else if (state.step === 'WAIT_NUMBER') {
         const amount = state.amount; delete botStates.deposit[userId]; initUser(userId);
         const reqData = { userId, userUid: usersDb[userId].uid, amount, senderNumber: text }; 
-        ctx.reply('⏳ تم إرسال طلب الشحن للإدارة بنجاح، سيتم المراجعة والإضافة قريباً.').catch(()=>{});
+        ctx.reply('⏳ تم استلام طلبك! بمجرد وصول تحويلك سيتم إضافة الرصيد لمحفظتك تلقائياً في نفس اللحظة ⚡.').catch(()=>{});
         pendingDeposits.push(reqData); saveDatabase(); sendDepositNotification(reqData); return;
       }
     }
@@ -2023,10 +2066,54 @@ export default async function handler(req, res) {
     try {
         await loadDatabase(); 
     } catch (e) {
-        console.error("Critical DB Failure, aborting request to protect data.");
         return res.status(500).send('DB Error'); 
     }
-    
+
+    // 🚀===== نظام استقبال رسائل فودافون كاش (الدفع الآلي) =====🚀
+    // هنتأكد إن الطلب جاي من الموبايل بتاعك عن طريق الباسورد السري ده
+    if (req.body && req.body.secret === 'AHMED_VFCASH_100') {
+        const smsText = req.body.message || '';
+        
+        // لو الرسالة فيها تأكيد استلام فلوس من فودافون كاش
+        if (smsText.includes('تم استلام') && smsText.includes('جنيه')) {
+            // استخراج المبلغ
+            const amountMatch = smsText.match(/مبلغ\s*([\d\.]+)\s*جنيه/);
+            // استخراج رقم الموبايل اللي حول الفلوس (رقم مصري 11 رقم)
+            const phoneMatch = smsText.match(/01[0125][0-9]{8}/);
+
+            if (amountMatch && phoneMatch) {
+                const receivedAmount = parseFloat(amountMatch[1]);
+                const senderPhone = phoneMatch[1];
+
+                // هندور في طلبات الشحن المعلقة عن العميل اللي عمل الطلب ده
+                const pendingIndex = pendingDeposits.findIndex(p => p.senderNumber === senderPhone && parseFloat(p.amount) === receivedAmount);
+
+                if (pendingIndex !== -1) {
+                    const reqData = pendingDeposits[pendingIndex];
+                    const targetUserId = reqData.userId;
+                    
+                    if(usersDb[targetUserId]) {
+                        // إضافة الرصيد للعميل
+                        usersDb[targetUserId].balance += receivedAmount;
+                        usersDb[targetUserId].walletHistory.push({ type: 'شحن فودافون كاش (آلي)', amount: receivedAmount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+                        
+                        // مسح الطلب من قايمة المعلقات
+                        pendingDeposits.splice(pendingIndex, 1);
+                        saveDatabase();
+
+                        // إرسال رسالة تفريح للعميل
+                        bot.telegram.sendMessage(targetUserId, `🎉 **تم تأكيد الدفع آلياً بنجاح!**\n💰 تمت إضافة: *${receivedAmount} EGP* لمحفظتك.\n✅ رصيدك الحالي: *${usersDb[targetUserId].balance.toFixed(2)} EGP*\n\nتقدر دلوقتي تشتري أي خدمة من المتجر 🚀`, { parse_mode: 'Markdown' }).catch(()=>{});
+                        
+                        // إشعار للأدمن إن السيستم اشتغل لوحده
+                        notifyAdmin(`🤖 <b>تأكيد دفع آلي ناجح! (بدون تدخلك)</b>\n\n👤 المستخدم: <code>${reqData.userUid}</code>\n💰 المبلغ: <b>${receivedAmount} EGP</b>\n📱 من رقم: <code>${senderPhone}</code>\n✅ تمت إضافة الرصيد للعميل بنجاح.`);
+                    }
+                }
+            }
+        }
+        return res.status(200).send('SMS Processed Successfully');
+    }
+    // ==============================================================
+
     await bot.handleUpdate(req.body); 
 
     if (pendingSaves.length > 0) {
