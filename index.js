@@ -11,9 +11,8 @@ dotenv.config();
 // ==========================================
 const USD_TO_EGP_RATE = 50; 
 const ADMIN_CHANNEL_ID = process.env.ADMIN_CHANNEL_ID || '-1004393113868'; // جروب النسخ الاحتياطي السري
-
-// 🆕 متغير قناة المبيعات (أصبح قابلاً للتعديل من البوت)
-let publicSalesChannel = process.env.PUBLIC_SALES_CHANNEL || ''; 
+let publicSalesChannel = process.env.PUBLIC_SALES_CHANNEL || ''; // قناة إثباتات الثقة (Live Sales)
+let forceSubscribeChannel = ''; // 🆕 قناة الاشتراك الإجباري (Force Subscribe)
 
 // ==========================================
 // 🛡️ إعدادات الاتصال بقاعدة بيانات MongoDB 
@@ -41,8 +40,6 @@ let hiddenServices = [];
 let fixedPrices = {}; 
 let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; // رقم المحفظة (يتغير ديناميكياً)
 let abandonedCarts = {}; // لتخزين الطلبات المتروكة
-
-// 🆕 المتغيرات الجديدة الخاصة بالأنظمة المضافة
 let usedReceipts = []; // نظام الحماية من الاحتيال (Anti-Fraud)
 let stockAlerts = {}; // إشعارات التوفر (Back-in-Stock)
 
@@ -58,7 +55,7 @@ function isAdmin(userId) {
     return (usersDb[idStr] && String(usersDb[idStr].uid) === '1001') || botStates.adminSession[idStr];
 }
 
-// 🆕 دالة النشر في قناة إثباتات الثقة (تستخدم publicSalesChannel الديناميكي)
+// دالة النشر في قناة إثباتات الثقة
 function broadcastSale(serviceName, qty, price, userUid, paymentMethod) {
     if (!publicSalesChannel || publicSalesChannel === '') return;
     try {
@@ -108,11 +105,10 @@ async function loadDatabase() {
         fixedPrices = data.fixedPrices || {};
         if (data.vodafoneCashNumber) vodafoneCashNumber = data.vodafoneCashNumber;
         abandonedCarts = data.abandonedCarts || {};
-        
-        // 🆕 تحميل البيانات الجديدة
         usedReceipts = data.usedReceipts || [];
         stockAlerts = data.stockAlerts || {};
-        if (data.publicSalesChannel !== undefined) publicSalesChannel = data.publicSalesChannel; // استرجاع القناة
+        if (data.publicSalesChannel !== undefined) publicSalesChannel = data.publicSalesChannel; 
+        if (data.forceSubscribeChannel !== undefined) forceSubscribeChannel = data.forceSubscribeChannel; // 🆕 تحميل قناة الاشتراك الإجباري
         
         const loadedStates = data.botStates || {};
         botStates = {
@@ -137,7 +133,7 @@ async function loadDatabase() {
 
 function saveDatabase() {
     try {
-        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannel }; // 🆕 حفظ القناة
+        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannel, forceSubscribeChannel }; // 🆕 حفظ قناة الاشتراك
         const savePromise = connectDB().then(() => {
             if (dbCollection) {
                 return dbCollection.updateOne({ _id: "main_data" }, { $set: data }, { upsert: true });
@@ -236,17 +232,17 @@ function checkAndSendDailyReport() {
     } catch(e) {}
 }
 
-// 📦 نظام النسخ الاحتياطي التلقائي (كل 24 ساعة)
+// 📦 نظام النسخ الاحتياطي التلقائي
 setInterval(() => {
     try {
         if (!ADMIN_CHANNEL_ID || ADMIN_CHANNEL_ID === '') return;
-        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, usedReceipts, stockAlerts, publicSalesChannel }, null, 2); // 🆕 إضافة القناة للنسخ الاحتياطي
+        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, usedReceipts, stockAlerts, publicSalesChannel, forceSubscribeChannel }, null, 2); 
         const buffer = Buffer.from(dbDump, 'utf-8');
         bot.telegram.sendDocument(ADMIN_CHANNEL_ID, { source: buffer, filename: `XProStore_Backup_${new Date().toISOString().split('T')[0]}.json` }, { caption: `📦 نسخة احتياطية تلقائية لقاعدة البيانات\n📅 التاريخ: ${new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}` }).catch(()=>{});
     } catch (e) { console.error("Backup Error:", e); }
 }, 24 * 60 * 60 * 1000);
 
-// 🛒 نظام تذكير الطلبات المتروكة (يفحص كل 15 دقيقة)
+// 🛒 نظام تذكير الطلبات المتروكة
 setInterval(() => {
     const now = Date.now();
     for (let uid in abandonedCarts) {
@@ -538,7 +534,7 @@ const categoryEmojis = {
   'iCloud': '☁️', 'Zoom': '📹', 'API Services': '🔌', 'أخرى': '📦'
 };
 
-// 🛒 القائمة الرئيسية المحدثة (بإضافة السلة وتحويل الرصيد)
+// 🛒 القائمة الرئيسية 
 function getMainMenu() {
   let keyboard = [
     ['🛍 الخدمات', '🔍 بحث عن خدمة'],
@@ -550,8 +546,40 @@ function getMainMenu() {
   return Markup.keyboard(keyboard).resize();
 }
 
+// 🆕 نظام فحص الاشتراك الإجباري
 bot.use(async (ctx, next) => {
     checkAndSendDailyReport(); 
+    
+    const userId = ctx.from?.id;
+    if (userId && forceSubscribeChannel && !isAdmin(userId)) {
+        if (ctx.callbackQuery && ctx.callbackQuery.data === 'check_sub') {
+            return next(); 
+        }
+        
+        try {
+            const member = await ctx.telegram.getChatMember(forceSubscribeChannel, userId);
+            if (!['member', 'administrator', 'creator'].includes(member.status)) {
+                const subMsg = '⚠️ <b>عذراً، يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدامه.</b>\n\nاشترك الآن ثم اضغط على "تحقق من الاشتراك ✅"';
+                
+                const channelUrl = `https://t.me/${forceSubscribeChannel.replace('@', '')}`;
+                
+                // 🆕 أزرار مطابقة للصورة بالضبط
+                const keyboard = Markup.inlineKeyboard([
+                    [Markup.button.url('⚙️ تعليمات بوت طلباتكم | تحديثات ↗️', channelUrl), Markup.button.callback('غير مشترك ❌', 'noop')],
+                    [Markup.button.callback('تحقق من الاشتراك ✅', 'check_sub')]
+                ]);
+                
+                if (ctx.callbackQuery) {
+                    return ctx.editMessageText(subMsg, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
+                } else {
+                    return ctx.reply(subMsg, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
+                }
+            }
+        } catch (e) {
+            console.log("Force sub check error:", e.message);
+        }
+    }
+    
     return next();
 });
 
@@ -591,6 +619,27 @@ bot.start((ctx) => {
   } catch (err) {
       console.error(err);
   }
+});
+
+// 🆕 التحقق من الاشتراك (زر الأكشن)
+bot.action('check_sub', async (ctx) => {
+    const userId = String(ctx.from.id); initUser(userId);
+    if (!forceSubscribeChannel) {
+        ctx.deleteMessage().catch(()=>{});
+        return ctx.reply('أهلاً بك مجدداً في متجر الخدمات الرقمية! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
+    }
+    try {
+        const member = await ctx.telegram.getChatMember(forceSubscribeChannel, userId);
+        if (['member', 'administrator', 'creator'].includes(member.status)) {
+            await ctx.answerCbQuery('✅ شكراً لاشتراكك! يمكنك الآن استخدام البوت.', {show_alert: true}).catch(()=>{});
+            ctx.deleteMessage().catch(()=>{});
+            ctx.reply('أهلاً بك مجدداً في المتجر! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
+        } else {
+            ctx.answerCbQuery('❌ عذراً، لم تقم بالاشتراك في القناة بعد!', { show_alert: true }).catch(()=>{});
+        }
+    } catch (e) {
+        ctx.answerCbQuery('❌ حدث خطأ، تأكد أن البوت مرفوع كأدمن في القناة.').catch(()=>{});
+    }
 });
 
 function calculateRetailPrice(service, user, quantity = 1) {
@@ -705,7 +754,6 @@ bot.hears(/طلباتي/, (ctx) => {
     } catch(e){}
 });
 
-// 🛒 سلة المشتريات
 bot.hears(/سلة المشتريات/, (ctx) => {
     try {
         const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
@@ -778,7 +826,6 @@ bot.hears(/شحن المحفظة/, (ctx) => {
     const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
     if (usersDb[userId].isBanned) return;
 
-    // 🛡️ منع السبام: التأكد إن مفيش طلبات شحن معلقة
     const hasPending = pendingDeposits.some(p => p.userId === userId);
     if(hasPending) return ctx.reply('❌ **لا يمكنك تقديم طلب شحن جديد!**\nلديك بالفعل طلب شحن قيد المراجعة من الإدارة. يرجى الانتظار حتى يتم تأكيده أو رفضه.', {parse_mode: 'Markdown'}).catch(()=>{});
 
@@ -915,7 +962,6 @@ function showAdminPanel(ctx) {
     }
     const maintStatus = maintenanceMode ? '🛠️ (مفعل - المتجر مغلق للصيانة)' : '✅ (متوقف - المتجر يعمل)';
 
-    // 🆕 عرض القناة الحالية للأدمن
     const text = `👑 <b>لوحة تحكم الأدمن</b>\n\n` +
                  `📊 <b>الإحصائيات المتقدمة:</b>\n` +
                  `👥 إجمالي العملاء: ${totalUsers}\n` +
@@ -926,13 +972,14 @@ function showAdminPanel(ctx) {
                  `⚡ حالة الخصم المؤقت: ${flashStatus}\n` +
                  `🛑 وضع الصيانة: ${maintStatus}\n` +
                  `📱 رقم الكاش: <code>${vodafoneCashNumber}</code>\n` +
-                 `📢 قناة المبيعات: <code>${publicSalesChannel || 'غير محددة'}</code>`;
+                 `📢 قناة المبيعات: <code>${publicSalesChannel || 'غير محددة'}</code>\n` +
+                 `🔒 الاشتراك الإجباري: <code>${forceSubscribeChannel || 'غير مفعل'}</code>`;
 
     const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback('🔄 تحديث وسحب الخدمات يدوياً', 'admin_force_refresh')],
-        // 🆕 إضافة زر تعيين قناة المبيعات بجانب تغيير رقم الكاش
         [Markup.button.callback('📱 تغيير رقم الاستقبال', 'admin_change_wallet'), Markup.button.callback('📢 تعيين قناة المبيعات', 'admin_set_sales_channel')],
-        [Markup.button.callback('💳 طلبات الشحن المعلقة (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
+        // 🆕 زر ضبط الاشتراك الإجباري
+        [Markup.button.callback('🔒 ضبط الاشتراك الإجباري', 'admin_set_force_sub'), Markup.button.callback('💳 طلبات الشحن (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
         [Markup.button.callback('💲 تحديد سعر ثابت لمنتج', 'admin_fixed_price'), Markup.button.callback('👁️ إخفاء/إظهار منتج', 'admin_hide_cats')],
@@ -951,7 +998,6 @@ function showAdminPanel(ctx) {
   } catch(e){}
 }
 
-// 🛡️ حماية أزرار الإدارة
 bot.action(/^admin_/, (ctx, next) => {
     if(!isAdmin(ctx.from.id)) return ctx.answerCbQuery('❌ غير مصرح لك', {show_alert: true});
     return next();
@@ -961,18 +1007,23 @@ bot.action(/^approve_dep_|^reject_dep_/, (ctx, next) => {
     return next();
 });
 
-// 📱 تغيير رقم المحفظة
 bot.action('admin_change_wallet', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     botStates.adminInput[ctx.from.id] = 'WAIT_NEW_WALLET'; saveDatabase();
     ctx.editMessageText('📱 **تغيير رقم الاستقبال:**\n\nأرسل الرقم الجديد لمحفظة فودافون كاش الخاص بك:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
-// 🆕 زر ضبط قناة المبيعات
 bot.action('admin_set_sales_channel', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     botStates.adminInput[ctx.from.id] = 'WAIT_SALES_CHANNEL'; saveDatabase();
     ctx.editMessageText('📢 **تعيين قناة المبيعات الحية:**\n\nأرسل معرف القناة (ID)، يجب أن يبدأ بـ `-100` (مثال: `-1001234567890`)\n\n🛑 لإيقاف النشر الآلي تماماً أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+});
+
+// 🆕 زر الأكشن لضبط قناة الاشتراك الإجباري
+bot.action('admin_set_force_sub', (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_FORCE_SUB'; saveDatabase();
+    ctx.editMessageText('🔒 **إعداد الاشتراك الإجباري:**\n\nأرسل مُعرف القناة (يوزرنيم القناة) ويجب أن يبدأ بـ `@` (مثال: `@XProStore`)\n\n⚠️ **تنبيه هام:** يجب إضافة البوت كـ(مشرف/Admin) في هذه القناة ليتمكن من فحص المشتركين.\n\n🛑 لإلغاء نظام الاشتراك الإجباري تماماً، أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_force_refresh', async (ctx) => {
@@ -1172,7 +1223,6 @@ bot.action(/^setfixed_(.+)$/, (ctx) => {
     botStates.adminInput[ctx.from.id] = 'WAIT_SET_FIXED_' + ctx.match[1]; saveDatabase();
     ctx.editMessageText('💲 أرسل السعر الثابت الجديد للمنتج بالجنيه المصري (مثال: 150).\n\n🗑️ لإلغاء السعر الثابت والعودة لنظام النسبة المئوية، اكتب كلمة: `حذف`\n🔙 للإلغاء والرجوع، اكتب كلمة: `رجوع`', {parse_mode: 'Markdown'}).catch(()=>{});
 });
-
 
 bot.action('admin_ad_stats', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
@@ -1449,7 +1499,6 @@ bot.action(/^reject_dep_(.+)$/, (ctx) => {
     } catch(e) {}
 });
 
-// 🛒 تنفيذ الشراء من السلة دفعة واحدة (مُحدث مع النشر بقناة المبيعات)
 bot.action('checkout_cart', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     const userId = String(ctx.from.id);
@@ -1495,7 +1544,6 @@ bot.action('checkout_cart', async (ctx) => {
             
             notifyAdmin(`👑 <b>شراء من السلة:</b>\n🛍 ${item.name}\n👤 العميل: <code>${usersDb[userId].uid}</code>\n💰 المدفوع: ${item.price} EGP`);
             
-            // 🆕 النشر في قناة المبيعات الحية
             broadcastSale(item.name.replace(/</g, '&lt;').replace(/>/g, '&gt;'), item.qty, item.price, usersDb[userId].uid, 'رصيد المحفظة (السلة)');
             
         } catch (err) {
@@ -1615,7 +1663,6 @@ bot.action('cancel_action', (ctx) => {
     ctx.deleteMessage().catch(()=>{});
 });
 
-// 🆕 تفعيل إشعارات التوفر للمنتجات النافذة من المخزن المحلي
 bot.action(/^notify_stock_(.+)$/, (ctx) => {
     ctx.answerCbQuery('تم تفعيل إشعار التوفر! 🔔').catch(()=>{});
     try {
@@ -1690,7 +1737,6 @@ bot.action('confirm_stock_add', (ctx) => {
     if (!localInventory[srvId]) localInventory[srvId] = [];
     localInventory[srvId].push(item);
     
-    // 🆕 إطلاق إشعارات التوفر فوراً لمن كان ينتظر هذا المنتج
     if (stockAlerts[srvId] && stockAlerts[srvId].length > 0) {
         let srvName = "الخدمة المطلوبة";
         if (cachedServices && cachedServices.length > 0) {
@@ -1719,7 +1765,6 @@ bot.action('cancel_stock_add', (ctx) => {
     }
     ctx.editMessageText('❌ تم إلغاء إضافة العنصر.\nيمكنك إرسال عنصر جديد أو الضغط على "رجوع" للعودة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
 });
-
 
 function extractUsefulData(obj) {
     if (!obj) return null;
@@ -1827,7 +1872,6 @@ bot.on('text', async (ctx, next) => {
              const name = srv.name_ar || srv.name || srv.title;
              const safeName = name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-             // 🛒 معالجة إضافة للسلة
              if (isCart) {
                  usersDb[userId].cart.push({ srvId: String(srv.id), name: `${name}`, price: retailPrice, qty: qty, profit: exactProfit });
                  saveDatabase();
@@ -1847,7 +1891,6 @@ bot.on('text', async (ctx, next) => {
                ).catch(()=>{});
              }
              
-             // 🆕 إشعارات التوفر (Back-in-Stock Alerts) - التحقق من المخزن المحلي أولاً
              const isManagedLocally = localInventory[String(srv.id)] !== undefined; 
              const hasLocalStock = localInventory[String(srv.id)] && localInventory[String(srv.id)].length >= qty;
              
@@ -1857,7 +1900,6 @@ bot.on('text', async (ctx, next) => {
                  ).catch(()=>{});
              }
 
-             // 🆕 نظام التتبع المباشر للطلب (Live Tracking Updates)
              let processingMsg = await ctx.reply('⏳ <b>جاري المعالجة...</b>', {parse_mode: 'HTML'}).catch(()=>{});
              await new Promise(resolve => setTimeout(resolve, 800));
              if(processingMsg) await ctx.telegram.editMessageText(ctx.chat.id, processingMsg.message_id, null, '🔄 <b>قيد التنفيذ من المزود السحابي...</b>', {parse_mode: 'HTML'}).catch(()=>{});
@@ -1885,7 +1927,6 @@ bot.on('text', async (ctx, next) => {
 
                  notifyAdmin(`👑 <b>عملية بيع من المخزن المحلي:</b>\n🛍 ${safeName}\n💰 ${retailPrice} EGP\n📦 متبقي في المخزن: ${localInventory[String(srv.id)].length}`);
                  
-                 // 🆕 النشر في قناة المبيعات
                  broadcastSale(safeName, qty, retailPrice, usersDb[userId].uid, 'رصيد المحفظة (تسليم فوري)');
                  
                  setTimeout(() => {
@@ -1962,7 +2003,6 @@ bot.on('text', async (ctx, next) => {
                                     (rawDetails ? `📌 <b>البيانات:</b>\n<code>${String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>` : '');
                 notifyAdmin(adminLogMsg);
                 
-                // 🆕 النشر في قناة المبيعات (API)
                 broadcastSale(safeName, qty, retailPrice, usersDb[userId].uid, 'رصيد المحفظة (الربط المباشر)');
                 
                 setTimeout(() => {
@@ -2032,7 +2072,27 @@ bot.on('text', async (ctx, next) => {
             delete botStates.adminInput[userId];
         }
 
-        // 🆕 إعداد استقبال الـ ID لزر قناة المبيعات
+        // 🆕 إعداد استقبال يوزرنيم القناة لزر الاشتراك الإجباري
+        if (state === 'WAIT_FORCE_SUB') {
+            if (text === 'إيقاف') {
+                forceSubscribeChannel = '';
+                delete botStates.adminInput[userId];
+                saveDatabase();
+                logAdminAction(userId, 'إيقاف الاشتراك الإجباري');
+                return ctx.reply('✅ تم إيقاف نظام الاشتراك الإجباري بنجاح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            }
+            
+            if (!text.startsWith('@')) {
+                 return ctx.reply('❌ معرف القناة غير صحيح!\nيجب أن يبدأ المعرف بـ `@` (مثال: `@MyChannel`). أرسله مجدداً:', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+            }
+            
+            forceSubscribeChannel = text.trim();
+            delete botStates.adminInput[userId];
+            saveDatabase();
+            logAdminAction(userId, `تفعيل الاشتراك الإجباري لقناة: ${forceSubscribeChannel}`);
+            return ctx.reply(`✅ **تم تفعيل الاشتراك الإجباري بنجاح!**\nالقناة: \`${forceSubscribeChannel}\`\n\n⚠️ **تذكر:** البوت لن يعمل إذا لم يكن "مشرفاً" في هذه القناة للتمكن من فحص اشتراكات الأعضاء.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+        }
+
         if (state === 'WAIT_SALES_CHANNEL') {
             if (text === 'إيقاف') {
                 publicSalesChannel = '';
@@ -2323,7 +2383,6 @@ bot.on('text', async (ctx, next) => {
       } else { botStates.adminLogin[userId] = null; saveDatabase(); return ctx.reply('❌ كلمة مرور خاطئة.').catch(()=>{}); }
     }
 
-    // 📸 تعديل استقبال الدفع ليصبح بالصور (الدفع اليدوي)
     if (botStates.deposit && botStates.deposit[userId]) {
       const state = botStates.deposit[userId];
       if (state.step === 'WAIT_AMOUNT') {
@@ -2338,17 +2397,14 @@ bot.on('text', async (ctx, next) => {
   } catch(e) {}
 });
 
-// 📸 معالجة الصور (لسكرين شوت الدفع اليدوي ورسائل الإذاعة المتطورة)
 bot.on('photo', async (ctx) => {
     try {
         const userId = String(ctx.from.id); initUser(userId);
         
-        // 📢 إذاعة متطورة (صورة + نص + زر)
         if (botStates.broadcast && botStates.broadcast[userId] && isAdmin(userId)) {
             const caption = ctx.message.caption || '';
             let fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
             
-            // صيغة متقدمة: النص | اسم الزر | رابط الزر
             let parts = caption.split('|').map(s => s.trim());
             let msgText = parts[0] || 'إعلان من الإدارة';
             let markup = null;
@@ -2366,19 +2422,16 @@ bot.on('photo', async (ctx) => {
             return ctx.reply('✅ تم الإرسال للجميع بنجاح.');
         }
 
-        // 💳 استلام إثبات الدفع اليدوي (مع 🆕 الحماية ضد الاحتيال)
         if (botStates.deposit && botStates.deposit[userId] && botStates.deposit[userId].step === 'WAIT_RECEIPT') {
             const amount = botStates.deposit[userId].amount;
             const photoObj = ctx.message.photo[ctx.message.photo.length - 1];
             const fileId = photoObj.file_id;
-            const fileUniqueId = photoObj.file_unique_id; // 🆕 استخراج بصمة الصورة
+            const fileUniqueId = photoObj.file_unique_id; 
             
-            // 🛡️ فحص بصمة الصورة لمنع الاحتيال
             if (usedReceipts.includes(fileUniqueId)) {
                 return ctx.reply('⚠️ **تحذير أمني:**\nتم اكتشاف أن هذا الإيصال تم استخدامه مسبقاً! يرجى إرسال إيصال جديد وعدم تكرار المحاولة لتجنب حظر حسابك نهائياً.', {parse_mode: 'Markdown'}).catch(()=>{});
             }
             
-            // تسجيل البصمة لمنع تكرارها لاحقاً
             usedReceipts.push(fileUniqueId);
             
             delete botStates.deposit[userId]; saveDatabase();
@@ -2388,7 +2441,6 @@ bot.on('photo', async (ctx) => {
             
             ctx.reply('✅ **تم استلام طلبك وإثبات الدفع!**\n⏳ جاري مراجعته من الإدارة وسيتم إضافة الرصيد لمحفظتك قريباً.', {parse_mode: 'Markdown'}).catch(()=>{});
             
-            // إرسال الإثبات للأدمن
             for (let tgId in usersDb) {
                 if (String(usersDb[tgId].uid) === '1001') {
                     bot.telegram.sendPhoto(tgId, fileId, {
@@ -2412,7 +2464,6 @@ export default async function handler(req, res) {
         return res.status(500).send('DB Error'); 
     }
 
-    // 🚀===== نظام استقبال رسائل فودافون كاش (الدفع الآلي) متساب من الكود القديم =====🚀
     if (req.body && req.body.secret === 'AHMED_VFCASH_100') {
         const smsText = req.body.message || '';
         if (smsText.includes('تم استلام') && smsText.includes('جنيه')) {
@@ -2442,7 +2493,6 @@ export default async function handler(req, res) {
         }
         return res.status(200).send('SMS Processed Successfully');
     }
-    // ==============================================================
 
     await bot.handleUpdate(req.body); 
 
