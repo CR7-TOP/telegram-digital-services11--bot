@@ -1617,7 +1617,7 @@ bot.action('confirm_stock_add', (ctx) => {
 
     delete botStates.tempStock[userId];
     saveDatabase();
-    logAdminAction(userId, `إضافة 1 عنصر למخزن المنتج ${srvId}`);
+    logAdminAction(userId, `إضافة 1 عنصر للمخزن المنتج ${srvId}`);
 
     ctx.editMessageText(`✅ تم حفظ العنصر بنجاح!\n📦 إجمالي المخزون الحالي للمنتج: ${localInventory[srvId].length}\n\n(يمكنك إرسال العنصر التالي مباشرة، أو اضغط "رجوع" للعودة)`, Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
 });
