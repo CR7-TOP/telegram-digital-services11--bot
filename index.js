@@ -58,7 +58,7 @@ function isAdmin(userId) {
     return (usersDb[idStr] && String(usersDb[idStr].uid) === '1001') || botStates.adminSession[idStr];
 }
 
-// دالة النشر في قناة إثباتات الثقة
+// 🆕 دالة النشر في قناة إثباتات الثقة (بالتنسيق الجديد والزر العميق)
 function broadcastSale(serviceName, qty, price, userUid, paymentMethod, srvId, botUsername) {
     if (!publicSalesChannel || publicSalesChannel === '') return;
     try {
@@ -584,8 +584,8 @@ async function processBuyAction(ctx, userId, srvId) {
      if (usersDb[userId].isBanned) return;
      
      if (cachedServices.length === 0) {
-         if (ctx.callbackQuery) await ctx.editMessageText('⏳ لحظات...').catch(()=>{});
-         else await ctx.reply('⏳ لحظات...').catch(()=>{});
+         if (ctx.callbackQuery) await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
+         else await ctx.reply('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
          await backgroundServiceUpdate();
      }
 
@@ -617,7 +617,8 @@ async function processBuyAction(ctx, userId, srvId) {
      }
 }
 
-bot.start((ctx) => {
+// 🛡️ تم التعديل لتكون async لمنع السيرفر من الإنغلاق
+bot.start(async (ctx) => {
   try {
     const userId = String(ctx.from.id); 
     initUser(userId); 
@@ -633,11 +634,11 @@ bot.start((ctx) => {
     }
 
     if (payload) {
-        // 🆕 استقبال الرابط العميق وبدء الشراء فوراً
+        // 🆕 استقبال الرابط العميق وبدء الشراء فوراً (تم حل التعليقة هنا)
         if (payload.startsWith('buy_')) {
             const srvId = payload.split('buy_')[1];
-            ctx.reply('أهلاً بك في متجر الخدمات الرقمية! 🚀\n🆔 رقم الحساب: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
-            return processBuyAction(ctx, userId, srvId);
+            await processBuyAction(ctx, userId, srvId); // 🛡️ تم إضافة await لمنع Crash
+            return; // 🛡️ يمنع إظهار رسالة الترحيب العادية لكي تظهر الخدمة فقط
         }
 
         if (payload.startsWith('ref_') && !usersDb[userId].referredBy && !usersDb[userId].source) {
@@ -1617,6 +1618,7 @@ bot.action(/^ord_det_(\d+)$/, (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
+// 🛡️ دالة الأقسام مع تقييد عدد الأزرار لحماية البوت من التعليق
 bot.action(/^cat_(\d+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1637,7 +1639,7 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
         return ctx.editMessageText('⚠️ يرجى تحديث الأقسام من القائمة الرئيسية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
     }
 
-    // 🛡️ تحديد أقصى عدد 90 خدمة لمنع تجاوز حدود التليجرام التي تسبب إغلاق البوت (Crash)
+    // 🛡️ تحديد أقصى عدد 90 خدمة لمنع تجاوز حدود التليجرام (سبب التعليق)
     const categoryServices = cachedServices.filter(s => {
       if (hiddenServices && hiddenServices.includes(String(s.id))) return false;
       let cat = getServiceCategory(s);
@@ -1700,14 +1702,14 @@ bot.action(/^rate_(\d+)_(.+)$/, (ctx) => {
     ctx.editMessageText(`✅ **شكراً لتقييمك الرائع!**\nتقييمك للخدمة: ${'⭐'.repeat(stars)}\nرأيك يهمنا ويساعد العملاء الآخرين.`, {parse_mode: 'Markdown'}).catch(()=>{});
 });
 
-// 🛡️ إصلاح التعليقة عند الضغط على خدمة للبدء في الشراء
+// 🛡️ إصلاح زر الشراء وإضافة Await
 bot.action(/^buyact_(.+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
      const userId = String(ctx.from.id);
-     initUser(userId); // 🛡️ تأمين قراءة بيانات العميل حتى لو تم رسترة السيرفر
+     initUser(userId); 
      const srvId = ctx.match[1];
-     await processBuyAction(ctx, userId, srvId); // 🛡️ إضافة Await لضمان عدم حدوث Crash صامت
+     await processBuyAction(ctx, userId, srvId); // 🛡️ حل مشكلة اختفاء البوت (Crash)
   } catch(err){
       console.error("Buy action error:", err);
   }
