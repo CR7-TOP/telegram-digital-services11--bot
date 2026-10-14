@@ -10,9 +10,9 @@ dotenv.config();
 // ⚠️ إعدادات عامة
 // ==========================================
 const USD_TO_EGP_RATE = 50; 
-const ADMIN_CHANNEL_ID = process.env.ADMIN_CHANNEL_ID || '-1004393113868'; // جروب النسخ الاحتياطي السري
-let publicSalesChannel = process.env.PUBLIC_SALES_CHANNEL || ''; // قناة إثباتات الثقة (Live Sales)
-let forceSubscribeChannel = ''; // 🆕 قناة الاشتراك الإجباري (Force Subscribe)
+const ADMIN_CHANNEL_ID = process.env.ADMIN_CHANNEL_ID || '-1004393113868'; 
+let publicSalesChannel = process.env.PUBLIC_SALES_CHANNEL || ''; 
+let forceSubscribeChannel = ''; 
 
 // ==========================================
 // 🛡️ إعدادات الاتصال بقاعدة بيانات MongoDB 
@@ -38,10 +38,13 @@ let localInventory = {};
 let adCampaigns = {}; 
 let hiddenServices = []; 
 let fixedPrices = {}; 
-let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; // رقم المحفظة (يتغير ديناميكياً)
-let abandonedCarts = {}; // لتخزين الطلبات المتروكة
-let usedReceipts = []; // نظام الحماية من الاحتيال (Anti-Fraud)
-let stockAlerts = {}; // إشعارات التوفر (Back-in-Stock)
+let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
+
+// 🆕 متغيرات الأنظمة الجديدة والسابقة
+let usedReceipts = []; 
+let stockAlerts = {}; 
+let dropGroupId = ''; // جروب أكواد الدروب
+let ratings = {}; // نظام التقييمات العلني
 
 let botStates = {
     deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "", buyQty: {}, ordersPage: {}, tempStock: {}, adminTempCats: {}, lastAdminCat: {}, lastAdminCatFixed: {}, transfer: {}
@@ -49,7 +52,7 @@ let botStates = {
 
 const userRequestLocks = {};
 
-// 🛡️ دالة التحقق من الأدمن (لسد الثغرات)
+// 🛡️ دالة التحقق من الأدمن 
 function isAdmin(userId) {
     const idStr = String(userId);
     return (usersDb[idStr] && String(usersDb[idStr].uid) === '1001') || botStates.adminSession[idStr];
@@ -104,11 +107,13 @@ async function loadDatabase() {
         hiddenServices = data.hiddenServices || [];
         fixedPrices = data.fixedPrices || {};
         if (data.vodafoneCashNumber) vodafoneCashNumber = data.vodafoneCashNumber;
-        abandonedCarts = data.abandonedCarts || {};
+        
         usedReceipts = data.usedReceipts || [];
         stockAlerts = data.stockAlerts || {};
+        ratings = data.ratings || {}; // 🆕 تحميل التقييمات
+        if (data.dropGroupId !== undefined) dropGroupId = data.dropGroupId;
         if (data.publicSalesChannel !== undefined) publicSalesChannel = data.publicSalesChannel; 
-        if (data.forceSubscribeChannel !== undefined) forceSubscribeChannel = data.forceSubscribeChannel; // 🆕 تحميل قناة الاشتراك الإجباري
+        if (data.forceSubscribeChannel !== undefined) forceSubscribeChannel = data.forceSubscribeChannel; 
         
         const loadedStates = data.botStates || {};
         botStates = {
@@ -133,7 +138,7 @@ async function loadDatabase() {
 
 function saveDatabase() {
     try {
-        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannel, forceSubscribeChannel }; // 🆕 حفظ قناة الاشتراك
+        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, usedReceipts, stockAlerts, publicSalesChannel, forceSubscribeChannel, ratings, dropGroupId }; 
         const savePromise = connectDB().then(() => {
             if (dbCollection) {
                 return dbCollection.updateOne({ _id: "main_data" }, { $set: data }, { upsert: true });
@@ -236,24 +241,11 @@ function checkAndSendDailyReport() {
 setInterval(() => {
     try {
         if (!ADMIN_CHANNEL_ID || ADMIN_CHANNEL_ID === '') return;
-        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, usedReceipts, stockAlerts, publicSalesChannel, forceSubscribeChannel }, null, 2); 
+        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, usedReceipts, stockAlerts, publicSalesChannel, forceSubscribeChannel, ratings, dropGroupId }, null, 2); 
         const buffer = Buffer.from(dbDump, 'utf-8');
         bot.telegram.sendDocument(ADMIN_CHANNEL_ID, { source: buffer, filename: `XProStore_Backup_${new Date().toISOString().split('T')[0]}.json` }, { caption: `📦 نسخة احتياطية تلقائية لقاعدة البيانات\n📅 التاريخ: ${new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}` }).catch(()=>{});
     } catch (e) { console.error("Backup Error:", e); }
 }, 24 * 60 * 60 * 1000);
-
-// 🛒 نظام تذكير الطلبات المتروكة
-setInterval(() => {
-    const now = Date.now();
-    for (let uid in abandonedCarts) {
-        if (now - abandonedCarts[uid].time > 2 * 60 * 60 * 1000) { 
-            bot.telegram.sendMessage(uid, `مرحباً بك مجدداً! 👋\n\nلاحظنا أنك كنت مهتماً بخدمة **${abandonedCarts[uid].srvName}** ولكنك لم تكمل طلبك.\n\n🎁 كمل شحن دلوقتي واطلب الخدمة وخد خصم 5% باستخدام كود: \`COMEBACK5\``, {parse_mode: 'Markdown'}).catch(()=>{});
-            delete abandonedCarts[uid];
-            if(!promoCodes['COMEBACK5']) promoCodes['COMEBACK5'] = { amount: 5, usedBy: [] };
-            saveDatabase();
-        }
-    }
-}, 15 * 60 * 1000);
 
 function initUser(userId) {
   try {
@@ -265,7 +257,7 @@ function initUser(userId) {
         isUnique = true;
         for (let tgId in usersDb) { if (String(usersDb[tgId].uid) === String(newUid)) { isUnique = false; break; } }
       }
-      usersDb[idStr] = { uid: newUid, balance: 0, orders: [], walletHistory: [], isBanned: false, totalSpent: 0, isVip: false, referrals: 0, referredBy: null, tempCategories: [], source: null, cart: [] }; 
+      usersDb[idStr] = { uid: newUid, balance: 0, orders: [], walletHistory: [], isBanned: false, totalSpent: 0, isVip: false, referrals: 0, referredBy: null, tempCategories: [], source: null }; 
       saveDatabase(); 
     } else {
         if (!usersDb[idStr].orders) usersDb[idStr].orders = [];
@@ -277,7 +269,7 @@ function initUser(userId) {
         if (usersDb[idStr].referredBy === undefined) usersDb[idStr].referredBy = null;
         if (!usersDb[idStr].tempCategories) usersDb[idStr].tempCategories = [];
         if (usersDb[idStr].source === undefined) usersDb[idStr].source = null;
-        if (!usersDb[idStr].cart) usersDb[idStr].cart = [];
+        if (usersDb[idStr].cart) delete usersDb[idStr].cart; // 🗑️ تنظيف السلة نهائياً
     }
   } catch(e) {}
 }
@@ -537,8 +529,10 @@ const categoryEmojis = {
 // 🛒 القائمة الرئيسية 
 function getMainMenu() {
   let keyboard = [
+    // 🌐 زر التطبيق المصغر (Web App)
+    [Markup.button.webApp('🌐 المتجر المصغر (Web App)', process.env.WEBAPP_URL || 'https://xprostore.com')],
     ['🛍 الخدمات', '🔍 بحث عن خدمة'],
-    ['🛒 سلة المشتريات', '🛒 طلباتي', '📜 سجل المحفظة'],
+    ['🛒 طلباتي', '📜 سجل المحفظة'],
     ['💰 حسابي', '💸 تحويل رصيد'],
     ['💳 شحن المحفظة (فودافون كاش)', '🎟 استخدام كود خصم'],
     ['🔗 دعوة الأصدقاء (اربح 2%)', '📞 الدعم الفني']
@@ -563,7 +557,6 @@ bot.use(async (ctx, next) => {
                 
                 const channelUrl = `https://t.me/${forceSubscribeChannel.replace('@', '')}`;
                 
-                // 🆕 أزرار مطابقة للصورة بالضبط
                 const keyboard = Markup.inlineKeyboard([
                     [Markup.button.url('⚙️ تعليمات بوت طلباتكم | تحديثات ↗️', channelUrl), Markup.button.callback('غير مشترك ❌', 'noop')],
                     [Markup.button.callback('تحقق من الاشتراك ✅', 'check_sub')]
@@ -751,31 +744,6 @@ bot.hears(/طلباتي/, (ctx) => {
 
         const { text, keyboard } = getOrdersPage(userId, 1);
         ctx.reply(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
-    } catch(e){}
-});
-
-bot.hears(/سلة المشتريات/, (ctx) => {
-    try {
-        const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
-        if (usersDb[userId].isBanned) return;
-        const cart = usersDb[userId].cart || [];
-        if (cart.length === 0) return ctx.reply('🛒 السلة الخاصة بك فارغة حالياً.').catch(()=>{});
-        
-        let msg = '🛒 **سلة المشتريات الخاصة بك:**\n\n';
-        let total = 0;
-        cart.forEach((item, index) => {
-            msg += `${index + 1}. ${item.name} (${item.qty}x)\n💰 السعر: ${parseFloat(item.price).toFixed(2)} EGP\n━━━━━━━━━━━━\n`;
-            total += parseFloat(item.price);
-        });
-        msg += `\n💵 **الإجمالي:** *${total.toFixed(2)} EGP*`;
-
-        ctx.reply(msg, {
-            parse_mode: 'Markdown',
-            ...Markup.inlineKeyboard([
-                [Markup.button.callback('✅ تأكيد ودفع (' + total.toFixed(2) + ' EGP)', 'checkout_cart')],
-                [Markup.button.callback('🗑️ إفراغ السلة', 'empty_cart')]
-            ])
-        }).catch(()=>{});
     } catch(e){}
 });
 
@@ -976,9 +944,12 @@ function showAdminPanel(ctx) {
                  `🔒 الاشتراك الإجباري: <code>${forceSubscribeChannel || 'غير مفعل'}</code>`;
 
     const keyboard = Markup.inlineKeyboard([
+        // 🆕 أزرار الأنظمة الجديدة
+        [Markup.button.callback('🔔 فحص وإرسال تذكيرات التجديد', 'admin_scan_renewals')],
+        [Markup.button.callback('🎁 إرسال كود دروب', 'admin_send_drop'), Markup.button.callback('⚙️ جروب الدروب', 'admin_set_drop_group')],
+        
         [Markup.button.callback('🔄 تحديث وسحب الخدمات يدوياً', 'admin_force_refresh')],
         [Markup.button.callback('📱 تغيير رقم الاستقبال', 'admin_change_wallet'), Markup.button.callback('📢 تعيين قناة المبيعات', 'admin_set_sales_channel')],
-        // 🆕 زر ضبط الاشتراك الإجباري
         [Markup.button.callback('🔒 ضبط الاشتراك الإجباري', 'admin_set_force_sub'), Markup.button.callback('💳 طلبات الشحن (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
@@ -1007,6 +978,52 @@ bot.action(/^approve_dep_|^reject_dep_/, (ctx, next) => {
     return next();
 });
 
+// 🆕 وظائف الإضافات الجديدة من لوحة الأدمن
+
+bot.action('admin_set_drop_group', (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_DROP_GROUP'; saveDatabase();
+    ctx.editMessageText(`⚙️ **تحديد جروب الدروبات:**\n\nالجروب الحالي: \`${dropGroupId || 'غير محدد'}\`\n\nأرسل ID الجروب العام الخاص بك (يجب أن يبدأ بـ -100):`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+});
+
+bot.action('admin_send_drop', (ctx) => {
+    if (!dropGroupId) return ctx.answerCbQuery('❌ يرجى تحديد ID الجروب أولاً من (جروب الدروب)!', {show_alert: true}).catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_DROP_AMOUNT'; saveDatabase();
+    ctx.editMessageText('🎁 **إرسال دروب سريع للجروب:**\n\nأرسل الآن المبلغ المراد توزيعه كهدية لأسرع عميل بالجنيه المصري (مثال: `50`):', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+});
+
+bot.action('admin_scan_renewals', async (ctx) => {
+    ctx.answerCbQuery('⏳ جاري فحص جميع الطلبات...').catch(()=>{});
+    let sentCount = 0;
+    const now = Date.now();
+    const twentySevenDays = 27 * 24 * 60 * 60 * 1000;
+    const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+    
+    for (let uid in usersDb) {
+        let user = usersDb[uid];
+        if (!user.orders) continue;
+        for (let i = 0; i < user.orders.length; i++) {
+            let order = user.orders[i];
+            // التحقق من وجود الطابع الزمني للطلب وأنه لم يتم إرسال تذكير مسبقاً
+            if (order.timestamp && !order.reminded) {
+                const diff = now - order.timestamp;
+                // إذا مرت 27 يوم وأقل من 30 يوم
+                if (diff >= twentySevenDays && diff < thirtyDays) {
+                    order.reminded = true;
+                    const safeName = order.name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    bot.telegram.sendMessage(uid, `⚠️ **تذكير تجديد اشتراك!**\n\nمرحباً، اشتراكك في الخدمة: **${safeName}** يوشك على الانتهاء.\n\nاضغط على الزر بالأسفل لتجديده الآن بضغطة واحدة وتجنب الانقطاع! 🚀`, {
+                        parse_mode: 'Markdown',
+                        ...Markup.inlineKeyboard([[Markup.button.callback('🛒 تجديد الاشتراك الفوري', `buyact_${order.srvId}`)]])
+                    }).catch(()=>{});
+                    sentCount++;
+                }
+            }
+        }
+    }
+    saveDatabase();
+    ctx.editMessageText(`✅ **تم الانتهاء من الفحص!**\n\nتم إرسال إشعارات التجديد التلقائية إلى **${sentCount}** عميل بنجاح.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+});
+
 bot.action('admin_change_wallet', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     botStates.adminInput[ctx.from.id] = 'WAIT_NEW_WALLET'; saveDatabase();
@@ -1019,7 +1036,6 @@ bot.action('admin_set_sales_channel', (ctx) => {
     ctx.editMessageText('📢 **تعيين قناة المبيعات الحية:**\n\nأرسل معرف القناة (ID)، يجب أن يبدأ بـ `-100` (مثال: `-1001234567890`)\n\n🛑 لإيقاف النشر الآلي تماماً أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
-// 🆕 زر الأكشن لضبط قناة الاشتراك الإجباري
 bot.action('admin_set_force_sub', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     botStates.adminInput[ctx.from.id] = 'WAIT_FORCE_SUB'; saveDatabase();
@@ -1223,6 +1239,7 @@ bot.action(/^setfixed_(.+)$/, (ctx) => {
     botStates.adminInput[ctx.from.id] = 'WAIT_SET_FIXED_' + ctx.match[1]; saveDatabase();
     ctx.editMessageText('💲 أرسل السعر الثابت الجديد للمنتج بالجنيه المصري (مثال: 150).\n\n🗑️ لإلغاء السعر الثابت والعودة لنظام النسبة المئوية، اكتب كلمة: `حذف`\n🔙 للإلغاء والرجوع، اكتب كلمة: `رجوع`', {parse_mode: 'Markdown'}).catch(()=>{});
 });
+
 
 bot.action('admin_ad_stats', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
@@ -1499,73 +1516,6 @@ bot.action(/^reject_dep_(.+)$/, (ctx) => {
     } catch(e) {}
 });
 
-bot.action('checkout_cart', async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    const userId = String(ctx.from.id);
-    const cart = usersDb[userId].cart || [];
-    if (cart.length === 0) return ctx.editMessageText('🛒 سلتك فارغة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 القائمة', 'main_menu')]])).catch(()=>{});
-
-    let total = cart.reduce((sum, item) => sum + parseFloat(item.price), 0);
-    if (usersDb[userId].balance < total) {
-        return ctx.reply(`❌ رصيدك غير كافٍ لإتمام شراء جميع العناصر في السلة.\nرصيدك: ${usersDb[userId].balance.toFixed(2)} EGP\nالمطلوب: ${total.toFixed(2)} EGP`).catch(()=>{});
-    }
-
-    usersDb[userId].balance -= total;
-    usersDb[userId].totalSpent += total;
-    saveDatabase();
-
-    await ctx.editMessageText('⏳ جاري تنفيذ طلبات السلة، يرجى الانتظار لحين الانتهاء...').catch(()=>{});
-
-    let successCount = 0;
-    for (let item of cart) {
-        if (cachedServices.length === 0) await backgroundServiceUpdate();
-        const srv = cachedServices.find(s => String(s.id) === String(item.srvId));
-        
-        if (!srv) {
-            usersDb[userId].balance += parseFloat(item.price);
-            usersDb[userId].totalSpent -= parseFloat(item.price);
-            ctx.reply(`❌ الخدمة ${item.name} غير متاحة حالياً. تم استرداد ${item.price} EGP لمحفظتك.`).catch(()=>{});
-            continue;
-        }
-
-        try {
-            const orderResponse = await placeOrderWithBestProvider(srv, item.qty);
-            let orderId = orderResponse.data?.order?.id || orderResponse.data?.id || Math.floor(10000 + Math.random() * 90000);
-            
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            let rawDetails = extractUsefulData(orderResponse.data?.order || orderResponse.data?.data || orderResponse.data);
-
-            const currentOrder = { name: `${item.name} (${item.qty}x)`, price: item.price, profit: item.profit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }), details: rawDetails || "تم التنفيذ" };
-            usersDb[userId].orders.push(currentOrder);
-            
-            const safeRawText = String(rawDetails).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            ctx.reply(`✅ <b>تم شراء ${item.name.replace(/</g, '&lt;').replace(/>/g, '&gt;')} بنجاح</b>\n📦 طلب #${orderId}\n\n${rawDetails ? `📋 البيانات:\n<code>${safeRawText}</code>` : ''}`, {parse_mode: 'HTML'}).catch(()=>{});
-            successCount++;
-            
-            notifyAdmin(`👑 <b>شراء من السلة:</b>\n🛍 ${item.name}\n👤 العميل: <code>${usersDb[userId].uid}</code>\n💰 المدفوع: ${item.price} EGP`);
-            
-            broadcastSale(item.name.replace(/</g, '&lt;').replace(/>/g, '&gt;'), item.qty, item.price, usersDb[userId].uid, 'رصيد المحفظة (السلة)');
-            
-        } catch (err) {
-            usersDb[userId].balance += parseFloat(item.price);
-            usersDb[userId].totalSpent -= parseFloat(item.price);
-            ctx.reply(`❌ فشل شراء ${item.name.replace(/</g, '&lt;').replace(/>/g, '&gt;')}. تم استرداد ${item.price} EGP.`).catch(()=>{});
-        }
-    }
-    
-    usersDb[userId].cart = [];
-    saveDatabase();
-
-    if (successCount > 0) {
-        setTimeout(() => {
-            ctx.reply('⭐ كيف تقيم جودة الخدمات التي اشتريتها للتو؟', Markup.inlineKeyboard([
-                [Markup.button.callback('⭐', 'rate_1'), Markup.button.callback('⭐⭐', 'rate_2'), Markup.button.callback('⭐⭐⭐', 'rate_3')],
-                [Markup.button.callback('⭐⭐⭐⭐', 'rate_4'), Markup.button.callback('⭐⭐⭐⭐⭐', 'rate_5')]
-            ])).catch(()=>{});
-        }, 3000);
-    }
-});
-
 bot.action(/^ord_pg_(\d+)$/, (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1646,9 +1596,16 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
         if (cleanName.length > 26) cleanName = cleanName.substring(0, 24) + '..';
         let price = calculateRetailPrice(srv, usersDb[userId], 1);
         
+        // 🆕 نظام التقييمات العلني
+        let ratingStr = '';
+        if (ratings[srv.id] && ratings[srv.id].count > 0) {
+            const avg = (ratings[srv.id].totalStars / ratings[srv.id].count).toFixed(1);
+            ratingStr = ` (⭐ ${avg})`;
+        }
+        
+        // 🛒 تم مسح زر السلة وبقاء الشراء المباشر فقط
         return [
-            Markup.button.callback(`🛒 سلة`, `cartadd_${srv.id}`),
-            Markup.button.callback(`${emoji} ${cleanName} - ${price} EGP`, `buyact_${srv.id}`)
+            Markup.button.callback(`🛒 ${emoji} ${cleanName}${ratingStr} - ${price} EGP`, `buyact_${srv.id}`)
         ];
     });
     buttons.push([Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]);
@@ -1675,14 +1632,25 @@ bot.action(/^notify_stock_(.+)$/, (ctx) => {
     } catch (e) {}
 });
 
-bot.action(/^(cartadd_|buyact_)(.+)$/, async (ctx) => {
+// 🆕 نظام حفظ التقييمات العلني
+bot.action(/^rate_(\d+)_(.+)$/, (ctx) => {
+    ctx.answerCbQuery('شكراً لتقييمك!').catch(()=>{});
+    const stars = parseInt(ctx.match[1]);
+    const srvId = ctx.match[2];
+    if (!ratings[srvId]) ratings[srvId] = { totalStars: 0, count: 0 };
+    ratings[srvId].totalStars += stars;
+    ratings[srvId].count += 1;
+    saveDatabase();
+    ctx.editMessageText(`✅ **شكراً لتقييمك الرائع!**\nتقييمك للخدمة: ${'⭐'.repeat(stars)}\nرأيك يهمنا ويساعد العملاء الآخرين.`, {parse_mode: 'Markdown'}).catch(()=>{});
+});
+
+bot.action(/^buyact_(.+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
      const userId = String(ctx.from.id); initUser(userId);
      if (usersDb[userId].isBanned) return;
      
-     const isCart = ctx.match[1] === 'cartadd_';
-     const srvId = ctx.match[2];
+     const srvId = ctx.match[1];
 
      if (cachedServices.length === 0) {
          await ctx.editMessageText('⏳ لحظات...').catch(()=>{});
@@ -1695,9 +1663,6 @@ bot.action(/^(cartadd_|buyact_)(.+)$/, async (ctx) => {
      const price = calculateRetailPrice(srv, usersDb[userId], 1);
      const srvName = srv.name_ar || srv.name || srv.title;
 
-     abandonedCarts[userId] = { time: Date.now(), srvName: srvName }; 
-     saveDatabase();
-
      const msg = await ctx.editMessageText(`⚠️ <b>إدخال الكمية المطلوبة:</b>\n\n🛍 <b>الخدمة:</b> ${srvName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}\n💰 السعر للقطعة: <b>${price} EGP</b>\n\n✍️ <b>من فضلك، أرسل الكمية المطلوبة الآن في رسالة (أرقام فقط):</b>`, 
         {
           parse_mode: 'HTML',
@@ -1706,22 +1671,10 @@ bot.action(/^(cartadd_|buyact_)(.+)$/, async (ctx) => {
      ).catch(e => { if (!e.message.includes('not modified')) console.error(e); });
 
      if (msg) {
-         botStates.buyQty[userId] = { srvId: String(srv.id), msgId: msg.message_id, isCart: isCart };
+         botStates.buyQty[userId] = { srvId: String(srv.id), msgId: msg.message_id };
          saveDatabase();
      }
   } catch(err){}
-});
-
-bot.action('empty_cart', (ctx) => {
-    ctx.answerCbQuery('تم إفراغ السلة').catch(()=>{});
-    const userId = String(ctx.from.id);
-    usersDb[userId].cart = []; saveDatabase();
-    ctx.editMessageText('🗑️ تم إفراغ سلة المشتريات بنجاح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 القائمة الرئيسية', 'main_menu')]])).catch(()=>{});
-});
-
-bot.action(/^rate_(\d+)$/, (ctx) => {
-    ctx.answerCbQuery('شكراً لتقييمك!').catch(()=>{});
-    ctx.editMessageText(`✅ **شكراً لتقييمك الرائع!**\nتقييمك: ${'⭐'.repeat(ctx.match[1])}`, {parse_mode: 'Markdown'}).catch(()=>{});
 });
 
 bot.action('confirm_stock_add', (ctx) => {
@@ -1800,7 +1753,7 @@ bot.on('text', async (ctx, next) => {
     if (usersDb[userId].isBanned) return;
     const text = ctx.message.text.trim();
 
-    const menuCommands = ['الخدمات', 'طلباتي', 'حسابي', 'سجل المحفظة', 'شحن المحفظة', 'استخدام كود', 'دعوة الأصدقاء', 'الدعم الفني', 'بحث', 'سلة المشتريات', 'تحويل رصيد'];
+    const menuCommands = ['الخدمات', 'طلباتي', 'حسابي', 'سجل المحفظة', 'شحن المحفظة', 'استخدام كود', 'دعوة الأصدقاء', 'الدعم الفني', 'بحث', 'تحويل رصيد'];
     if (menuCommands.some(cmd => text.includes(cmd))) {
         clearUserStates(userId);
         return next(); 
@@ -1831,10 +1784,10 @@ bot.on('text', async (ctx, next) => {
         }
     }
 
+    // 🛒 معالجة طلب الكمية (شراء مباشر فقط)
     if (botStates.buyQty && botStates.buyQty[userId]) {
         const srvId = botStates.buyQty[userId].srvId;
         const msgId = botStates.buyQty[userId].msgId;
-        const isCart = botStates.buyQty[userId].isCart;
         const qtyStr = text;
         
         if (!/^\d+$/.test(qtyStr) || parseInt(qtyStr) < 1) {
@@ -1872,12 +1825,6 @@ bot.on('text', async (ctx, next) => {
              const name = srv.name_ar || srv.name || srv.title;
              const safeName = name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-             if (isCart) {
-                 usersDb[userId].cart.push({ srvId: String(srv.id), name: `${name}`, price: retailPrice, qty: qty, profit: exactProfit });
-                 saveDatabase();
-                 return ctx.reply(`✅ تمت إضافة **${name}** (${qty}x) لسلة المشتريات بنجاح!`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🛒 عرض السلة', 'view_cart'), Markup.button.callback('🛍 متابعة التسوق', 'main_categories')]]) }).catch(()=>{});
-             }
-
              if (userBalance < retailPrice) {
                const diff = (retailPrice - userBalance).toFixed(2);
                return ctx.reply(`❌ <b>رصيدك غير كافٍ لإتمام الطلب!</b>\n\n💳 رصيدك الحالي: <b>${userBalance.toFixed(2)} EGP</b>\n💰 المبلغ المطلـوب: <b>${retailPrice.toFixed(2)} EGP</b>\n⚠️ متبقي عليك: <b>${diff} EGP</b> فقط لشراء الخدمة.\n\nاشحن الفرق الآن وتابع طلبك فوراً!`,
@@ -1912,7 +1859,8 @@ bot.on('text', async (ctx, next) => {
                  usersDb[userId].walletHistory.push({ type: `شراء محلي (${name})`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
                  
                  const safeDetails = deliveredItems.join('\n\n');
-                 usersDb[userId].orders.push({ name: `${name} (${qty}x)`, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }), details: safeDetails });
+                 // 🆕 تم إضافة Timestamp و srvId للطلب لتشغيل التذكير التلقائي
+                 usersDb[userId].orders.push({ name: `${name} (${qty}x)`, srvId: String(srv.id), timestamp: Date.now(), reminded: false, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }), details: safeDetails });
                  saveDatabase();
 
                  let deliveryMsg = `✅ <b>تم الشراء بنجاح (المخزن المحلي)</b>\n\n📦 <b>رقم الطلب:</b> #LOCAL-${Math.floor(1000 + Math.random() * 9000)}\n\n` +
@@ -1926,11 +1874,13 @@ bot.on('text', async (ctx, next) => {
                  }
 
                  notifyAdmin(`👑 <b>عملية بيع من المخزن المحلي:</b>\n🛍 ${safeName}\n💰 ${retailPrice} EGP\n📦 متبقي في المخزن: ${localInventory[String(srv.id)].length}`);
-                 
                  broadcastSale(safeName, qty, retailPrice, usersDb[userId].uid, 'رصيد المحفظة (تسليم فوري)');
                  
                  setTimeout(() => {
-                     ctx.reply('⭐ كيف تقيم جودة هذه الخدمة؟', Markup.inlineKeyboard([ [Markup.button.callback('⭐', 'rate_1'), Markup.button.callback('⭐⭐', 'rate_2'), Markup.button.callback('⭐⭐⭐', 'rate_3')], [Markup.button.callback('⭐⭐⭐⭐', 'rate_4'), Markup.button.callback('⭐⭐⭐⭐⭐', 'rate_5')] ])).catch(()=>{});
+                     ctx.reply('⭐ كيف تقيم جودة هذه الخدمة؟', Markup.inlineKeyboard([ 
+                        [Markup.button.callback('⭐', `rate_1_${srv.id}`), Markup.button.callback('⭐⭐', `rate_2_${srv.id}`), Markup.button.callback('⭐⭐⭐', `rate_3_${srv.id}`)], 
+                        [Markup.button.callback('⭐⭐⭐⭐', `rate_4_${srv.id}`), Markup.button.callback('⭐⭐⭐⭐⭐', `rate_5_${srv.id}`)] 
+                    ])).catch(()=>{});
                  }, 3000);
                  return; 
              }
@@ -1942,14 +1892,15 @@ bot.on('text', async (ctx, next) => {
                 const orderResponse = await placeOrderWithBestProvider(srv, qty);
 
                 usersDb[userId].totalSpent += retailPrice;
-                usersDb[userId].walletHistory.push({ type: `شراء (${name} - ${qty}x)`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+                usersDb[userId].walletHistory.push({ type: `شراء (${name} -${qty}x)`, amount: -retailPrice, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
 
                 if (!usersDb[userId].isVip && usersDb[userId].totalSpent >= 500) {
                     usersDb[userId].isVip = true;
                     bot.telegram.sendMessage(userId, '👑 **تهانينا!**\nتمت ترقية حسابك إلى **VIP** لتحقيقك مشتريات بـ 500 EGP. ستحصل على أسعار مخفضة تلقائياً!').catch(()=>{});
                 }
                 
-                const currentOrder = { name: `${name} (${qty}x)`, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }), details: "جاري المعالجة من المزود..." };
+                // 🆕 تم إضافة Timestamp و srvId
+                const currentOrder = { name: `${name} (${qty}x)`, srvId: String(srv.id), timestamp: Date.now(), reminded: false, price: retailPrice, profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }), details: "جاري المعالجة من المزود..." };
                 usersDb[userId].orders.push(currentOrder);
                 saveDatabase(); 
 
@@ -2006,7 +1957,10 @@ bot.on('text', async (ctx, next) => {
                 broadcastSale(safeName, qty, retailPrice, usersDb[userId].uid, 'رصيد المحفظة (الربط المباشر)');
                 
                 setTimeout(() => {
-                    ctx.reply('⭐ كيف تقيم جودة هذه الخدمة؟', Markup.inlineKeyboard([ [Markup.button.callback('⭐', 'rate_1'), Markup.button.callback('⭐⭐', 'rate_2'), Markup.button.callback('⭐⭐⭐', 'rate_3')], [Markup.button.callback('⭐⭐⭐⭐', 'rate_4'), Markup.button.callback('⭐⭐⭐⭐⭐', 'rate_5')] ])).catch(()=>{});
+                    ctx.reply('⭐ كيف تقيم جودة هذه الخدمة؟', Markup.inlineKeyboard([ 
+                        [Markup.button.callback('⭐', `rate_1_${srv.id}`), Markup.button.callback('⭐⭐', `rate_2_${srv.id}`), Markup.button.callback('⭐⭐⭐', `rate_3_${srv.id}`)], 
+                        [Markup.button.callback('⭐⭐⭐⭐', `rate_4_${srv.id}`), Markup.button.callback('⭐⭐⭐⭐⭐', `rate_5_${srv.id}`)] 
+                    ])).catch(()=>{});
                 }, 3000);
 
             } catch (error) {
@@ -2072,7 +2026,36 @@ bot.on('text', async (ctx, next) => {
             delete botStates.adminInput[userId];
         }
 
-        // 🆕 إعداد استقبال يوزرنيم القناة لزر الاشتراك الإجباري
+        // 🆕 إعداد استقبال الـ ID لجروب الدروبات
+        if (state === 'WAIT_DROP_GROUP') {
+            if (!text.startsWith('-100')) {
+                return ctx.reply('❌ معرف الجروب غير صحيح! يجب أن يبدأ بـ `-100`.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            }
+            dropGroupId = text.trim();
+            delete botStates.adminInput[userId]; saveDatabase();
+            logAdminAction(userId, `تحديد جروب الدروبات: ${dropGroupId}`);
+            return ctx.reply(`✅ **تم تعيين جروب الدروبات بنجاح!**\nالـ ID الجديد: \`${dropGroupId}\`\n\n⚠️ **تأكد أن البوت أدمن في الجروب ليتمكن من الإرسال.**`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+        }
+
+        // 🆕 إعداد وتوليد دروب جديد للجروب
+        if (state === 'WAIT_DROP_AMOUNT') {
+            const amt = parseFloat(text);
+            if (isNaN(amt) || amt <= 0) return ctx.reply('❌ المبلغ غير صحيح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+            
+            delete botStates.adminInput[userId]; 
+            const code = 'DROP-' + Math.floor(10000 + Math.random() * 90000);
+            vouchers[code] = { amount: amt, isUsed: false }; 
+            saveDatabase();
+            
+            try {
+                bot.telegram.sendMessage(dropGroupId, `🎉 **كود دروب سريع وصل!** 🎁\n\nأول شخص ينسخ هذا الكود ويرسله في بوت المتجر سيكسب رصيد **${amt} EGP** مجاناً!\n\nالكود: \`${code}\`\n\nيُستخدم في البوت من قسم (استخدام كود خصم).`, {parse_mode: 'Markdown'});
+                logAdminAction(userId, `إرسال كود دروب بـ ${amt} جنيه`);
+                return ctx.reply(`✅ **تم إرسال كود الدروب للجروب بنجاح!**\n\nالكود الذي تم إرساله: \`${code}\``, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            } catch (e) {
+                return ctx.reply('❌ فشل إرسال الدروب للجروب. تأكد من صحة الـ ID وأن البوت مشرف هناك.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+            }
+        }
+
         if (state === 'WAIT_FORCE_SUB') {
             if (text === 'إيقاف') {
                 forceSubscribeChannel = '';
@@ -2367,7 +2350,16 @@ bot.on('text', async (ctx, next) => {
         if (!cachedServices || cachedServices.length === 0) cachedServices = await fetchAllServices();
         const results = cachedServices.filter(s => (s.name_ar || s.name || s.title || '').toLowerCase().includes(query));
         if(results.length === 0) return ctx.reply('❌ لا توجد نتائج مطابقة.').catch(()=>{});
-        let buttons = results.slice(0, 15).map(srv => [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ' - ' + calculateRetailPrice(srv, usersDb[userId]) + ' EGP', `buyact_${srv.id}`)]);
+        
+        let buttons = results.slice(0, 15).map(srv => {
+            let ratingStr = '';
+            if (ratings[srv.id] && ratings[srv.id].count > 0) {
+                const avg = (ratings[srv.id].totalStars / ratings[srv.id].count).toFixed(1);
+                ratingStr = ` (⭐ ${avg})`;
+            }
+            return [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ratingStr + ' - ' + calculateRetailPrice(srv, usersDb[userId]) + ' EGP', `buyact_${srv.id}`)]
+        });
+        
         return ctx.reply('🔍 نتائج البحث:', Markup.inlineKeyboard(buttons)).catch(()=>{});
     }
 
