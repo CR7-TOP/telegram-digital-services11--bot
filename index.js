@@ -41,6 +41,7 @@ let fixedPrices = {};
 let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
 
 // 🆕 متغيرات الأنظمة الجديدة والسابقة
+let abandonedCarts = {}; // 🛡️ تم إرجاع المتغير لحل مشكلة الخطأ
 let usedReceipts = []; 
 let stockAlerts = {}; 
 let dropGroupId = ''; 
@@ -116,6 +117,7 @@ async function loadDatabase() {
         fixedPrices = data.fixedPrices || {};
         if (data.vodafoneCashNumber) vodafoneCashNumber = data.vodafoneCashNumber;
         
+        abandonedCarts = data.abandonedCarts || {}; // 🛡️ تم الإرجاع
         usedReceipts = data.usedReceipts || [];
         stockAlerts = data.stockAlerts || {};
         ratings = data.ratings || {}; 
@@ -146,7 +148,7 @@ async function loadDatabase() {
 
 function saveDatabase() {
     try {
-        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, usedReceipts, stockAlerts, publicSalesChannel, forceSubscribeChannel, ratings, dropGroupId }; 
+        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannel, forceSubscribeChannel, ratings, dropGroupId }; 
         const savePromise = connectDB().then(() => {
             if (dbCollection) {
                 return dbCollection.updateOne({ _id: "main_data" }, { $set: data }, { upsert: true });
@@ -248,7 +250,7 @@ function checkAndSendDailyReport() {
 setInterval(() => {
     try {
         if (!ADMIN_CHANNEL_ID || ADMIN_CHANNEL_ID === '') return;
-        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, usedReceipts, stockAlerts, publicSalesChannel, forceSubscribeChannel, ratings, dropGroupId }, null, 2); 
+        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannel, forceSubscribeChannel, ratings, dropGroupId }, null, 2); 
         const buffer = Buffer.from(dbDump, 'utf-8');
         bot.telegram.sendDocument(ADMIN_CHANNEL_ID, { source: buffer, filename: `XProStore_Backup_${new Date().toISOString().split('T')[0]}.json` }, { caption: `📦 نسخة احتياطية تلقائية لقاعدة البيانات\n📅 التاريخ: ${new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}` }).catch(()=>{});
     } catch (e) { console.error("Backup Error:", e); }
@@ -584,7 +586,6 @@ function safeHtml(text) {
     return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// 🛡️ دالة الشراء المشتركة المحمية والمزودة بطباعة الأخطاء
 async function processBuyAction(ctx, userId, srvId) {
     try {
          initUser(userId); 
@@ -1703,7 +1704,8 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
         let emoji = detectServiceEmoji(srvName);
         let cleanName = srvName;
         if (cleanName.length > 26) cleanName = cleanName.substring(0, 24) + '..';
-        let price = calculateRetailPrice(srv, usersDb[userId], 1);
+        let price = "0.00";
+        try { price = calculateRetailPrice(srv, usersDb[userId], 1); } catch(e){}
         
         let ratingStr = '';
         if (ratings[srv.id] && ratings[srv.id].count > 0) {
@@ -1834,7 +1836,6 @@ function extractUsefulData(obj) {
     return [...new Set(extracted)].join('\n');
 }
 
-// وظيفة نشر إعلان السعر في القناة
 async function publishPriceDrop(ctx, userId, state, fileId) {
     const srvIdStr = state.replace('WAIT_PD_IMG_', '');
     const lastUnderscore = srvIdStr.lastIndexOf('_');
