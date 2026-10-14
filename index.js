@@ -11,7 +11,9 @@ dotenv.config();
 // ==========================================
 const USD_TO_EGP_RATE = 50; 
 const ADMIN_CHANNEL_ID = process.env.ADMIN_CHANNEL_ID || '-1004393113868'; // جروب النسخ الاحتياطي السري
-const PUBLIC_SALES_CHANNEL = process.env.PUBLIC_SALES_CHANNEL || ''; // 🆕 قناة إثباتات الثقة (Live Sales)
+
+// 🆕 متغير قناة المبيعات (أصبح قابلاً للتعديل من البوت)
+let publicSalesChannel = process.env.PUBLIC_SALES_CHANNEL || ''; 
 
 // ==========================================
 // 🛡️ إعدادات الاتصال بقاعدة بيانات MongoDB 
@@ -56,13 +58,13 @@ function isAdmin(userId) {
     return (usersDb[idStr] && String(usersDb[idStr].uid) === '1001') || botStates.adminSession[idStr];
 }
 
-// 🆕 دالة النشر في قناة إثباتات الثقة
+// 🆕 دالة النشر في قناة إثباتات الثقة (تستخدم publicSalesChannel الديناميكي)
 function broadcastSale(serviceName, qty, price, userUid, paymentMethod) {
-    if (!PUBLIC_SALES_CHANNEL || PUBLIC_SALES_CHANNEL === '') return;
+    if (!publicSalesChannel || publicSalesChannel === '') return;
     try {
         const maskedUid = String(userUid).substring(0, 3) + '****';
         const msg = `🛒 <b>عملية شراء جديدة ناجحة!</b>\n\n🛍 <b>الخدمة:</b> ${serviceName}\n🔢 <b>الكمية:</b> ${qty}\n💰 <b>السعر:</b> ${price} EGP\n💳 <b>الدفع:</b> ${paymentMethod}\n👤 <b>العميل:</b> <code>${maskedUid}</code>\n⏰ <b>الوقت:</b> ${new Date().toLocaleTimeString('ar-EG', { timeZone: 'Africa/Cairo' })}`;
-        bot.telegram.sendMessage(PUBLIC_SALES_CHANNEL, msg, {parse_mode: 'HTML'}).catch(()=>{});
+        bot.telegram.sendMessage(publicSalesChannel, msg, {parse_mode: 'HTML'}).catch(()=>{});
     } catch(e) {}
 }
 
@@ -110,6 +112,7 @@ async function loadDatabase() {
         // 🆕 تحميل البيانات الجديدة
         usedReceipts = data.usedReceipts || [];
         stockAlerts = data.stockAlerts || {};
+        if (data.publicSalesChannel !== undefined) publicSalesChannel = data.publicSalesChannel; // استرجاع القناة
         
         const loadedStates = data.botStates || {};
         botStates = {
@@ -134,7 +137,7 @@ async function loadDatabase() {
 
 function saveDatabase() {
     try {
-        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, abandonedCarts, usedReceipts, stockAlerts }; // 🆕 حفظ البيانات الجديدة
+        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannel }; // 🆕 حفظ القناة
         const savePromise = connectDB().then(() => {
             if (dbCollection) {
                 return dbCollection.updateOne({ _id: "main_data" }, { $set: data }, { upsert: true });
@@ -237,7 +240,7 @@ function checkAndSendDailyReport() {
 setInterval(() => {
     try {
         if (!ADMIN_CHANNEL_ID || ADMIN_CHANNEL_ID === '') return;
-        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, usedReceipts, stockAlerts }, null, 2);
+        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, usedReceipts, stockAlerts, publicSalesChannel }, null, 2); // 🆕 إضافة القناة للنسخ الاحتياطي
         const buffer = Buffer.from(dbDump, 'utf-8');
         bot.telegram.sendDocument(ADMIN_CHANNEL_ID, { source: buffer, filename: `XProStore_Backup_${new Date().toISOString().split('T')[0]}.json` }, { caption: `📦 نسخة احتياطية تلقائية لقاعدة البيانات\n📅 التاريخ: ${new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}` }).catch(()=>{});
     } catch (e) { console.error("Backup Error:", e); }
@@ -912,6 +915,7 @@ function showAdminPanel(ctx) {
     }
     const maintStatus = maintenanceMode ? '🛠️ (مفعل - المتجر مغلق للصيانة)' : '✅ (متوقف - المتجر يعمل)';
 
+    // 🆕 عرض القناة الحالية للأدمن
     const text = `👑 <b>لوحة تحكم الأدمن</b>\n\n` +
                  `📊 <b>الإحصائيات المتقدمة:</b>\n` +
                  `👥 إجمالي العملاء: ${totalUsers}\n` +
@@ -921,11 +925,13 @@ function showAdminPanel(ctx) {
                  `📈 نسبة الربح العامة: ${globalMarkupPercent}%\n` +
                  `⚡ حالة الخصم المؤقت: ${flashStatus}\n` +
                  `🛑 وضع الصيانة: ${maintStatus}\n` +
-                 `📱 رقم الكاش: <code>${vodafoneCashNumber}</code>`;
+                 `📱 رقم الكاش: <code>${vodafoneCashNumber}</code>\n` +
+                 `📢 قناة المبيعات: <code>${publicSalesChannel || 'غير محددة'}</code>`;
 
     const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback('🔄 تحديث وسحب الخدمات يدوياً', 'admin_force_refresh')],
-        [Markup.button.callback('📱 تغيير رقم الاستقبال', 'admin_change_wallet')],
+        // 🆕 إضافة زر تعيين قناة المبيعات بجانب تغيير رقم الكاش
+        [Markup.button.callback('📱 تغيير رقم الاستقبال', 'admin_change_wallet'), Markup.button.callback('📢 تعيين قناة المبيعات', 'admin_set_sales_channel')],
         [Markup.button.callback('💳 طلبات الشحن المعلقة (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
@@ -960,6 +966,13 @@ bot.action('admin_change_wallet', (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     botStates.adminInput[ctx.from.id] = 'WAIT_NEW_WALLET'; saveDatabase();
     ctx.editMessageText('📱 **تغيير رقم الاستقبال:**\n\nأرسل الرقم الجديد لمحفظة فودافون كاش الخاص بك:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+});
+
+// 🆕 زر ضبط قناة المبيعات
+bot.action('admin_set_sales_channel', (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    botStates.adminInput[ctx.from.id] = 'WAIT_SALES_CHANNEL'; saveDatabase();
+    ctx.editMessageText('📢 **تعيين قناة المبيعات الحية:**\n\nأرسل معرف القناة (ID)، يجب أن يبدأ بـ `-100` (مثال: `-1001234567890`)\n\n🛑 لإيقاف النشر الآلي تماماً أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_force_refresh', async (ctx) => {
@@ -2017,6 +2030,27 @@ bot.on('text', async (ctx, next) => {
 
         if (!state.startsWith('WAIT_ADD_STOCK_') && !state.startsWith('WAIT_BROADCAST')) {
             delete botStates.adminInput[userId];
+        }
+
+        // 🆕 إعداد استقبال الـ ID لزر قناة المبيعات
+        if (state === 'WAIT_SALES_CHANNEL') {
+            if (text === 'إيقاف') {
+                publicSalesChannel = '';
+                delete botStates.adminInput[userId];
+                saveDatabase();
+                logAdminAction(userId, 'إيقاف النشر التلقائي في قناة المبيعات');
+                return ctx.reply('✅ تم إيقاف النشر التلقائي في قناة المبيعات.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            }
+            
+            if (!text.startsWith('-100')) {
+                 return ctx.reply('❌ معرف القناة (ID) غير صحيح!\nيجب أن يبدأ المعرف بـ `-100`. تأكد من الرقم وأرسله مجدداً:', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            }
+            
+            publicSalesChannel = text.trim();
+            delete botStates.adminInput[userId];
+            saveDatabase();
+            logAdminAction(userId, `تعيين قناة مبيعات جديدة: ${publicSalesChannel}`);
+            return ctx.reply(`✅ **تم تعيين قناة المبيعات بنجاح!**\nالـ ID الجديد: \`${publicSalesChannel}\`\n\n⚠️ **تنبيه هام:** لا تنسَ إضافة البوت كأدمن في هذه القناة وإعطائه صلاحية إرسال الرسائل.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_CHARGE_USER') {
