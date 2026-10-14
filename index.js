@@ -41,7 +41,7 @@ let fixedPrices = {};
 let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
 
 // 🆕 متغيرات الأنظمة الجديدة والسابقة
-let abandonedCarts = {}; // 🛡️ تم إرجاع المتغير لحل مشكلة الخطأ
+let abandonedCarts = {}; 
 let usedReceipts = []; 
 let stockAlerts = {}; 
 let dropGroupId = ''; 
@@ -117,7 +117,7 @@ async function loadDatabase() {
         fixedPrices = data.fixedPrices || {};
         if (data.vodafoneCashNumber) vodafoneCashNumber = data.vodafoneCashNumber;
         
-        abandonedCarts = data.abandonedCarts || {}; // 🛡️ تم الإرجاع
+        abandonedCarts = data.abandonedCarts || {}; 
         usedReceipts = data.usedReceipts || [];
         stockAlerts = data.stockAlerts || {};
         ratings = data.ratings || {}; 
@@ -179,6 +179,17 @@ process.on('unhandledRejection', (reason, promise) => { console.error(reason); }
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
+
+// ==========================================
+// 🛡️ حماية البوت من الرد في الجروبات والقنوات
+// ==========================================
+bot.use(async (ctx, next) => {
+    // تجاهل أي رسالة تأتي من جروب أو قناة (البوت يعمل في الشات الخاص فقط)
+    if (ctx.chat && ctx.chat.type !== 'private') {
+        return; 
+    }
+    return await next();
+});
 
 const categoryCacheTime = 300000; 
 let lastCategoriesFetchTime = 0;
@@ -574,9 +585,7 @@ bot.use(async (ctx, next) => {
                     return;
                 }
             }
-        } catch (e) {
-            console.log("Force sub check error: ", e.message);
-        }
+        } catch (e) {}
     }
     
     return await next(); 
@@ -633,7 +642,6 @@ async function processBuyAction(ctx, userId, srvId) {
              saveDatabase();
          }
     } catch(err) {
-        console.error("processBuyAction Error: ", err);
         let errMsg = err.message || "مجهول";
         if (ctx.callbackQuery) {
              await ctx.editMessageText("❌ حدث خطأ داخلي: " + errMsg).catch(()=>{});
@@ -947,7 +955,6 @@ async function showCategories(ctx) {
     }
 
   } catch (error) {
-    console.error("showCategories Error:", error);
     const errMsg = '❌ حدث خطأ مؤقت أثناء جلب الأقسام، يرجى المحاولة مجدداً.';
     const retryBtn = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
     if(ctx.callbackQuery) {
