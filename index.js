@@ -51,10 +51,10 @@ let botStates = {
 
 const userRequestLocks = {};
 
-// 🛡️ دالة التحقق من الأدمن (لسد الثغرات)
+// 🛡️ دالة التحقق من الأدمن (معتمدة فقط على الجلسة النشطة بعد تسجيل الدخول بالإيميل والباسورد)
 function isAdmin(userId) {
     const idStr = String(userId);
-    return (usersDb[idStr] && String(usersDb[idStr].uid) === '1001') || botStates.adminSession[idStr];
+    return !!botStates.adminSession[idStr];
 }
 
 async function connectDB() {
@@ -580,19 +580,16 @@ bot.start((ctx) => {
   }
 });
 
-// 👑 تسجيل دخول الأدمن عبر Ahmed/ (طلب البريد ثم كلمة المرور)
+// 👑 تسجيل دخول الأدمن عبر Ahmed/ (طلب البريد ثم كلمة المرور لكل المستخدمين)
 bot.hears('Ahmed/', (ctx) => {
     const userId = String(ctx.from.id);
     initUser(userId);
-    if (String(usersDb[userId].uid) === '1001' || isAdmin(userId)) {
-        botStates.adminSession[userId] = true;
-        saveDatabase();
-        showAdminPanel(ctx);
-    } else {
-        botStates.adminLogin[userId] = { step: 'WAIT_EMAIL' };
-        saveDatabase();
-        ctx.reply('🔐 **تسجيل دخول الإدارة:**\n\nأرسل بريد الأدمن (Email):').catch(()=>{});
+    if (isAdmin(userId)) {
+        return showAdminPanel(ctx);
     }
+    botStates.adminLogin[userId] = { step: 'WAIT_EMAIL' };
+    saveDatabase();
+    ctx.reply('🔐 **تسجيل دخول الإدارة:**\n\nأرسل بريد الأدمن (Email):').catch(()=>{});
 });
 
 function calculateRetailPrice(service, user, quantity = 1) {
@@ -697,9 +694,9 @@ function getOrdersPage(userId, page) {
     if (currentPage > 1) {
         paginationRow.push(Markup.button.callback('▶️ السابق', `ord_pg_${currentPage - 1}`));
     }
-    paginationRow.push(Markup.button.callback(`صفحة ${currentPage} من ${totalPages}`, 'noop'));
+    paginationRow.push(Markup.button.callback(`صفحة {currentPage} من {totalPages}`, 'noop'));
     if (currentPage < totalPages) {
-        paginationRow.push(Markup.button.callback('التالي ◀️', `ord_pg_${currentPage + 1}`));
+        paginationRow.push(Markup.button.callback('التالي ◀️', `ord_pg_{currentPage + 1}`));
     }
 
     if (totalPages > 1) buttons.push(paginationRow);
@@ -910,7 +907,7 @@ function showAdminPanel(ctx) {
                  `📈 نسبة الربح العامة: ${globalMarkupPercent}%\n` +
                  `⚡ حالة الخصم المؤقت: ${flashStatus}\n` +
                  `🛑 وضع الصيانة: ${maintStatus}\n` +
-                 `📱 رقم الكاش: <code>${vodafoneCashNumber}</code>\n📢 قناة الإثباتات: ${publicSalesChannelId ? '✅ مفعلة' : '❌ غير مفعلة'}\n\n`;
+                 `📱 رقم الكاش: <code>{vodafoneCashNumber}</code>\n📢 قناة الإثباتات: ${publicSalesChannelId ? '✅ مفعلة' : '❌ غير مفعلة'}\n\n`;
 
     const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback('🔄 تحديث وسحب الخدمات يدوياً', 'admin_force_refresh')],
@@ -1031,11 +1028,11 @@ bot.action(/^admin_hcat_(\d+)$/, async (ctx) => {
             const prefix = isHidden ? '🔴 مخفي: ' : '🟢 ظاهر: ';
             let btnText = prefix + (srv.name_ar || srv.name || srv.title);
             if (btnText.length > 40) btnText = btnText.substring(0, 38) + '..'; 
-            return [Markup.button.callback(btnText, `thide_${srv.id}`)];
+            return [Markup.button.callback(btnText, `thide_{srv.id}`)];
         });
         buttons.push([Markup.button.callback('🔙 رجوع لأقسام الإخفاء', 'admin_hide_cats')]);
 
-        ctx.editMessageText(`👁️ خدمات قسم <b>${selectedCategory}</b>:\n\nاضغط على أي خدمة لتغيير حالتها (ظاهر/مخفي):`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+        ctx.editMessageText(`👁️ خدمات قسم <b>{selectedCategory}</b>:\n\nاضغط على أي خدمة لتغيير حالتها (ظاهر/مخفي):`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
     } catch(e) {}
 });
 
@@ -1065,11 +1062,11 @@ bot.action(/^thide_(.+)$/, async (ctx) => {
                 const prefix = isHidden ? '🔴 مخفي: ' : '🟢 ظاهر: ';
                 let btnText = prefix + (srv.name_ar || srv.name || srv.title);
                 if (btnText.length > 40) btnText = btnText.substring(0, 38) + '..';
-                return [Markup.button.callback(btnText, `thide_${srv.id}`)];
+                return [Markup.button.callback(btnText, `thide_{srv.id}`)];
             });
             buttons.push([Markup.button.callback('🔙 رجوع لأقسام الإخفاء', 'admin_hide_cats')]);
 
-            ctx.editMessageText(`👁️ خدمات قسم <b>${selectedCategory}</b>:\n\nاضغط على أي خدمة لتغيير حالتها (ظاهر/مخفي):`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+            ctx.editMessageText(`👁️ خدمات قسم <b>{selectedCategory}</b>:\n\nاضغط على أي خدمة لتغيير حالتها (ظاهر/مخفي):`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
         }
     } catch(e) {}
 });
@@ -1136,14 +1133,14 @@ bot.action(/^admin_fcat_(\d+)$/, async (ctx) => {
 
         let buttons = categoryServices.map(srv => {
             const fp = fixedPrices[String(srv.id)];
-            const prefix = fp ? `[${fp}ج] ` : '⏳ ';
+            const prefix = fp ? `[{fp}ج] ` : '⏳ ';
             let btnText = prefix + (srv.name_ar || srv.name || srv.title);
             if (btnText.length > 40) btnText = btnText.substring(0, 38) + '..'; 
-            return [Markup.button.callback(btnText, `setfixed_${srv.id}`)];
+            return [Markup.button.callback(btnText, `setfixed_{srv.id}`)];
         });
         buttons.push([Markup.button.callback('🔙 رجوع لأقسام الأسعار', 'admin_fixed_price')]);
 
-        ctx.editMessageText(`💲 خدمات قسم <b>${selectedCategory}</b>:\n\nاضغط على أي خدمة لتحديد سعر ثابت لها (سيتجاهل نسبة الربح):`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+        ctx.editMessageText(`💲 خدمات قسم <b>{selectedCategory}</b>:\n\nاضغط على أي خدمة لتحديد سعر ثابت لها (سيتجاهل نسبة الربح):`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
     } catch(e) {}
 });
 
@@ -1161,7 +1158,7 @@ bot.action('admin_ad_stats', (ctx) => {
             msg += 'لا توجد بيانات أو حملات حتى الآن.';
         } else {
             for (let camp in adCampaigns) {
-                msg += `🔹 إعلان (${camp}): دخول ${adCampaigns[camp]} عميل جديد\n`;
+                msg += `🔹 إعلان ({camp}): دخول {adCampaigns[camp]} عميل جديد\n`;
             }
         }
         ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
@@ -1194,7 +1191,7 @@ bot.action('admin_profit_report', (ctx) => {
                 });
             }
         }
-        const msg = `💸 **تقرير أرباح المتجر:**\n\n📅 **أرباح اليوم:** *${todayProfit.toFixed(2)} EGP*\n📆 **أرباح أمس:** *${yesterdayProfit.toFixed(2)} EGP*\n📈 **إجمالي الأرباح الكلية:** *${totalProfit.toFixed(2)} EGP*\n\n*(ملاحظة: الأرباح القديمة محسوبة بشكل تقديري، أما أرباح الطلبات الجديدة يتم حسابها بدقة 100%).*`;
+        const msg = `💸 **تقرير أرباح المتجر:**\n\n📅 **أرباح اليوم:** *{todayProfit.toFixed(2)} EGP*\n📆 **أرباح أمس:** *{yesterdayProfit.toFixed(2)} EGP*\n📈 **إجمالي الأرباح الكلية:** *{totalProfit.toFixed(2)} EGP*\n\n*(ملاحظة: الأرباح القديمة محسوبة بشكل تقديري، أما أرباح الطلبات الجديدة يتم حسابها بدقة 100%).*`;
         ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch (e) { console.error(e); }
 });
@@ -1229,8 +1226,8 @@ bot.action('admin_pending_deposits', (ctx) => {
         let msg = '💳 **طلبات الشحن المعلقة (' + pendingDeposits.length + '):**\n\n';
         let inlineButtons = [];
         pendingDeposits.forEach((req, idx) => {
-            msg += `👤 ID: <code>${req.userUid}</code>\n💰 المبلغ: <b>${req.amount} EGP</b>\n📸 <b>(الإثبات مرفق)</b>\n━━━━━━━━━━━━\n`;
-            inlineButtons.push([ Markup.button.callback('✅ موافقة (' + req.amount + 'ج)', `approve_dep_${req.userId}_${req.amount}`), Markup.button.callback('❌ رفض', `reject_dep_${req.userId}`) ]);
+            msg += `👤 ID: <code>{req.userUid}</code>\n💰 المبلغ: <b>{req.amount} EGP</b>\n📸 <b>(الإثبات مرفق)</b>\n━━━━━━━━━━━━\n`;
+            inlineButtons.push([ Markup.button.callback('✅ موافقة (' + req.amount + 'ج)', `approve_dep_{req.userId}_{req.amount}`), Markup.button.callback('❌ رفض', `reject_dep_{req.userId}`) ]);
         });
         inlineButtons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
         ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(inlineButtons) }).catch(()=>{});
@@ -1242,18 +1239,18 @@ bot.action('admin_check_api_balance', async (ctx) => {
     try {
         ctx.editMessageText('⏳ جاري الاتصال بالمزودين...').catch(()=>{});
         let msg = '💰 **أرصدة المزودين:**\n\n';
-        try { const res1 = await apiClient1.get('/me/wallet'); msg += `🔹 المزود الأول: *${parseFloat(res1.data?.data?.balance || res1.data?.balance || 0).toFixed(2)} EGP*\n`; } 
-        catch(e) { msg += `🔹 المزود الأول: خطأ ❌ (${e.response?.status || e.message})\n`; }
+        try { const res1 = await apiClient1.get('/me/wallet'); msg += `🔹 المزود الأول: *{parseFloat(res1.data?.data?.balance || res1.data?.balance || 0).toFixed(2)} EGP*\n`; } 
+        catch(e) { msg += `🔹 المزود الأول: خطأ ❌ ({e.response?.status || e.message})\n`; }
         
-        try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود الثاني: *$${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}*\n`; } 
-        catch(e) { msg += `🔹 المزود الثاني: خطأ ❌ (${e.response?.status || e.message})\n`; }
+        try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود الثاني: *${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}*\n`; } 
+        catch(e) { msg += `🔹 المزود الثاني: خطأ ❌ ({e.response?.status || e.message})\n`; }
         
-        try { const res3 = await apiClient3.get('/me/wallet'); msg += `🔹 المزود الثالث (Dantehub): *${parseFloat(res3.data?.data?.balance || res3.data?.balance || 0).toFixed(2)}*\n`; } 
+        try { const res3 = await apiClient3.get('/me/wallet'); msg += `🔹 المزود الثالث (Dantehub): *{parseFloat(res3.data?.data?.balance || res3.data?.balance || 0).toFixed(2)}*\n`; } 
         catch(e) { 
             try {
-                const res3b = await apiClient3.get('/balance'); msg += `🔹 المزود الثالث (Dantehub): *${parseFloat(res3b.data?.data?.balance || res3b.data?.balance || 0).toFixed(2)}*\n`;
+                const res3b = await apiClient3.get('/balance'); msg += `🔹 المزود الثالث (Dantehub): *{parseFloat(res3b.data?.data?.balance || res3b.data?.balance || 0).toFixed(2)}*\n`;
             } catch(err) {
-                msg += `🔹 المزود الثالث (Dantehub): خطأ ❌ (${err.response?.status || err.message})\n`; 
+                msg += `🔹 المزود الثالث (Dantehub): خطأ ❌ ({err.response?.status || err.message})\n`; 
             }
         }
         ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
@@ -1266,18 +1263,18 @@ bot.action('admin_check_api_status', async (ctx) => {
         ctx.editMessageText('⏳ جاري فحص استجابة سيرفرات المزودين...').catch(()=>{});
         let msg = '🟢 **حالة سيرفرات المزودين (API):**\n\n';
         
-        try { const start1 = Date.now(); await apiClient1.get('/services?limit=1'); msg += `🔹 المزود الأول: يعمل ✅ (${Date.now() - start1}ms)\n`; } 
-        catch(e) { msg += `🔹 المزود الأول: متعطل ❌ (الخطأ: ${e.response?.status || e.message})\n`; }
+        try { const start1 = Date.now(); await apiClient1.get('/services?limit=1'); msg += `🔹 المزود الأول: يعمل ✅ ({Date.now() - start1}ms)\n`; } 
+        catch(e) { msg += `🔹 المزود الأول: متعطل ❌ (الخطأ: {e.response?.status || e.message})\n`; }
         
-        try { const start2 = Date.now(); await apiClient2.get('/products'); msg += `🔹 المزود الثاني: يعمل ✅ (${Date.now() - start2}ms)\n`; } 
-        catch(e) { msg += `🔹 المزود الثاني: متعطل ❌ (الخطأ: ${e.response?.status || e.message})\n`; }
+        try { const start2 = Date.now(); await apiClient2.get('/products'); msg += `🔹 المزود الثاني: يعمل ✅ ({Date.now() - start2}ms)\n`; } 
+        catch(e) { msg += `🔹 المزود الثاني: متعطل ❌ (الخطأ: {e.response?.status || e.message})\n`; }
         
-        try { const start3 = Date.now(); await apiClient3.get('/services?limit=1'); msg += `🔹 المزود الثالث: يعمل ✅ (${Date.now() - start3}ms)\n`; } 
+        try { const start3 = Date.now(); await apiClient3.get('/services?limit=1'); msg += `🔹 المزود الثالث: يعمل ✅ ({Date.now() - start3}ms)\n`; } 
         catch(e) { 
             try {
-                const start3b = Date.now(); await apiClient3.get('/products'); msg += `🔹 المزود الثالث: يعمل ✅ (${Date.now() - start3b}ms)\n`; 
+                const start3b = Date.now(); await apiClient3.get('/products'); msg += `🔹 المزود الثالث: يعمل ✅ ({Date.now() - start3b}ms)\n`; 
             } catch (err) {
-                msg += `🔹 المزود الثالث: متعطل ❌ (الخطأ: ${err.response?.status || err.message})\n`; 
+                msg += `🔹 المزود الثالث: متعطل ❌ (الخطأ: {err.response?.status || err.message})\n`; 
             }
         }
         
@@ -1398,7 +1395,7 @@ bot.action(/^approve_dep_(.+)_(.+)$/, (ctx) => {
                 
                 bot.telegram.sendMessage(targetUserId, `🎉 **تم تأكيد الدفع بنجاح!**\n💰 تمت إضافة: *{amount} EGP* لمحفظتك.\n✅ رصيدك الحالي: *{usersDb[targetUserId].balance.toFixed(2)} EGP*`, { parse_mode: 'Markdown' }).catch(()=>{});
                 
-                ctx.editMessageText(`✅ **تمت الموافقة بنجاح!**\n\nتم شحن ${amount} EGP للعميل (ID: ${usersDb[targetUserId].uid})`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) }).catch(()=>{});
+                ctx.editMessageText(`✅ **تمت الموافقة بنجاح!**\n\nتم شحن ${amount} EGP للعميل (ID: {usersDb[targetUserId].uid})`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) }).catch(()=>{});
             } else {
                 ctx.editMessageText('❌ العميل غير موجود.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
             }
@@ -1421,7 +1418,7 @@ bot.action(/^reject_dep_(.+)$/, (ctx) => {
             
             bot.telegram.sendMessage(targetUserId, `❌ **تم رفض طلب الشحن الخاص بك.**\n\nيرجى التأكد من إرفاق إثبات الدفع الصحيح والتواصل مع الدعم الفني إذا كانت هناك مشكلة.`, { parse_mode: 'Markdown' }).catch(()=>{});
             
-            ctx.editMessageText(`❌ **تم رفض الطلب.**\n\nتم إلغاء شحن ${reqData.amount} EGP للعميل.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) }).catch(()=>{});
+            ctx.editMessageText(`❌ **تم رفض الطلب.**\n\nتم إلغاء شحن {reqData.amount} EGP للعميل.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) }).catch(()=>{});
         } else {
             ctx.editMessageText('❌ هذا الطلب غير موجود.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
         }
@@ -1449,9 +1446,9 @@ bot.action(/^ord_det_(\d+)$/, (ctx) => {
 
         const safeName = order.name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
         let detailsText = `📦 <b>تفاصيل الطلب:</b>\n\n` +
-                          `🛍 <b>الخدمة:</b> ${safeName}\n` +
-                          `💰 <b>السعر:</b> ${parseFloat(order.price).toFixed(2)} EGP\n` +
-                          `🕒 <b>التاريخ:</b> ${order.date}\n` +
+                          `🛍 <b>الخدمة:</b> {safeName}\n` +
+                          `💰 <b>السعر:</b> {parseFloat(order.price).toFixed(2)} EGP\n` +
+                          `🕒 <b>التاريخ:</b> {order.date}\n` +
                           `🟢 <b>الحالة:</b> مكتمل\n\n`;
 
         if (order.details && order.details.trim() !== '') {
@@ -1509,8 +1506,8 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
         let price = calculateRetailPrice(srv, usersDb[userId], 1);
         
         return [
-            Markup.button.callback(`🎁 كهدية`, `giftact_${srv.id}`),
-            Markup.button.callback(`${emoji} {cleanName} -{price} EGP`, `buyact_${srv.id}`)
+            Markup.button.callback(`🎁 كهدية`, `giftact_{srv.id}`),
+            Markup.button.callback(`{emoji} {cleanName} -{price} EGP`, `buyact_{srv.id}`)
         ];
     });
     buttons.push([Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]);
@@ -1557,7 +1554,7 @@ bot.action(/^(giftact_|buyact_)(.+)$/, async (ctx) => {
      
      if (!isApi && !hasLocalStock) {
          return ctx.editMessageText(`⚠️ الخدمة غير متوفرة في المخزن حالياً.\nاضغط على الزر بالأسفل لنقوم بتنبيهك فور توفرها.`, Markup.inlineKeyboard([
-             [Markup.button.callback('🔔 أعلمني عند التوفر', `alertstock_${srv.id}`)],
+             [Markup.button.callback('🔔 أعلمني عند التوفر', `alertstock_{srv.id}`)],
              [Markup.button.callback('🔙 رجوع', 'main_categories')]
          ])).catch(()=>{});
      }
@@ -1600,7 +1597,7 @@ bot.action('confirm_stock_add', (ctx) => {
     if (restockAlerts[srvId] && restockAlerts[srvId].length > 0) {
         let srvName = cachedServices.find(s => String(s.id) === String(srvId))?.name || "الخدمة المطلوبة";
         restockAlerts[srvId].forEach(uid => {
-            bot.telegram.sendMessage(uid, `🔔 **خبر سعيد!**\nالخدمة التي كنت تنتظرها (${srvName}) توفرت الآن في المخزن. الحق اشتريها قبل النفاذ!`, {parse_mode: 'Markdown'}).catch(()=>{});
+            bot.telegram.sendMessage(uid, `🔔 **خبر سعيد!**\nالخدمة التي كنت تنتظرها ({srvName}) توفرت الآن في المخزن. الحق اشتريها قبل النفاذ!`, {parse_mode: 'Markdown'}).catch(()=>{});
         });
         delete restockAlerts[srvId];
     }
