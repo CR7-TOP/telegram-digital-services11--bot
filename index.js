@@ -58,7 +58,7 @@ function isAdmin(userId) {
     return (usersDb[idStr] && String(usersDb[idStr].uid) === '1001') || botStates.adminSession[idStr];
 }
 
-// 🆕 دالة النشر في قناة إثباتات الثقة (بالتنسيق الجديد والزر العميق)
+// دالة النشر في قناة إثباتات الثقة
 function broadcastSale(serviceName, qty, price, userUid, paymentMethod, srvId, botUsername) {
     if (!publicSalesChannel || publicSalesChannel === '') return;
     try {
@@ -536,7 +536,6 @@ const categoryEmojis = {
 // 🛒 القائمة الرئيسية 
 function getMainMenu() {
   let keyboard = [
-    // 🗑️ تم مسح المتجر المصغر بناءً على طلبك
     ['🛍 الخدمات', '🔍 بحث عن خدمة'],
     ['🛒 طلباتي', '📜 سجل المحفظة'],
     ['💰 حسابي', '💸 تحويل رصيد'],
@@ -559,9 +558,7 @@ bot.use(async (ctx, next) => {
             const member = await ctx.telegram.getChatMember(forceSubscribeChannel, userId);
             if (!['member', 'administrator', 'creator'].includes(member.status)) {
                 const subMsg = '⚠️ <b>عذراً، يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدامه.</b>\n\nاشترك الآن ثم اضغط على "تحقق من الاشتراك ✅"';
-                
                 const channelUrl = `https://t.me/${forceSubscribeChannel.replace('@', '')}`;
-                
                 const keyboard = Markup.inlineKeyboard([
                     [Markup.button.url('⚙️ تعليمات بوت طلباتكم | تحديثات ↗️', channelUrl), Markup.button.callback('غير مشترك ❌', 'noop')],
                     [Markup.button.callback('تحقق من الاشتراك ✅', 'check_sub')]
@@ -574,7 +571,7 @@ bot.use(async (ctx, next) => {
                 }
             }
         } catch (e) {
-            console.log("Force sub check error:", e.message);
+            console.log("Force sub check error: ", e.message);
         }
     }
     
@@ -583,14 +580,20 @@ bot.use(async (ctx, next) => {
 
 // 🆕 دالة الشراء المشتركة (تستخدم من الأزرار ومن الروابط العميقة)
 async function processBuyAction(ctx, userId, srvId) {
-    if (usersDb[userId].isBanned) return;
+     initUser(userId); // 🛡️ تأمين قراءة بيانات العميل
+     if (usersDb[userId].isBanned) return;
+     
      if (cachedServices.length === 0) {
-         await ctx.reply('⏳ لحظات...').catch(()=>{});
+         if (ctx.callbackQuery) await ctx.editMessageText('⏳ لحظات...').catch(()=>{});
+         else await ctx.reply('⏳ لحظات...').catch(()=>{});
          await backgroundServiceUpdate();
      }
 
      const srv = cachedServices.find(s => String(s.id) === String(srvId));
-     if(!srv) return ctx.reply('❌ الخدمة غير موجودة.').catch(()=>{});
+     if(!srv) {
+         if (ctx.callbackQuery) return ctx.editMessageText('❌ الخدمة غير موجودة.').catch(()=>{});
+         else return ctx.reply('❌ الخدمة غير موجودة.').catch(()=>{});
+     }
 
      const price = calculateRetailPrice(srv, usersDb[userId], 1);
      const srvName = srv.name_ar || srv.name || srv.title;
@@ -989,7 +992,6 @@ function showAdminPanel(ctx) {
                  `🔒 الاشتراك الإجباري: <code>${forceSubscribeChannel || 'غير مفعل'}</code>`;
 
     const keyboard = Markup.inlineKeyboard([
-        // 🆕 أزرار الأنظمة الجديدة (تم إضافة زر إعلان انخفاض السعر)
         [Markup.button.callback('📉 إعلان انخفاض سعر (دروب)', 'admin_price_drop')],
         [Markup.button.callback('🔔 فحص وإرسال تذكيرات التجديد', 'admin_scan_renewals')],
         [Markup.button.callback('🎁 إرسال كود دروب', 'admin_send_drop'), Markup.button.callback('⚙️ جروب الدروب', 'admin_set_drop_group')],
@@ -1635,11 +1637,12 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
         return ctx.editMessageText('⚠️ يرجى تحديث الأقسام من القائمة الرئيسية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
     }
 
+    // 🛡️ تحديد أقصى عدد 90 خدمة لمنع تجاوز حدود التليجرام التي تسبب إغلاق البوت (Crash)
     const categoryServices = cachedServices.filter(s => {
       if (hiddenServices && hiddenServices.includes(String(s.id))) return false;
       let cat = getServiceCategory(s);
       return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
-    });
+    }).slice(0, 90); 
 
     if (categoryServices.length === 0) return ctx.editMessageText('لا توجد خدمات حالياً في هذا القسم.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
 
@@ -1663,7 +1666,9 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
     buttons.push([Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]);
 
     ctx.editMessageText(`📦 خدمات قسم *${selectedCategory}*:`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
-  } catch(err) {}
+  } catch(err) {
+      console.error(err);
+  }
 });
 
 bot.action('cancel_action', (ctx) => {
@@ -1695,13 +1700,17 @@ bot.action(/^rate_(\d+)_(.+)$/, (ctx) => {
     ctx.editMessageText(`✅ **شكراً لتقييمك الرائع!**\nتقييمك للخدمة: ${'⭐'.repeat(stars)}\nرأيك يهمنا ويساعد العملاء الآخرين.`, {parse_mode: 'Markdown'}).catch(()=>{});
 });
 
+// 🛡️ إصلاح التعليقة عند الضغط على خدمة للبدء في الشراء
 bot.action(/^buyact_(.+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
      const userId = String(ctx.from.id);
+     initUser(userId); // 🛡️ تأمين قراءة بيانات العميل حتى لو تم رسترة السيرفر
      const srvId = ctx.match[1];
-     return processBuyAction(ctx, userId, srvId);
-  } catch(err){}
+     await processBuyAction(ctx, userId, srvId); // 🛡️ إضافة Await لضمان عدم حدوث Crash صامت
+  } catch(err){
+      console.error("Buy action error:", err);
+  }
 });
 
 bot.action('confirm_stock_add', (ctx) => {
@@ -1774,7 +1783,7 @@ function extractUsefulData(obj) {
     return [...new Set(extracted)].join('\n');
 }
 
-// 🆕 وظيفة نشر إعلان السعر في القناة
+// وظيفة نشر إعلان السعر في القناة
 async function publishPriceDrop(ctx, userId, state, fileId) {
     const srvIdStr = state.replace('WAIT_PD_IMG_', '');
     const lastUnderscore = srvIdStr.lastIndexOf('_');
