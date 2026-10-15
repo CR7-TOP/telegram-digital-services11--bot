@@ -316,9 +316,9 @@ function getUserByUid(targetUid) {
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 
-// 🆕 إعدادات المزود الثالث الجديد (CupponHub)
+// 🆕 إعدادات المزود الثالث (CupponHub) بالتنسيق الصحيح للـ Endpoints بناءً على الـ Docs
 const API_KEY_3 = 'ch_live_1amw2svtlScRUxvA-_Nlua01_zeW-xLOrVcVok952mE';
-const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/api/public/v1', headers: { 'Authorization': 'Bearer ' + API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
+const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/reseller/api', headers: { 'X-API-Key': API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
 
 function generateStableId(nameStr) {
     let hash = 0;
@@ -419,7 +419,7 @@ async function fetchAllServices() {
     const [res1Result, res2Result, res3Result] = await Promise.allSettled([
         apiClient1.get('/services?limit=1000'),
         apiClient2.get('/products'),
-        apiClient3.get('/services?limit=1000') 
+        apiClient3.get('/?action=products') // 🔄 تم التعديل لتتوافق مع نقطة نهاية CupponHub
     ]);
 
     if (res1Result.status === 'fulfilled') {
@@ -463,14 +463,15 @@ async function fetchAllServices() {
         cupponData = res3Result.value.data;
     } else {
         try { 
-            const fallback = await apiClient3.get('/products?limit=1000'); 
+            const fallback = await apiClient3.get('/?action=products'); 
             cupponData = fallback.data; 
         } catch(e) {}
     }
 
     if (cupponData) {
         try {
-            let s3 = cupponData.data || cupponData.services || cupponData.products || cupponData;
+            // CupponHub بيرجع المنتجات في مصفوفة تحت مفتاح products
+            let s3 = cupponData.products || cupponData.data || cupponData.services || cupponData;
             if (!Array.isArray(s3) && typeof s3 === 'object') {
                 for (let key in s3) { if (Array.isArray(s3[key])) { s3 = s3[key]; break; } }
             }
@@ -478,15 +479,16 @@ async function fetchAllServices() {
                 s3.forEach(item => { 
                     item.providerSource = 'api3'; 
                     item.name = item.name || item.name_ar || item.title || "خدمة بدون اسم";
-                    item.id = String(item.id || item.service_id || item.product_id || item.uuid || item.code || generateStableId(item.name));
+                    // CupponHub بيستخدم key أو id كمعرف أساسي
+                    let uniqueId = item.key || item.id || item.product_id || generateStableId(item.name);
+                    item.id = String(uniqueId);
                     item.category = detectCategoryFromName(item.name) !== 'أخرى' ? detectCategoryFromName(item.name) : (item.category || item.category_name || 'أخرى');
-                    let rawPriceUSD = parseFloat(item.price || item.rate || item.price_amount || 0);
                     
-                    if (rawPriceUSD < 10) { 
-                        let egpPrice = (rawPriceUSD * USD_TO_EGP_RATE).toFixed(2);
-                        item.price = egpPrice;
-                        item.price_amount = egpPrice;
-                    }
+                    // السعر لدى CupponHub يأتي بالدولار (USDT) في price_usdt_from
+                    let rawPriceUSD = parseFloat(item.price_usdt_from || item.price || item.rate || item.price_amount || 0);
+                    let egpPrice = (rawPriceUSD * USD_TO_EGP_RATE).toFixed(2);
+                    item.price = egpPrice;
+                    item.price_amount = egpPrice;
                 });
                 services.push(...s3);
             }
@@ -525,9 +527,14 @@ async function placeOrderWithBestProvider(srv, qty) {
              quantity: parsedQty 
          });
     } else if (source === 'api3') {
-         return await apiClient3.post('/orders', { 
-             service_id: srvIdConverted, 
+         // 🔄 طلب الشراء عبر CupponHub باستخدام ?action=purchase
+         return await apiClient3.post('/?action=purchase', { 
+             product: srv.key || String(srv.id), 
              quantity: parsedQty 
+         }, {
+             headers: {
+                 'Idempotency-Key': 'shop-order-' + Date.now() + '-' + Math.floor(Math.random() * 1000)
+             }
          });
     } else {
          return await apiClient1.post('/orders', { 
@@ -1485,13 +1492,12 @@ bot.action('admin_check_api_balance', async (ctx) => {
         try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود الثاني: *$${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}*\n`; } 
         catch(e) { msg += `🔹 المزود الثاني: خطأ ❌ (${e.response?.status || e.message})\n`; }
         
-        try { const res3 = await apiClient3.get('/me/wallet'); msg += `🔹 المزود الثالث (CupponHub): *${parseFloat(res3.data?.data?.balance || res3.data?.balance || 0).toFixed(2)}*\n`; } 
+        try { 
+            const res3 = await apiClient3.get('/?action=balance'); // 🔄 فحص الرصيد عبر ?action=balance
+            msg += `🔹 المزود الثالث (CupponHub): *${parseFloat(res3.data?.balance_usdt || res3.data?.data?.balance || 0).toFixed(2)} USDT*\n`; 
+        } 
         catch(e) { 
-            try {
-                const res3b = await apiClient3.get('/balance'); msg += `🔹 المزود الثالث (CupponHub): *${parseFloat(res3b.data?.data?.balance || res3b.data?.balance || 0).toFixed(2)}*\n`;
-            } catch(err) {
-                msg += `🔹 المزود الثالث (CupponHub): خطأ ❌ (${err.response?.status || err.message})\n`; 
-            }
+            msg += `🔹 المزود الثالث (CupponHub): خطأ ❌ (${e.response?.status || e.message})\n`; 
         }
         await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
@@ -1509,13 +1515,13 @@ bot.action('admin_check_api_status', async (ctx) => {
         try { const start2 = Date.now(); await apiClient2.get('/products'); msg += `🔹 المزود الثاني: يعمل ✅ (${Date.now() - start2}ms)\n`; } 
         catch(e) { msg += `🔹 المزود الثاني: متعطل ❌ (الخطأ: ${e.response?.status || e.message})\n`; }
         
-        try { const start3 = Date.now(); await apiClient3.get('/services?limit=1'); msg += `🔹 المزود الثالث: يعمل ✅ (${Date.now() - start3}ms)\n`; } 
+        try { 
+            const start3 = Date.now(); 
+            await apiClient3.get('/?action=products'); 
+            msg += `🔹 المزود الثالث: يعمل ✅ (${Date.now() - start3}ms)\n`; 
+        } 
         catch(e) { 
-            try {
-                const start3b = Date.now(); await apiClient3.get('/products'); msg += `🔹 المزود الثالث: يعمل ✅ (${Date.now() - start3b}ms)\n`; 
-            } catch (err) {
-                msg += `🔹 المزود الثالث: متعطل ❌ (الخطأ: ${err.response?.status || err.message})\n`; 
-            }
+            msg += `🔹 المزود الثالث: متعطل ❌ (الخطأ: ${e.response?.status || e.message})\n`; 
         }
         
         await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
@@ -1861,7 +1867,7 @@ function extractUsefulData(obj) {
     if (!obj) return null;
     if (typeof obj === 'string' || typeof obj === 'number') return String(obj);
     let extracted = [];
-    const ignoreKeys = ['id', 'order', 'orders', 'order_id', 'status', 'created_at', 'updated_at', 'service_id', 'quantity', 'price', 'user_id', 'api', 'api_id', 'api_order_id', 'api_service_id', 'currency', 'charge', 'remains', 'start_count', 'link', 'cost', 'old_charge'];
+    const ignoreKeys = ['id', 'order', 'orders', 'order_id', 'status', 'created_at', 'updated_at', 'service_id', 'quantity', 'price', 'user_id', 'api', 'api_id', 'api_order_id', 'api_service_id', 'currency', 'charge', 'remains', 'start_count', 'link', 'cost', 'old_charge', 'items'];
     
     function deepExtract(currentObj) {
         if (currentObj === null || currentObj === undefined) return;
@@ -1871,7 +1877,14 @@ function extractUsefulData(obj) {
                 extracted.push(str);
             }
         } else if (Array.isArray(currentObj)) {
-            currentObj.forEach(deepExtract);
+            // معالجة خاصة لـ items في CupponHub إذا وجدت
+            currentObj.forEach(item => {
+                if (typeof item === 'string') {
+                    extracted.push(item);
+                } else {
+                    deepExtract(item);
+                }
+            });
         } else if (typeof currentObj === 'object') {
             for (let key in currentObj) {
                 if (ignoreKeys.includes(key.toLowerCase())) continue;
@@ -2160,18 +2173,26 @@ bot.on('text', async (ctx, next) => {
                 usersDb[userId].orders.push(currentOrder);
                 saveDatabase(); 
 
-                let orderId = orderResponse.data?.order?.id || orderResponse.data?.id || orderResponse.data?.order_id || Math.floor(10000 + Math.random() * 90000);
+                // دعم استخراج رقم الطلب والبيانات بحسب المزود (بما في ذلك CupponHub)
+                let orderId = orderResponse.data?.order?.order_id || orderResponse.data?.order_id || orderResponse.data?.order?.id || orderResponse.data?.id || Math.floor(10000 + Math.random() * 90000);
                 let rawDetails = null;
 
                 await new Promise(resolve => setTimeout(resolve, 1500));
 
                 try {
                     const source = srv.providerSource || 'api1';
-                    const clientApi = source === 'api2' ? apiClient2 : (source === 'api3' ? apiClient3 : apiClient1);
-                    const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : `/orders/${orderId}`;
-                    const getOrderRes = await clientApi.get(fetchOrderPath);
-                    const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
-                    rawDetails = extractUsefulData(orderData);
+                    if (source === 'api3') {
+                        // استرجاع تفاصيل الطلب من CupponHub عبر ?action=order&order_id=...
+                        const getOrderRes = await apiClient3.get(`/?action=order&order_id=${orderId}`);
+                        const orderData = getOrderRes.data?.order || getOrderRes.data;
+                        rawDetails = extractUsefulData(orderData);
+                    } else {
+                        const clientApi = source === 'api2' ? apiClient2 : apiClient1;
+                        const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : `/orders/${orderId}`;
+                        const getOrderRes = await clientApi.get(fetchOrderPath);
+                        const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
+                        rawDetails = extractUsefulData(orderData);
+                    }
                 } catch(e) {
                     console.log('تأخير في المزود لجلب الطلب: ' + orderId);
                 }
@@ -2349,7 +2370,7 @@ bot.on('text', async (ctx, next) => {
             }
             
             if (!text.startsWith('@') && !text.startsWith('-100')) {
-                 return await ctx.reply('❌ معرف القناة غير صحيح!\nيجب أن يبدأ المعرف بـ `@` أو `-100`. أرسله مجدداً:', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+                 return await ctx.reply('❌ معرف القناة غير صحيح!\nيجب أن يبدأ المعرف بـ `@` أو `-100`. أرسل مجدداً:', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
             }
             
             let newChannel = text.trim();
