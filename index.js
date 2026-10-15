@@ -184,7 +184,6 @@ const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 // 🛡️ حماية البوت من الرد في الجروبات والقنوات
 // ==========================================
 bot.use(async (ctx, next) => {
-    // تجاهل أي رسالة تأتي من جروب أو قناة (البوت يعمل في الشات الخاص فقط)
     if (ctx.chat && ctx.chat.type !== 'private') {
         return; 
     }
@@ -2052,14 +2051,8 @@ bot.on('text', async (ctx, next) => {
                ).catch(()=>{});
              }
              
-             const isManagedLocally = localInventory[String(srv.id)] !== undefined; 
-             const hasLocalStock = localInventory[String(srv.id)] && localInventory[String(srv.id)].length >= qty;
-             
-             if (isManagedLocally && !hasLocalStock) {
-                 return await ctx.reply(`❌ عذراً، الكمية المطلوبة من هذه الخدمة نفدت من المخزن المحلي حالياً.\n\nهل تريد أن يصلك إشعار فور توفرها مرة أخرى؟`, 
-                    Markup.inlineKeyboard([[Markup.button.callback('🔔 أعلمني عند التوفر', `notify_stock_${srv.id}`)]])
-                 ).catch(()=>{});
-             }
+             // 🛡️ فحص المخزن المحلي: إذا توفر يسلم فوراً، وإذا كان فارغاً يحول الطلب للبوت الأم تلقائياً
+             const hasLocalStock = localInventory && localInventory[String(srv.id)] && Array.isArray(localInventory[String(srv.id)]) && localInventory[String(srv.id)].length >= qty;
 
              let processingMsg = await ctx.reply('⏳ <b>جاري المعالجة...</b>', {parse_mode: 'HTML'}).catch(()=>{});
              await new Promise(resolve => setTimeout(resolve, 800));
@@ -2067,6 +2060,9 @@ bot.on('text', async (ctx, next) => {
 
              if (hasLocalStock) {
                  const deliveredItems = localInventory[String(srv.id)].splice(0, qty);
+                 if (localInventory[String(srv.id)].length === 0) {
+                     delete localInventory[String(srv.id)]; // تنظيف القيد الفارغ ليعود للمزود تلقائياً
+                 }
                  
                  usersDb[userId].balance -= parseFloat(price);
                  usersDb[userId].totalSpent += parseFloat(price);
@@ -2086,7 +2082,8 @@ bot.on('text', async (ctx, next) => {
                      await ctx.reply(deliveryMsg, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]])}).catch(()=>{});
                  }
 
-                 notifyAdmin(`👑 <b>عملية بيع من المخزن المحلي:</b>\n🛍 ${safeName}\n💰 ${price} EGP\n📦 متبقي في المخزن: ${localInventory[String(srv.id)].length}`);
+                 const remainingCount = localInventory[String(srv.id)] ? localInventory[String(srv.id)].length : 0;
+                 notifyAdmin(`👑 <b>عملية بيع من المخزن المحلي:</b>\n🛍 ${safeName}\n💰 ${price} EGP\n📦 متبقي في المخزن: ${remainingCount}`);
                  
                  const me = await ctx.telegram.getMe().catch(() => ({username: 'AhmedStoreBot'}));
                  broadcastSale(safeName, qty, price, usersDb[userId].uid, 'رصيد المحفظة (تسليم فوري)', String(srv.id), me.username);
@@ -2193,9 +2190,9 @@ bot.on('text', async (ctx, next) => {
                 
                 let failMsg = `❌ فشل الشراء من المزود الأساسي.\n\n⚠️ السبب: ${apiErrorMsg}\n\n✅ <b>تم استرجاع مبلغ (${price} EGP) إلى محفظتك بنجاح.</b>`;
                 if(processingMsg) {
-                    await ctx.telegram.editMessageText(ctx.chat.id, processingMsg.message_id, null, failMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]]) }).catch(()=>{});
+                    await ctx.telegram.editMessageText(ctx.chat.id, processingMsg.message_id, null, failMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔔 أعلمني عند التوفر', `notify_stock_${srv.id}`)], [Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]]) }).catch(()=>{});
                 } else {
-                    await ctx.reply(failMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]]) }).catch(()=>{});
+                    await ctx.reply(failMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔔 أعلمني عند التوفر', `notify_stock_${srv.id}`)], [Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]]) }).catch(()=>{});
                 }
             }
         } catch (err){
@@ -2488,7 +2485,7 @@ bot.on('text', async (ctx, next) => {
 
             if (text === 'عرض') {
                 if (!localInventory[srvId] || localInventory[srvId].length === 0) {
-                    return await ctx.reply('📦 المخزن فارغ تماماً لهذا المنتج.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+                    return await ctx.reply('📦 المخزن فارغ تماماً لهذا المنتج (يتم السحب حالياً من المزود السحابي).', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
                 }
                 let stockList = localInventory[srvId].map((item, idx) => `📦 **عنصر ${idx + 1}:**\n${item}`).join('\n\n');
                 if (stockList.length > 3800) stockList = stockList.substring(0, 3800) + '\n\n... (يوجد المزيد لكن تم إخفاؤه لعدم تجاوز حد الرسائل)';
@@ -2496,10 +2493,10 @@ bot.on('text', async (ctx, next) => {
             }
 
             if (text === 'حذف الكل') {
-                localInventory[srvId] = [];
+                delete localInventory[srvId]; // 🛡️ حذف القيد بالكامل ليعود المنتج للسحب من المزود
                 saveDatabase();
                 logAdminAction(userId, `تفريغ مخزن المنتج ${srvId}`);
-                return await ctx.reply('✅ تم تفريغ المخزن لهذا المنتج بنجاح!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+                return await ctx.reply('✅ تم تفريغ المخزن المحلي لهذا المنتج بنجاح، وسيتم السحب الآن من البوت الأم تلقائياً!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
 
             const item = text;
