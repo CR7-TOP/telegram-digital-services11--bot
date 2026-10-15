@@ -316,8 +316,8 @@ function getUserByUid(targetUid) {
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 
-// 🆕 إعدادات المزود الثالث (CupponHub) بالتنسيق الصحيح للـ Endpoints بناءً على الـ Docs
-const API_KEY_3 = 'ch_live_1amw2svtlScRUxvA-_Nlua01_zeW-xLOrVcVok952mE';
+// 🔑 مفتاح CupponHub الجديد الذي أرسلته
+const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
 const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/reseller/api', headers: { 'X-API-Key': API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
 
 function generateStableId(nameStr) {
@@ -419,7 +419,7 @@ async function fetchAllServices() {
     const [res1Result, res2Result, res3Result] = await Promise.allSettled([
         apiClient1.get('/services?limit=1000'),
         apiClient2.get('/products'),
-        apiClient3.get('/?action=products') // 🔄 تم التعديل لتتوافق مع نقطة نهاية CupponHub
+        apiClient3.get('/?action=products')
     ]);
 
     if (res1Result.status === 'fulfilled') {
@@ -470,7 +470,6 @@ async function fetchAllServices() {
 
     if (cupponData) {
         try {
-            // CupponHub بيرجع المنتجات في مصفوفة تحت مفتاح products
             let s3 = cupponData.products || cupponData.data || cupponData.services || cupponData;
             if (!Array.isArray(s3) && typeof s3 === 'object') {
                 for (let key in s3) { if (Array.isArray(s3[key])) { s3 = s3[key]; break; } }
@@ -479,12 +478,9 @@ async function fetchAllServices() {
                 s3.forEach(item => { 
                     item.providerSource = 'api3'; 
                     item.name = item.name || item.name_ar || item.title || "خدمة بدون اسم";
-                    // CupponHub بيستخدم key أو id كمعرف أساسي
                     let uniqueId = item.key || item.id || item.product_id || generateStableId(item.name);
                     item.id = String(uniqueId);
                     item.category = detectCategoryFromName(item.name) !== 'أخرى' ? detectCategoryFromName(item.name) : (item.category || item.category_name || 'أخرى');
-                    
-                    // السعر لدى CupponHub يأتي بالدولار (USDT) في price_usdt_from
                     let rawPriceUSD = parseFloat(item.price_usdt_from || item.price || item.rate || item.price_amount || 0);
                     let egpPrice = (rawPriceUSD * USD_TO_EGP_RATE).toFixed(2);
                     item.price = egpPrice;
@@ -527,7 +523,6 @@ async function placeOrderWithBestProvider(srv, qty) {
              quantity: parsedQty 
          });
     } else if (source === 'api3') {
-         // 🔄 طلب الشراء عبر CupponHub باستخدام ?action=purchase
          return await apiClient3.post('/?action=purchase', { 
              product: srv.key || String(srv.id), 
              quantity: parsedQty 
@@ -1493,7 +1488,7 @@ bot.action('admin_check_api_balance', async (ctx) => {
         catch(e) { msg += `🔹 المزود الثاني: خطأ ❌ (${e.response?.status || e.message})\n`; }
         
         try { 
-            const res3 = await apiClient3.get('/?action=balance'); // 🔄 فحص الرصيد عبر ?action=balance
+            const res3 = await apiClient3.get('/?action=balance');
             msg += `🔹 المزود الثالث (CupponHub): *${parseFloat(res3.data?.balance_usdt || res3.data?.data?.balance || 0).toFixed(2)} USDT*\n`; 
         } 
         catch(e) { 
@@ -1877,7 +1872,6 @@ function extractUsefulData(obj) {
                 extracted.push(str);
             }
         } else if (Array.isArray(currentObj)) {
-            // معالجة خاصة لـ items في CupponHub إذا وجدت
             currentObj.forEach(item => {
                 if (typeof item === 'string') {
                     extracted.push(item);
@@ -2173,7 +2167,6 @@ bot.on('text', async (ctx, next) => {
                 usersDb[userId].orders.push(currentOrder);
                 saveDatabase(); 
 
-                // دعم استخراج رقم الطلب والبيانات بحسب المزود (بما في ذلك CupponHub)
                 let orderId = orderResponse.data?.order?.order_id || orderResponse.data?.order_id || orderResponse.data?.order?.id || orderResponse.data?.id || Math.floor(10000 + Math.random() * 90000);
                 let rawDetails = null;
 
@@ -2182,7 +2175,6 @@ bot.on('text', async (ctx, next) => {
                 try {
                     const source = srv.providerSource || 'api1';
                     if (source === 'api3') {
-                        // استرجاع تفاصيل الطلب من CupponHub عبر ?action=order&order_id=...
                         const getOrderRes = await apiClient3.get(`/?action=order&order_id=${orderId}`);
                         const orderData = getOrderRes.data?.order || getOrderRes.data;
                         rawDetails = extractUsefulData(orderData);
