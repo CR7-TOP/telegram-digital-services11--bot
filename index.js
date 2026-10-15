@@ -315,8 +315,10 @@ function getUserByUid(targetUid) {
 
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
-const API_KEY_3 = process.env.PROVIDER3_API_KEY || 'dh_live_51fc2511f39790176ec4d956a92c10492a22858859ae0a79';
-const apiClient3 = axios.create({ baseURL: 'https://dantehub.shop/api/public/v1', headers: { 'Authorization': 'Bearer ' + API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
+
+// 🆕 إعدادات المزود الثالث الجديد (CupponHub)
+const API_KEY_3 = 'ch_live_1amw2svtlScRUxvA-_Nlua01_zeW-xLOrVcVok952mE';
+const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/api/public/v1', headers: { 'Authorization': 'Bearer ' + API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
 
 function generateStableId(nameStr) {
     let hash = 0;
@@ -456,19 +458,19 @@ async function fetchAllServices() {
         } catch(e) {}
     }
 
-    let danteData = null;
+    let cupponData = null;
     if (res3Result.status === 'fulfilled') {
-        danteData = res3Result.value.data;
+        cupponData = res3Result.value.data;
     } else {
         try { 
             const fallback = await apiClient3.get('/products?limit=1000'); 
-            danteData = fallback.data; 
+            cupponData = fallback.data; 
         } catch(e) {}
     }
 
-    if (danteData) {
+    if (cupponData) {
         try {
-            let s3 = danteData.data || danteData.services || danteData.products || danteData;
+            let s3 = cupponData.data || cupponData.services || cupponData.products || cupponData;
             if (!Array.isArray(s3) && typeof s3 === 'object') {
                 for (let key in s3) { if (Array.isArray(s3[key])) { s3 = s3[key]; break; } }
             }
@@ -1483,12 +1485,12 @@ bot.action('admin_check_api_balance', async (ctx) => {
         try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود الثاني: *$${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}*\n`; } 
         catch(e) { msg += `🔹 المزود الثاني: خطأ ❌ (${e.response?.status || e.message})\n`; }
         
-        try { const res3 = await apiClient3.get('/me/wallet'); msg += `🔹 المزود الثالث (Dantehub): *${parseFloat(res3.data?.data?.balance || res3.data?.balance || 0).toFixed(2)}*\n`; } 
+        try { const res3 = await apiClient3.get('/me/wallet'); msg += `🔹 المزود الثالث (CupponHub): *${parseFloat(res3.data?.data?.balance || res3.data?.balance || 0).toFixed(2)}*\n`; } 
         catch(e) { 
             try {
-                const res3b = await apiClient3.get('/balance'); msg += `🔹 المزود الثالث (Dantehub): *${parseFloat(res3b.data?.data?.balance || res3b.data?.balance || 0).toFixed(2)}*\n`;
+                const res3b = await apiClient3.get('/balance'); msg += `🔹 المزود الثالث (CupponHub): *${parseFloat(res3b.data?.data?.balance || res3b.data?.balance || 0).toFixed(2)}*\n`;
             } catch(err) {
-                msg += `🔹 المزود الثالث (Dantehub): خطأ ❌ (${err.response?.status || err.message})\n`; 
+                msg += `🔹 المزود الثالث (CupponHub): خطأ ❌ (${err.response?.status || err.message})\n`; 
             }
         }
         await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
@@ -2370,7 +2372,7 @@ bot.on('text', async (ctx, next) => {
             }
             
             if (!text.startsWith('-100')) {
-                 return await ctx.reply('❌ معرف القناة (ID) غير صحيح!\nيجب أن يبدأ المعرف بـ `-100`. تأكد من الرقم وأرسله مجدداً:', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+                 return await ctx.reply('❌ معرف القناة (ID) غير صحيح!\nيجب أن يبدأ المعرف بـ `-100`. تأكد من الرقم وأرسله مجدداً:', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
             }
             
             let newChannel = text.trim();
