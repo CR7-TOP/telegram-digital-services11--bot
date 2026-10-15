@@ -126,7 +126,7 @@ async function loadDatabase() {
         if (data.dropGroupId !== undefined) dropGroupId = data.dropGroupId;
         
         if (data.publicSalesChannels !== undefined) {
-            publicSalesChannels = Array.isArray(data.publicSalesChannels) ? data.publicSalesChannels : [data.publicSalesChannels];
+            publicSalesChannels = Array.isArray(data.publicSalesChannels) ? data.publicSalesChannels : [data.publicSalesChannel];
         } else if (data.publicSalesChannel !== undefined && data.publicSalesChannel !== '') {
             publicSalesChannels = [data.publicSalesChannel];
         }
@@ -316,7 +316,7 @@ function getUserByUid(targetUid) {
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 
-// 🔑 مفتاح CupponHub الجديد الذي أرسلته
+// 🔑 مفتاح CupponHub
 const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
 const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/reseller/api', headers: { 'X-API-Key': API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
 
@@ -1086,6 +1086,8 @@ async function showAdminPanel(ctx) {
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
         [Markup.button.callback('💲 تحديد سعر ثابت لمنتج', 'admin_fixed_price'), Markup.button.callback('👁️ إخفاء/إظهار منتج', 'admin_hide_cats')],
+        // 🆕 الزر الجديد المطلوب
+        [Markup.button.callback('🔗 معرف الـ API لجميع الخدمات', 'admin_view_services_api')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
         [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_promo')],
         [Markup.button.callback('✉ مراسلة عميل بالـ ID', 'admin_msg_by_id'), Markup.button.callback('👥 شحن رصيد بالـ ID', 'admin_charge_by_id')], 
@@ -1108,6 +1110,39 @@ bot.action(/^admin_/, async (ctx, next) => {
 bot.action(/^approve_dep_|^reject_dep_/, async (ctx, next) => {
     if(!isAdmin(ctx.from.id)) return ctx.answerCbQuery('❌ غير مصرح لك', {show_alert: true});
     return await next();
+});
+
+// 🆕 وظيفة عرض خدمات العملاء مع الـ API الخاص بها
+bot.action('admin_view_services_api', async (ctx) => {
+    ctx.answerCbQuery('⏳ جاري جلب الخدمات...').catch(()=>{});
+    try {
+        if (!cachedServices || cachedServices.length === 0) {
+            await backgroundServiceUpdate();
+        }
+
+        // تصفية الخدمات الغير مخفية فقط (التي يراها الزبون)
+        const visibleServices = cachedServices.filter(s => !hiddenServices.includes(String(s.id)));
+
+        if (visibleServices.length === 0) {
+            return await ctx.editMessageText('❌ لا توجد خدمات ظاهرة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
+        }
+
+        let msg = `🔗 <b>جميع الخدمات الظاهرة للعملاء مع الـ API الخاص بها (${visibleServices.length}):</b>\n\n`;
+        
+        visibleServices.forEach((srv, idx) => {
+            const srvName = srv.name_ar || srv.name || srv.title || 'خدمة';
+            const apiSource = srv.providerSource || 'api1';
+            msg += `🔹 ${idx + 1}. <b>${safeHtml(srvName)}</b>\n   📌 المعرف: <code>[${apiSource}]</code>\n━━━━━━━━━━━━\n`;
+        });
+
+        if (msg.length > 3900) {
+            msg = msg.substring(0, 3900) + '\n\n... (تم إيقاف العرض مؤقتاً لتجاوز الحد الأقصى للرسائل)';
+        }
+
+        await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    } catch (e) {
+        await ctx.editMessageText('❌ حدث خطأ أثناء جلب الخدمات.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]])).catch(()=>{});
+    }
 });
 
 bot.action('admin_price_drop', async (ctx) => {
