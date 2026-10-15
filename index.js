@@ -11,8 +11,8 @@ dotenv.config();
 // ==========================================
 const USD_TO_EGP_RATE = 50; 
 const ADMIN_CHANNEL_ID = process.env.ADMIN_CHANNEL_ID || '-1004393113868'; 
-let publicSalesChannel = process.env.PUBLIC_SALES_CHANNEL || ''; 
-let forceSubscribeChannel = ''; 
+let publicSalesChannels = process.env.PUBLIC_SALES_CHANNEL ? [process.env.PUBLIC_SALES_CHANNEL] : []; 
+let forceSubscribeChannels = []; 
 
 // ==========================================
 // 🛡️ إعدادات الاتصال بقاعدة بيانات MongoDB 
@@ -59,9 +59,9 @@ function isAdmin(userId) {
     return (usersDb[idStr] && String(usersDb[idStr].uid) === '1001') || (botStates && botStates.adminSession && botStates.adminSession[idStr]);
 }
 
-// دالة النشر في قناة إثباتات الثقة
+// دالة النشر في قنوات إثباتات الثقة
 function broadcastSale(serviceName, qty, price, userUid, paymentMethod, srvId, botUsername) {
-    if (!publicSalesChannel || publicSalesChannel === '') return;
+    if (!publicSalesChannels || publicSalesChannels.length === 0) return;
     try {
         const maskedUid = String(userUid).substring(0, 3) + '****';
         const msg = `🛒 <b>عملية شراء ناجحة وموثقة!</b>\n\n👤 <b>مشتري:</b> <code>${maskedUid}</code>\n📦 <b>المنتج:</b> ${serviceName}\n🔢 <b>الكمية:</b> ${qty}\n💳 <b>طريقة الدفع:</b> ${paymentMethod}\n🪙 <b>القيمة الإجمالية:</b> ${price} EGP\n💳 <b>طريقة الشراء:</b> ${paymentMethod}\n🕒 <b>الوقت:</b> ${new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}\n\n✨ <b>شكراً لثقتكم في متجرنا!</b>`;
@@ -73,7 +73,9 @@ function broadcastSale(serviceName, qty, price, userUid, paymentMethod, srvId, b
             ]);
         }
 
-        bot.telegram.sendMessage(publicSalesChannel, msg, {parse_mode: 'HTML', ...keyboard}).catch(()=>{});
+        publicSalesChannels.forEach(channel => {
+            bot.telegram.sendMessage(channel, msg, {parse_mode: 'HTML', ...keyboard}).catch(()=>{});
+        });
     } catch(e) {}
 }
 
@@ -122,8 +124,18 @@ async function loadDatabase() {
         stockAlerts = data.stockAlerts || {};
         ratings = data.ratings || {}; 
         if (data.dropGroupId !== undefined) dropGroupId = data.dropGroupId;
-        if (data.publicSalesChannel !== undefined) publicSalesChannel = data.publicSalesChannel; 
-        if (data.forceSubscribeChannel !== undefined) forceSubscribeChannel = data.forceSubscribeChannel; 
+        
+        if (data.publicSalesChannels !== undefined) {
+            publicSalesChannels = Array.isArray(data.publicSalesChannels) ? data.publicSalesChannels : [data.publicSalesChannels];
+        } else if (data.publicSalesChannel !== undefined && data.publicSalesChannel !== '') {
+            publicSalesChannels = [data.publicSalesChannel];
+        }
+
+        if (data.forceSubscribeChannels !== undefined) {
+            forceSubscribeChannels = Array.isArray(data.forceSubscribeChannels) ? data.forceSubscribeChannels : [data.forceSubscribeChannels];
+        } else if (data.forceSubscribeChannel !== undefined && data.forceSubscribeChannel !== '') {
+            forceSubscribeChannels = [data.forceSubscribeChannel];
+        }
         
         const loadedStates = data.botStates || {};
         botStates = {
@@ -148,7 +160,7 @@ async function loadDatabase() {
 
 function saveDatabase() {
     try {
-        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannel, forceSubscribeChannel, ratings, dropGroupId }; 
+        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId }; 
         const savePromise = connectDB().then(() => {
             if (dbCollection) {
                 return dbCollection.updateOne({ _id: "main_data" }, { $set: data }, { upsert: true });
@@ -260,7 +272,7 @@ function checkAndSendDailyReport() {
 setInterval(() => {
     try {
         if (!ADMIN_CHANNEL_ID || ADMIN_CHANNEL_ID === '') return;
-        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannel, forceSubscribeChannel, ratings, dropGroupId }, null, 2); 
+        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId }, null, 2); 
         const buffer = Buffer.from(dbDump, 'utf-8');
         bot.telegram.sendDocument(ADMIN_CHANNEL_ID, { source: buffer, filename: `XProStore_Backup_${new Date().toISOString().split('T')[0]}.json` }, { caption: `📦 نسخة احتياطية تلقائية لقاعدة البيانات\n📅 التاريخ: ${new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}` }).catch(()=>{});
     } catch (e) { console.error("Backup Error:", e); }
@@ -561,20 +573,38 @@ bot.use(async (ctx, next) => {
     checkAndSendDailyReport(); 
     
     const userId = ctx.from?.id;
-    if (userId && forceSubscribeChannel && !isAdmin(userId)) {
+    if (userId && forceSubscribeChannels && forceSubscribeChannels.length > 0 && !isAdmin(userId)) {
         if (ctx.callbackQuery && ctx.callbackQuery.data === 'check_sub') {
             return await next(); 
         }
         
         try {
-            const member = await ctx.telegram.getChatMember(forceSubscribeChannel, userId);
-            if (!['member', 'administrator', 'creator'].includes(member.status)) {
-                const subMsg = '⚠️ <b>عذراً، يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدامه.</b>\n\nاشترك الآن ثم اضغط على "تحقق من الاشتراك ✅"';
-                const channelUrl = `https://t.me/${forceSubscribeChannel.replace('@', '')}`;
-                const keyboard = Markup.inlineKeyboard([
-                    [Markup.button.url('⚙️ تعليمات بوت طلباتكم | تحديثات ↗️', channelUrl), Markup.button.callback('غير مشترك ❌', 'noop')],
-                    [Markup.button.callback('تحقق من الاشتراك ✅', 'check_sub')]
-                ]);
+            let missingChannels = [];
+            for (let channel of forceSubscribeChannels) {
+                try {
+                    const member = await ctx.telegram.getChatMember(channel, userId);
+                    if (!['member', 'administrator', 'creator'].includes(member.status)) {
+                        missingChannels.push(channel);
+                    }
+                } catch(e) {
+                    missingChannels.push(channel);
+                }
+            }
+
+            if (missingChannels.length > 0) {
+                const subMsg = '⚠️ <b>عذراً، يجب عليك الاشتراك في قنوات البوت أولاً لتتمكن من استخدامه.</b>\n\nاشترك الآن ثم اضغط على "تحقق من الاشتراك ✅"';
+                let buttons = [];
+                missingChannels.forEach((ch, idx) => {
+                    const channelUrl = ch.startsWith('@') ? `https://t.me/${ch.replace('@', '')}` : '';
+                    if (channelUrl) {
+                        buttons.push([Markup.button.url(`📢 القناة رقم ${idx + 1} ↗️`, channelUrl)]);
+                    } else {
+                        buttons.push([Markup.button.callback(`📢 قناة ${ch} (معرف ID)`, 'noop')]);
+                    }
+                });
+                buttons.push([Markup.button.callback('تحقق من الاشتراك ✅', 'check_sub')]);
+
+                const keyboard = Markup.inlineKeyboard(buttons);
                 
                 if (ctx.callbackQuery) {
                     await ctx.editMessageText(subMsg, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
@@ -700,21 +730,32 @@ bot.start(async (ctx) => {
 
 bot.action('check_sub', async (ctx) => {
     const userId = String(ctx.from.id); initUser(userId);
-    if (!forceSubscribeChannel) {
+    if (!forceSubscribeChannels || forceSubscribeChannels.length === 0) {
         ctx.deleteMessage().catch(()=>{});
         return await ctx.reply('أهلاً بك مجدداً في متجر الخدمات الرقمية! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
     }
     try {
-        const member = await ctx.telegram.getChatMember(forceSubscribeChannel, userId);
-        if (['member', 'administrator', 'creator'].includes(member.status)) {
+        let isSubbedToAll = true;
+        for (let channel of forceSubscribeChannels) {
+            try {
+                const member = await ctx.telegram.getChatMember(channel, userId);
+                if (!['member', 'administrator', 'creator'].includes(member.status)) {
+                    isSubbedToAll = false; break;
+                }
+            } catch(e) {
+                isSubbedToAll = false; break;
+            }
+        }
+
+        if (isSubbedToAll) {
             await ctx.answerCbQuery('✅ شكراً لاشتراكك! يمكنك الآن استخدام البوت.', {show_alert: true}).catch(()=>{});
             ctx.deleteMessage().catch(()=>{});
             await ctx.reply('أهلاً بك مجدداً في المتجر! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
         } else {
-            await ctx.answerCbQuery('❌ عذراً، لم تقم بالاشتراك في القناة بعد!', { show_alert: true }).catch(()=>{});
+            await ctx.answerCbQuery('❌ عذراً، لم تقم بالاشتراك في جميع القنوات بعد!', { show_alert: true }).catch(()=>{});
         }
     } catch (e) {
-        await ctx.answerCbQuery('❌ حدث خطأ، تأكد أن البوت مرفوع كأدمن في القناة.').catch(()=>{});
+        await ctx.answerCbQuery('❌ حدث خطأ، تأكد أن البوت مرفوع كأدمن في القنوات.').catch(()=>{});
     }
 });
 
@@ -1027,8 +1068,8 @@ async function showAdminPanel(ctx) {
                  `⚡ حالة الخصم المؤقت: ${flashStatus}\n` +
                  `🛑 وضع الصيانة: ${maintStatus}\n` +
                  `📱 رقم الكاش: <code>${vodafoneCashNumber}</code>\n` +
-                 `📢 قناة المبيعات: <code>${publicSalesChannel || 'غير محددة'}</code>\n` +
-                 `🔒 الاشتراك الإجباري: <code>${forceSubscribeChannel || 'غير مفعل'}</code>`;
+                 `📢 قنوات المبيعات: <code>${publicSalesChannels && publicSalesChannels.length > 0 ? publicSalesChannels.length + ' قناة' : 'غير محددة'}</code>\n` +
+                 `🔒 الاشتراك الإجباري: <code>${forceSubscribeChannels && forceSubscribeChannels.length > 0 ? forceSubscribeChannels.length + ' قناة' : 'غير مفعل'}</code>`;
 
     const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback('📉 إعلان انخفاض سعر (دروب)', 'admin_price_drop')],
@@ -1036,7 +1077,7 @@ async function showAdminPanel(ctx) {
         [Markup.button.callback('🎁 إرسال كود دروب', 'admin_send_drop'), Markup.button.callback('⚙️ جروب الدروب', 'admin_set_drop_group')],
         
         [Markup.button.callback('🔄 تحديث وسحب الخدمات يدوياً', 'admin_force_refresh')],
-        [Markup.button.callback('📱 تغيير رقم الاستقبال', 'admin_change_wallet'), Markup.button.callback('📢 تعيين قناة المبيعات', 'admin_set_sales_channel')],
+        [Markup.button.callback('📱 تغيير رقم الاستقبال', 'admin_change_wallet'), Markup.button.callback('📢 تعيين قنوات المبيعات', 'admin_set_sales_channel')],
         [Markup.button.callback('🔒 ضبط الاشتراك الإجباري', 'admin_set_force_sub'), Markup.button.callback('💳 طلبات الشحن (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
@@ -1134,14 +1175,14 @@ bot.action('admin_set_sales_channel', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_SALES_CHANNEL'; saveDatabase();
-    await ctx.editMessageText('📢 **تعيين قناة المبيعات الحية:**\n\nأرسل معرف القناة (ID)، يجب أن يبدأ بـ `-100` (مثال: `-1001234567890`)\n\n🛑 لإيقاف النشر الآلي تماماً أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('📢 **تعيين قنوات المبيعات الحية:**\n\nأرسل معرف القناة (ID) لإضافتها، يجب أن يبدأ بـ `-100` (مثال: `-1001234567890`)\n\n🛑 لإيقاف النشر الآلي ومسح جميع القنوات أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_set_force_sub', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_FORCE_SUB'; saveDatabase();
-    await ctx.editMessageText('🔒 **إعداد الاشتراك الإجباري:**\n\nأرسل مُعرف القناة (يوزرنيم القناة) ويجب أن يبدأ بـ `@` (مثال: `@XProStore`)\n\n⚠️ **تنبيه هام:** يجب إضافة البوت كـ(مشرف/Admin) في هذه القناة ليتمكن من فحص المشتركين.\n\n🛑 لإلغاء نظام الاشتراك الإجباري تماماً، أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('🔒 **إعداد الاشتراك الإجباري:**\n\nأرسل مُعرف القناة أو الجروب لإضافته، ويجب أن يبدأ بـ `@` أو `-100` (مثال: `@XProStore`)\n\n⚠️ **تنبيه هام:** يجب إضافة البوت كـ(مشرف/Admin) في جميع هذه القنوات ليتمكن من فحص المشتركين.\n\n🛑 لإلغاء نظام الاشتراك الإجباري تماماً وحذف القنوات، أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_force_refresh', async (ctx) => {
@@ -1848,7 +1889,7 @@ async function publishPriceDrop(ctx, userId, state, fileId) {
     const srvId = srvIdStr.substring(0, lastUnderscore);
     const price = parseFloat(srvIdStr.substring(lastUnderscore + 1));
 
-    if (!publicSalesChannel) {
+    if (!publicSalesChannels || publicSalesChannels.length === 0) {
         return await ctx.reply('❌ يرجى تحديد قناة المبيعات أولاً من لوحة التحكم لنشر الإعلان.');
     }
 
@@ -1876,14 +1917,16 @@ async function publishPriceDrop(ctx, userId, state, fileId) {
     ]);
 
     try {
-        if (fileId) {
-            await bot.telegram.sendPhoto(publicSalesChannel, fileId, {caption: msgText, parse_mode: 'HTML', ...keyboard});
-        } else {
-            await bot.telegram.sendMessage(publicSalesChannel, msgText, {parse_mode: 'HTML', ...keyboard});
+        for (let channel of publicSalesChannels) {
+            if (fileId) {
+                await bot.telegram.sendPhoto(channel, fileId, {caption: msgText, parse_mode: 'HTML', ...keyboard}).catch(()=>{});
+            } else {
+                await bot.telegram.sendMessage(channel, msgText, {parse_mode: 'HTML', ...keyboard}).catch(()=>{});
+            }
         }
         await ctx.reply(`✅ تم نشر الإعلان وتخفيض السعر بنجاح إلى ${price} EGP!`, Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
     } catch (e) {
-        await ctx.reply('❌ فشل النشر في القناة.');
+        await ctx.reply('❌ فشل النشر في بعض القنوات.');
     }
 }
 
@@ -2296,42 +2339,48 @@ bot.on('text', async (ctx, next) => {
 
         if (state === 'WAIT_FORCE_SUB') {
             if (text === 'إيقاف') {
-                forceSubscribeChannel = '';
+                forceSubscribeChannels = [];
                 delete botStates.adminInput[userId];
                 saveDatabase();
                 logAdminAction(userId, 'إيقاف الاشتراك الإجباري');
-                return await ctx.reply('✅ تم إيقاف نظام الاشتراك الإجباري بنجاح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+                return await ctx.reply('✅ تم مسح جميع القنوات وإيقاف نظام الاشتراك الإجباري بنجاح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
             
-            if (!text.startsWith('@')) {
-                 return await ctx.reply('❌ معرف القناة غير صحيح!\nيجب أن يبدأ المعرف بـ `@` (مثال: `@MyChannel`). أرسله مجدداً:', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+            if (!text.startsWith('@') && !text.startsWith('-100')) {
+                 return await ctx.reply('❌ معرف القناة غير صحيح!\nيجب أن يبدأ المعرف بـ `@` أو `-100`. أرسله مجدداً:', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
             }
             
-            forceSubscribeChannel = text.trim();
+            let newChannel = text.trim();
+            if(!forceSubscribeChannels.includes(newChannel)) {
+                forceSubscribeChannels.push(newChannel);
+            }
             delete botStates.adminInput[userId];
             saveDatabase();
-            logAdminAction(userId, `تفعيل الاشتراك الإجباري لقناة: ${forceSubscribeChannel}`);
-            return await ctx.reply(`✅ **تم تفعيل الاشتراك الإجباري بنجاح!**\nالقناة: \`${forceSubscribeChannel}\`\n\n⚠️ **تذكر:** البوت لن يعمل إذا لم يكن "مشرفاً" في هذه القناة للتمكن من فحص اشتراكات الأعضاء.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            logAdminAction(userId, `تفعيل الاشتراك الإجباري وإضافة قناة: ${newChannel}`);
+            return await ctx.reply(`✅ **تم إضافة القناة للاشتراك الإجباري بنجاح!**\nالقناة: \`${newChannel}\`\nإجمالي قنوات الاشتراك: ${forceSubscribeChannels.length}\n\n⚠️ **تذكر:** البوت لن يعمل إذا لم يكن "مشرفاً" في جميع هذه القنوات.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_SALES_CHANNEL') {
             if (text === 'إيقاف') {
-                publicSalesChannel = '';
+                publicSalesChannels = [];
                 delete botStates.adminInput[userId];
                 saveDatabase();
                 logAdminAction(userId, 'إيقاف النشر التلقائي في قناة المبيعات');
-                return await ctx.reply('✅ تم إيقاف النشر التلقائي في قناة المبيعات.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+                return await ctx.reply('✅ تم مسح جميع القنوات وإيقاف النشر التلقائي في قنوات المبيعات.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
             
             if (!text.startsWith('-100')) {
                  return await ctx.reply('❌ معرف القناة (ID) غير صحيح!\nيجب أن يبدأ المعرف بـ `-100`. تأكد من الرقم وأرسله مجدداً:', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
             
-            publicSalesChannel = text.trim();
+            let newChannel = text.trim();
+            if(!publicSalesChannels.includes(newChannel)) {
+                publicSalesChannels.push(newChannel);
+            }
             delete botStates.adminInput[userId];
             saveDatabase();
-            logAdminAction(userId, `تعيين قناة مبيعات جديدة: ${publicSalesChannel}`);
-            return await ctx.reply(`✅ **تم تعيين قناة المبيعات بنجاح!**\nالـ ID الجديد: \`${publicSalesChannel}\`\n\n⚠️ **تنبيه هام:** لا تنسَ إضافة البوت كأدمن في هذه القناة وإعطائه صلاحية إرسال الرسائل.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            logAdminAction(userId, `إضافة قناة مبيعات جديدة: ${newChannel}`);
+            return await ctx.reply(`✅ **تمت إضافة قناة المبيعات بنجاح!**\nالـ ID المضاف: \`${newChannel}\`\nإجمالي قنوات المبيعات: ${publicSalesChannels.length}\n\n⚠️ **تنبيه هام:** لا تنسَ إضافة البوت كأدمن في هذه القناة وإعطائه صلاحية إرسال الرسائل.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_CHARGE_USER') {
