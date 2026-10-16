@@ -573,6 +573,7 @@ function getMainMenu() {
   return Markup.keyboard(keyboard).resize();
 }
 
+// 🆕 تعديل رسالة الاشتراك الإجباري لتعرض "متجر أحمد" وتطلب الاشتراك باستمرار
 bot.use(async (ctx, next) => {
     checkAndSendDailyReport(); 
     
@@ -596,7 +597,7 @@ bot.use(async (ctx, next) => {
             }
 
             if (missingChannels.length > 0) {
-                const subMsg = '⚠️ <b>عذراً، يجب عليك الاشتراك في قنوات البوت أولاً لتتمكن من استخدامه.</b>\n\nاشترك الآن ثم اضغط على "تحقق من الاشتراك ✅"';
+                const subMsg = '⚠️ <b>أهلاً بك في متجر أحمد!</b>\n\nبرجاء الاشتراك في قنواتنا أولاً لتتمكن من استخدام البوت وطلب الخدمات.\n\n👇 اشترك الآن ثم اضغط على "تحقق من الاشتراك ✅"';
                 let buttons = [];
                 missingChannels.forEach((ch, idx) => {
                     const channelUrl = ch.startsWith('@') ? `https://t.me/${ch.replace('@', '')}` : '';
@@ -732,11 +733,12 @@ bot.start(async (ctx) => {
   } catch (err) {}
 });
 
+// 🆕 تعديل رد فعل زر التحقق من الاشتراك
 bot.action('check_sub', async (ctx) => {
     const userId = String(ctx.from.id); initUser(userId);
     if (!forceSubscribeChannels || forceSubscribeChannels.length === 0) {
         ctx.deleteMessage().catch(()=>{});
-        return await ctx.reply('أهلاً بك مجدداً في متجر الخدمات الرقمية! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
+        return await ctx.reply('أهلاً بك مجدداً في متجر أحمد! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
     }
     try {
         let isSubbedToAll = true;
@@ -752,11 +754,11 @@ bot.action('check_sub', async (ctx) => {
         }
 
         if (isSubbedToAll) {
-            await ctx.answerCbQuery('✅ شكراً لاشتراكك! يمكنك الآن استخدام البوت.', {show_alert: true}).catch(()=>{});
+            await ctx.answerCbQuery('✅ شكراً لاشتراكك! يمكنك الآن استخدام متجر أحمد.', {show_alert: true}).catch(()=>{});
             ctx.deleteMessage().catch(()=>{});
-            await ctx.reply('أهلاً بك مجدداً في المتجر! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
+            await ctx.reply('أهلاً بك مجدداً في متجر أحمد! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
         } else {
-            await ctx.answerCbQuery('❌ عذراً، لم تقم بالاشتراك في جميع القنوات بعد!', { show_alert: true }).catch(()=>{});
+            await ctx.answerCbQuery('❌ عذراً، برجاء الاشتراك في جميع القنوات أولاً!', { show_alert: true }).catch(()=>{});
         }
     } catch (e) {
         await ctx.answerCbQuery('❌ حدث خطأ، تأكد أن البوت مرفوع كأدمن في القنوات.').catch(()=>{});
@@ -1086,7 +1088,6 @@ async function showAdminPanel(ctx) {
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
         [Markup.button.callback('💲 تحديد سعر ثابت لمنتج', 'admin_fixed_price'), Markup.button.callback('👁️ إخفاء/إظهار منتج', 'admin_hide_cats')],
-        // 🔗 زر معرف الـ API مع نظام صفحات لمنع التعليق
         [Markup.button.callback('🔗 معرف الـ API لجميع الخدمات', 'admin_services_api_pg_1')],
         [Markup.button.callback('📊 تعديل النسبة العامة', 'admin_set_global_markup'), Markup.button.callback('🎯 تعديل نسبة قسم', 'admin_set_custom_markup')],
         [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_promo')],
@@ -1112,7 +1113,6 @@ bot.action(/^approve_dep_|^reject_dep_/, async (ctx, next) => {
     return await next();
 });
 
-// 🔗 دالة عرض الخدمات الظاهرة مع اسم الـ API بنظام صفحات لمنع التعليق
 bot.action(/^admin_services_api_pg_(\d+)$/, async (ctx) => {
     ctx.answerCbQuery('⏳ جاري جلب الخدمات...').catch(()=>{});
     try {
