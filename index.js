@@ -571,7 +571,6 @@ function getMainMenu() {
   return Markup.keyboard(keyboard).resize();
 }
 
-// 🆕 فحص الاشتراك الإجباري الدقيق والمحدث (لا يسمح بالمرور إلا إذا كان مشتركاً في الجميع)
 bot.use(async (ctx, next) => {
     checkAndSendDailyReport(); 
     
@@ -1242,14 +1241,14 @@ bot.action('admin_set_sales_channel', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_SALES_CHANNEL'; saveDatabase();
-    await ctx.editMessageText('📢 **إضافة قنوات المبيعات الحية:**\n\nأرسل معرف القناة (ID) لإضافتها للقائمة (يمكنك إضافة أكثر من قناة بإرسالهم واحدة تلو الأخرى في هذا الإعداد).\nيجب أن يبدأ المعرف بـ `-100` (مثال: `-1001234567890`)\n\n🛑 لحذف جميع قنوات المبيعات وإيقاف النشر الآلي تماماً أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('📢 **إضافة قنوات المبيعات الحية:**\n\nيمكنك إضافة أكثر من قناة بإرسالهم واحدة تلو الأخرى.\n\nفقط أرسل **رابط القناة** مباشرة (مثال: `https://t.me/AhmedStore`).\n\n🛑 لحذف جميع قنوات المبيعات أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_set_force_sub', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_FORCE_SUB'; saveDatabase();
-    await ctx.editMessageText('🔒 **إضافة قنوات الاشتراك الإجباري:**\n\nيمكنك إضافة أكثر من قناة بالدخول لهذا الإعداد وإرسالهم واحدة تلو الأخرى.\n\nأرسل معرف القناة (بـ @) أو الآيدي (-100) ثم مسافة ثم رابط الانضمام للقناة.\n\nمثال 1: `@XProStore https://t.me/XProStore`\nمثال 2: `-10012345678 https://t.me/+invite_link`\n\n⚠️ **تنبيه:** يجب إضافة البوت كـ(مشرف) في القنوات.\n\n🛑 لإلغاء وحذف جميع القنوات أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('🔒 **إضافة قنوات الاشتراك الإجباري:**\n\nيمكنك إضافة أكثر من قناة بالدخول لهذا الإعداد وإرسالهم واحدة تلو الأخرى.\n\n✨ **أرسل رابط القناة مباشرة** (سواء كانت عامة أو خاصة البوت سيتعرف عليها).\nمثال: `https://t.me/AhmedStore`\n\n⚠️ **تنبيه:** يجب رفع البوت كـ(مشرف) في القناة أولاً.\n\n🛑 لإلغاء وحذف جميع القنوات أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_force_refresh', async (ctx) => {
@@ -1606,7 +1605,6 @@ bot.action('admin_view_logs', async (ctx) => {
 
 bot.action('back_to_admin', async (ctx) => { ctx.answerCbQuery().catch(()=>{}); try { await showAdminPanel(ctx); } catch(e){} });
 
-// 🆕 تصحيح زر تسجيل الخروج حتى يُعاد الحساب لمستخدم عادي وتطبق عليه قوانين الاشتراك الإجباري
 bot.action('admin_logout', async (ctx) => { 
     ctx.answerCbQuery().catch(()=>{}); 
     botStates.adminSession[ctx.from.id] = false; 
@@ -2429,7 +2427,8 @@ bot.on('text', async (ctx, next) => {
         }
 
         if (state === 'WAIT_FORCE_SUB') {
-            if (text === 'إيقاف') {
+            let input = text.replace(/[\u200B-\u200D\uFEFF\u200E\u200F]/g, '').trim(); 
+            if (input === 'إيقاف') {
                 forceSubscribeChannels = [];
                 delete botStates.adminInput[userId];
                 saveDatabase();
@@ -2437,20 +2436,37 @@ bot.on('text', async (ctx, next) => {
                 return await ctx.reply('✅ تم مسح جميع القنوات وإيقاف نظام الاشتراك الإجباري بنجاح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
             
-            const parts = text.split(/\s+/);
-            const chatId = parts[0];
-            let link = parts.length > 1 ? parts[1] : null;
+            let chatId, link;
+
+            if (input.startsWith('http')) {
+                link = input.split(' ')[0]; 
+                if (link.includes('t.me/+') || link.includes('joinchat')) {
+                    return await ctx.reply('❌ هذا رابط دعوة خاص! القنوات الخاصة لا يمكن للبوت التعرف عليها من الرابط فقط. برجاء إرسال الآيدي ثم مسافة ثم الرابط.\nمثال: `-100123456789 https://t.me/+abcdefg`');
+                }
+                let usernameMatch = link.match(/t\.me\/([a-zA-Z0-9_]+)/);
+                if (usernameMatch && usernameMatch[1]) {
+                    chatId = '@' + usernameMatch[1];
+                } else {
+                    return await ctx.reply('❌ الرابط غير صحيح.');
+                }
+            } else if (input.startsWith('@') && !input.includes(' ')) {
+                chatId = input;
+                link = `https://t.me/${input.replace('@', '')}`;
+            } else if (input.includes(' ')) {
+                let parts = input.split(/\s+/);
+                chatId = parts[0];
+                link = parts[1];
+            } else {
+                chatId = input;
+                if (chatId.startsWith('-100')) {
+                    return await ctx.reply('❌ أرسل رابط القناة مع الآيدي مفصولين بمسافة ليتمكن البوت من توجيه الأعضاء إليها.');
+                } else {
+                    return await ctx.reply('❌ صيغة غير صحيحة. أرسل رابط القناة فقط.');
+                }
+            }
 
             if (!chatId.startsWith('@') && !chatId.startsWith('-100')) {
-                 return await ctx.reply('❌ معرف القناة غير صحيح!\nيجب أن يبدأ المعرف بـ `@` أو `-100`. أرسل مجدداً:', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
-            }
-
-            if (chatId.startsWith('-100') && !link) {
-                 return await ctx.reply('❌ لأنك استخدمت آيدي خاص (-100)، **يجب** إرسال رابط الانضمام (Invite Link) معه.\n\nأرسل الآيدي ثم مسافة ثم الرابط.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
-            }
-
-            if (chatId.startsWith('@') && !link) {
-                 link = `https://t.me/${chatId.replace('@', '')}`;
+                 return await ctx.reply('❌ فشل التعرف على القناة. تأكد من إرسال رابط صحيح أو آيدي يبدأ بـ -100.');
             }
 
             const exists = forceSubscribeChannels.some(ch => (typeof ch === 'string' ? ch === chatId : ch.chatId === chatId));
@@ -2461,11 +2477,12 @@ bot.on('text', async (ctx, next) => {
             delete botStates.adminInput[userId];
             saveDatabase();
             logAdminAction(userId, `تفعيل الاشتراك الإجباري وإضافة قناة: ${chatId}`);
-            return await ctx.reply(`✅ **تم إضافة القناة للاشتراك الإجباري بنجاح!**\nالآيدي: \`${chatId}\`\nالرابط: ${link}\nإجمالي قنوات الاشتراك: ${forceSubscribeChannels.length}\n\n⚠️ **تذكر:** البوت لن يعمل إذا لم يكن "مشرفاً" في جميع هذه القنوات.`, { parse_mode: 'Markdown', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            return await ctx.reply(`✅ **تم إضافة القناة للاشتراك الإجباري بنجاح!**\nالآيدي/المعرف: \`${chatId}\`\nالرابط: ${link}\nإجمالي قنوات الاشتراك: ${forceSubscribeChannels.length}\n\n⚠️ **تذكر:** البوت لن يعمل إذا لم يكن "مشرفاً" في جميع هذه القنوات.`, { parse_mode: 'Markdown', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_SALES_CHANNEL') {
-            if (text === 'إيقاف') {
+            let input = text.replace(/[\u200B-\u200D\uFEFF\u200E\u200F]/g, '').trim();
+            if (input === 'إيقاف') {
                 publicSalesChannels = [];
                 delete botStates.adminInput[userId];
                 saveDatabase();
@@ -2473,11 +2490,20 @@ bot.on('text', async (ctx, next) => {
                 return await ctx.reply('✅ تم مسح جميع القنوات وإيقاف النشر التلقائي في قنوات المبيعات.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
             
-            if (!text.startsWith('-100')) {
-                 return await ctx.reply('❌ معرف القناة (ID) غير صحيح!\nيجب أن يبدأ المعرف بـ `-100`. تأكد من الرقم وأرسله مجدداً:', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+            let newChannel = input;
+            if (input.startsWith('http')) {
+                let usernameMatch = input.match(/t\.me\/([a-zA-Z0-9_]+)/);
+                if (usernameMatch && usernameMatch[1] && !input.includes('t.me/+')) {
+                    newChannel = '@' + usernameMatch[1];
+                } else {
+                    return await ctx.reply('❌ يجب أن يكون رابط لقناة عامة بها يوزرنيم، أو أرسل الآيدي (-100).');
+                }
+            }
+
+            if (!newChannel.startsWith('-100') && !newChannel.startsWith('@')) {
+                 return await ctx.reply('❌ معرف غير صحيح.');
             }
             
-            let newChannel = text.trim();
             if(!publicSalesChannels.includes(newChannel)) {
                 publicSalesChannels.push(newChannel);
             }
