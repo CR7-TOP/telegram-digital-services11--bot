@@ -1176,7 +1176,7 @@ bot.action('admin_price_drop', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_PD_SEARCH'; saveDatabase();
-    await ctx.editMessageText('📉 **إعلان انخفاض سعر (Price Drop):**\n\nأرسل اسم المنتج الذي تريد تخفيض سعره ونشره في القناة للبحث عنه:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('📉 **إعلان انخفاض سعر (Price Drop):**\n\nأرسل اسم المنتج الذي تريد تخفيض سعره ونشره في القناة للبحث عنه:', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action(/^pdsel_(.+)$/, async (ctx) => {
@@ -1190,14 +1190,14 @@ bot.action('admin_set_drop_group', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_DROP_GROUP'; saveDatabase();
-    await ctx.editMessageText(`⚙️ **تحديد جروب الدروبات:**\n\nالجروب الحالي: \`${dropGroupId || 'غير محدد'}\`\n\nأرسل ID الجروب العام الخاص بك (يجب أن يبدأ بـ -100):`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText(`⚙️ **تحديد جروب الدروبات:**\n\nالجروب الحالي: <code>${dropGroupId || 'غير محدد'}</code>\n\nأرسل ID الجروب العام الخاص بك (يجب أن يبدأ بـ -100):`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_send_drop', async (ctx) => {
     if (!dropGroupId) return ctx.answerCbQuery('❌ يرجى تحديد ID الجروب أولاً من (جروب الدروب)!', {show_alert: true}).catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_DROP_AMOUNT'; saveDatabase();
-    await ctx.editMessageText('🎁 **إرسال دروب سريع للجروب:**\n\nأرسل الآن المبلغ المراد توزيعه كهدية لأسرع عميل بالجنيه المصري (مثال: `50`):', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('🎁 **إرسال دروب سريع للجروب:**\n\nأرسل الآن المبلغ المراد توزيعه كهدية لأسرع عميل بالجنيه المصري (مثال: <code>50</code>):', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_scan_renewals', async (ctx) => {
@@ -1227,28 +1227,28 @@ bot.action('admin_scan_renewals', async (ctx) => {
         }
     }
     saveDatabase();
-    await ctx.editMessageText(`✅ **تم الانتهاء من الفحص!**\n\nتم إرسال إشعارات التجديد التلقائية إلى **${sentCount}** عميل بنجاح.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText(`✅ **تم الانتهاء من الفحص!**\n\nتم إرسال إشعارات التجديد التلقائية إلى <b>${sentCount}</b> عميل بنجاح.`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_change_wallet', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_NEW_WALLET'; saveDatabase();
-    await ctx.editMessageText('📱 **تغيير رقم الاستقبال:**\n\nأرسل الرقم الجديد لمحفظة فودافون كاش الخاص بك:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('📱 **تغيير رقم الاستقبال:**\n\nأرسل الرقم الجديد لمحفظة فودافون كاش الخاص بك:', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_set_sales_channel', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_SALES_CHANNEL'; saveDatabase();
-    await ctx.editMessageText('📢 **إضافة قنوات المبيعات الحية:**\n\nيمكنك إضافة أكثر من قناة بإرسالهم واحدة تلو الأخرى.\n\nفقط أرسل **رابط القناة** مباشرة (مثال: `https://t.me/AhmedStore`).\n\n🛑 لحذف جميع قنوات المبيعات أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('📢 **إضافة قنوات المبيعات الحية:**\n\nيمكنك إضافة أكثر من قناة بإرسالهم واحدة تلو الأخرى.\n\nفقط أرسل **رابط القناة** مباشرة (مثال: <code>https://t.me/AhmedStore</code>).\n\n🛑 لحذف جميع قنوات المبيعات أرسل كلمة: <code>إيقاف</code>', { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_set_force_sub', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_FORCE_SUB'; saveDatabase();
-    await ctx.editMessageText('🔒 **إضافة قنوات الاشتراك الإجباري:**\n\nيمكنك إضافة أكثر من قناة بالدخول لهذا الإعداد وإرسالهم واحدة تلو الأخرى.\n\n✨ **أرسل رابط القناة مباشرة** (سواء كانت عامة أو خاصة البوت سيتعرف عليها).\nمثال: `https://t.me/AhmedStore`\n\n⚠️ **تنبيه:** يجب رفع البوت كـ(مشرف) في القناة أولاً.\n\n🛑 لإلغاء وحذف جميع القنوات أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('🔒 **إضافة قنوات الاشتراك الإجباري:**\n\nيمكنك إضافة أكثر من قناة بالدخول لهذا الإعداد وإرسالهم واحدة تلو الأخرى.\n\n✨ **أرسل رابط القناة مباشرة** (سواء كانت عامة أو خاصة البوت سيتعرف عليها).\nمثال: <code>https://t.me/AhmedStore</code>\n\n⚠️ **تنبيه:** يجب رفع البوت كـ(مشرف) في القناة أولاً.\n\n🛑 لإلغاء وحذف جميع القنوات أرسل كلمة: <code>إيقاف</code>', { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_force_refresh', async (ctx) => {
@@ -1256,7 +1256,7 @@ bot.action('admin_force_refresh', async (ctx) => {
     try {
         isFetchingServices = false;
         await backgroundServiceUpdate();
-        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين في ذاكرة البوت.', { parse_mode: 'Markdown' }).catch(()=>{});
+        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين في ذاكرة البوت.', { parse_mode: 'HTML' }).catch(()=>{});
     } catch (e) {
         await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{});
     }
@@ -1447,7 +1447,7 @@ bot.action(/^setfixed_(.+)$/, async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_SET_FIXED_' + ctx.match[1]; saveDatabase();
-    await ctx.editMessageText('💲 أرسل السعر الثابت الجديد للمنتج بالجنيه المصري (مثال: 150).\n\n🗑️ لإلغاء السعر الثابت والعودة لنظام النسبة المئوية، اكتب كلمة: `حذف`\n🔙 للإلغاء والرجوع، اكتب كلمة: `رجوع`', {parse_mode: 'Markdown'}).catch(()=>{});
+    await ctx.editMessageText('💲 أرسل السعر الثابت الجديد للمنتج بالجنيه المصري (مثال: 150).\n\n🗑️ لإلغاء السعر الثابت والعودة لنظام النسبة المئوية، اكتب كلمة: `حذف`\n🔙 للإلغاء والرجوع، اكتب كلمة: `رجوع`', {parse_mode: 'HTML'}).catch(()=>{});
 });
 
 bot.action('admin_ad_stats', async (ctx) => {
@@ -1461,7 +1461,7 @@ bot.action('admin_ad_stats', async (ctx) => {
                 msg += `🔹 إعلان (${camp}): دخول ${adCampaigns[camp]} عميل جديد\n`;
             }
         }
-        await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+        await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch (e) {}
 });
 
@@ -1491,8 +1491,8 @@ bot.action('admin_profit_report', async (ctx) => {
                 });
             }
         }
-        const msg = `💸 **تقرير أرباح المتجر:**\n\n📅 **أرباح اليوم:** *${todayProfit.toFixed(2)} EGP*\n📆 **أرباح أمس:** *${yesterdayProfit.toFixed(2)} EGP*\n📈 **إجمالي الأرباح الكلية:** *${totalProfit.toFixed(2)} EGP*\n\n*(ملاحظة: الأرباح القديمة محسوبة بشكل تقديري، أما أرباح الطلبات الجديدة يتم حسابها بدقة 100%).*`;
-        await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+        const msg = `💸 **تقرير أرباح المتجر:**\n\n📅 **أرباح اليوم:** <b>${todayProfit.toFixed(2)} EGP</b>\n📆 **أرباح أمس:** <b>${yesterdayProfit.toFixed(2)} EGP</b>\n📈 **إجمالي الأرباح الكلية:** <b>${totalProfit.toFixed(2)} EGP</b>\n\n*(ملاحظة: الأرباح القديمة محسوبة بشكل تقديري، أما أرباح الطلبات الجديدة يتم حسابها بدقة 100%).*`;
+        await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch (e) { console.error(e); }
 });
 
@@ -1513,14 +1513,14 @@ bot.action(/^setmarkup_(.+)$/, async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_SET_MARKUP_' + ctx.match[1]; saveDatabase();
-    await ctx.editMessageText('📈 أرسل النسبة المئوية للربح لهذا المنتج فقط (مثال: اكتب 50 لربح 50%).\n\n🗑️ لإلغاء النسبة المخصصة وجعل المنتج يتبع النسبة العامة، اكتب كلمة: `حذف`', {parse_mode: 'Markdown'}).catch(()=>{});
+    await ctx.editMessageText('📈 أرسل النسبة المئوية للربح لهذا المنتج فقط (مثال: اكتب 50 لربح 50%).\n\n🗑️ لإلغاء النسبة المخصصة وجعل المنتج يتبع النسبة العامة، اكتب كلمة: `حذف`', {parse_mode: 'HTML'}).catch(()=>{});
 });
 
 bot.action(/^addstock_(.+)$/, async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_ADD_STOCK_' + ctx.match[1]; saveDatabase();
-    await ctx.editMessageText('📦 **إدارة المخزن المحلي لهذا المنتج:**\n\n➕ **للإضافة:** أرسل العنصر كرسالة (تقدر تبعت أكتر من عنصر ورا بعض).\n👀 **للعرض:** أرسل كلمة `عرض` لمعرفة محتويات المخزن.\n🗑️ **للحذف:** أرسل كلمة `حذف الكل` لتفريغ مخزن هذا المنتج بالكامل.\n🔙 **للخروج:** أرسل كلمة `رجوع`', {parse_mode: 'Markdown'}).catch(()=>{});
+    await ctx.editMessageText('📦 **إدارة المخزن المحلي لهذا المنتج:**\n\n➕ **للإضافة:** أرسل العنصر كرسالة (تقدر تبعت أكتر من عنصر ورا بعض).\n👀 **للعرض:** أرسل كلمة `عرض` لمعرفة محتويات المخزن.\n🗑️ **للحذف:** أرسل كلمة `حذف الكل` لتفريغ مخزن هذا المنتج بالكامل.\n🔙 **للخروج:** أرسل كلمة `رجوع`', {parse_mode: 'HTML'}).catch(()=>{});
 });
 
 bot.action('admin_pending_deposits', async (ctx) => {
@@ -1543,20 +1543,20 @@ bot.action('admin_check_api_balance', async (ctx) => {
     try {
         await ctx.editMessageText('⏳ جاري الاتصال بالمزودين...').catch(()=>{});
         let msg = '💰 **أرصدة المزودين:**\n\n';
-        try { const res1 = await apiClient1.get('/me/wallet'); msg += `🔹 المزود الأول: *${parseFloat(res1.data?.data?.balance || res1.data?.balance || 0).toFixed(2)} EGP*\n`; } 
+        try { const res1 = await apiClient1.get('/me/wallet'); msg += `🔹 المزود الأول: <b>${parseFloat(res1.data?.data?.balance || res1.data?.balance || 0).toFixed(2)} EGP</b>\n`; } 
         catch(e) { msg += `🔹 المزود الأول: خطأ ❌ (${e.response?.status || e.message})\n`; }
         
-        try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود الثاني: *$${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}*\n`; } 
+        try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود الثاني: <b>$${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}</b>\n`; } 
         catch(e) { msg += `🔹 المزود الثاني: خطأ ❌ (${e.response?.status || e.message})\n`; }
         
         try { 
             const res3 = await apiClient3.get('/?action=balance');
-            msg += `🔹 المزود الثالث (CupponHub): *${parseFloat(res3.data?.balance_usdt || res3.data?.data?.balance || 0).toFixed(2)} USDT*\n`; 
+            msg += `🔹 المزود الثالث (CupponHub): <b>${parseFloat(res3.data?.balance_usdt || res3.data?.data?.balance || 0).toFixed(2)} USDT</b>\n`; 
         } 
         catch(e) { 
             msg += `🔹 المزود الثالث (CupponHub): خطأ ❌ (${e.response?.status || e.message})\n`; 
         }
-        await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+        await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
 });
 
@@ -1581,7 +1581,7 @@ bot.action('admin_check_api_status', async (ctx) => {
             msg += `🔹 المزود الثالث: متعطل ❌ (الخطأ: ${e.response?.status || e.message})\n`; 
         }
         
-        await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+        await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
 });
 
@@ -1598,8 +1598,8 @@ bot.action('admin_view_logs', async (ctx) => {
     try {
       let msg = '📝 **سجل نشاط الأدمن (آخر 15 حركة):**\n\n';
       if (adminAuditLogs.length === 0) msg += 'لا توجد حركات مسجلة بعد.';
-      else { adminAuditLogs.slice(-15).reverse().forEach(log => { msg += '🔹 الأدمن: `' + log.adminId + '`\n📌 الحركة: ' + log.action + '\n🕒 ' + log.date + '\n━━━━━━━━━━━━\n'; }); }
-      await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+      else { adminAuditLogs.slice(-15).reverse().forEach(log => { msg += '🔹 الأدمن: <code>' + log.adminId + '</code>\n📌 الحركة: ' + log.action + '\n🕒 ' + log.date + '\n━━━━━━━━━━━━\n'; }); }
+      await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e){}
 });
 
@@ -1624,11 +1624,11 @@ bot.action('admin_view_users', async (ctx) => {
     let userList = '👥 **قائمة العملاء:**\n\n'; let count = 0;
     for (let tgId in usersDb) { 
         const bStatus = usersDb[tgId].isBanned ? ' [محظور]' : '';
-        userList += '👤 ID: `' + usersDb[tgId].uid + '` | الرصيد: ' + parseFloat(usersDb[tgId].balance).toFixed(2) + ' EGP' + bStatus + '\n'; count++; 
+        userList += '👤 ID: <code>' + usersDb[tgId].uid + '</code> | الرصيد: ' + parseFloat(usersDb[tgId].balance).toFixed(2) + ' EGP' + bStatus + '\n'; count++; 
     }
     if (count === 0) userList = 'لا يوجد عملاء.';
     if (userList.length > 3900) userList = userList.substring(0, 3900) + '\n...';
-    await ctx.editMessageText(userList, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{}); 
+    await ctx.editMessageText(userList, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{}); 
   } catch(e){}
 });
 
@@ -1636,70 +1636,70 @@ bot.action('admin_set_global_markup', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_GLOBAL_MARKUP'; saveDatabase();
-    await ctx.editMessageText('📊 **تعديل النسبة العامة:**\n\nأرسل الآن نسبة الربح الجديدة بالأرقام فقط (مثال: 15):', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('📊 **تعديل النسبة العامة:**\n\nأرسل الآن نسبة الربح الجديدة بالأرقام فقط (مثال: 15):', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_set_custom_markup', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_CUSTOM_MARKUP'; saveDatabase();
-    await ctx.editMessageText('🎯 **تعديل نسبة قسم معين:**\n\nأرسل اسم القسم والنسبة هكذا:\n`اسم_القسم النسبة`\n\n🗑️ لمسح جميع نسب الأقسام والعودة للنسبة العامة، اكتب: `حذف الكل`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('🎯 **تعديل نسبة قسم معين:**\n\nأرسل اسم القسم والنسبة هكذا:\n<code>اسم_القسم النسبة</code>\n\n🗑️ لمسح جميع نسب الأقسام والعودة للنسبة العامة، اكتب: <code>حذف الكل</code>', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_flash_sale', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_FLASH_SALE'; saveDatabase();
-    await ctx.editMessageText('⚡ **إعداد خصم مؤقت (Flash Sale):**\n\nأرسل نسبة الخصم وعدد الساعات هكذا (بينهم مسافة):\n`النسبة الساعات`\n(مثال: `20 1` لخصم 20% لمدة ساعة واحدة)\n\n❌ لإلغاء الخصم الحالي، أرسل: `0 0`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('⚡ **إعداد خصم مؤقت (Flash Sale):**\n\nأرسل نسبة الخصم وعدد الساعات هكذا (بينهم مسافة):\n<code>النسبة الساعات</code>\n(مثال: <code>20 1</code> لخصم 20% لمدة ساعة واحدة)\n\n❌ لإلغاء الخصم الحالي، أرسل: <code>0 0</code>', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_charge_by_id', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_CHARGE_USER'; saveDatabase();
-    await ctx.editMessageText('💰 **شحن رصيد لعميل:**\n\nأرسل الآيدي والمبلغ هكذا (بينهم مسافة):\n`الآيدي المبلغ`\n(مثال: `123456789 50`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('💰 **شحن رصيد لعميل:**\n\nأرسل الآيدي والمبلغ هكذا (بينهم مسافة):\n<code>الآيدي المبلغ</code>\n(مثال: <code>123456789 50</code>)', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_create_promo', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_PROMO_CREATE'; saveDatabase();
-    await ctx.editMessageText('🎟️ **إنشاء كود خصم عام:**\n\nأرسل الكود والمبلغ هكذا (بينهم مسافة):\n`الكود المبلغ`\n(مثال: `WELCOME 20`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('🎟️ **إنشاء كود خصم عام:**\n\nأرسل الكود والمبلغ هكذا (بينهم مسافة):\n<code>الكود المبلغ</code>\n(مثال: <code>WELCOME 20</code>)', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_create_voucher', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_VOUCHER_CREATE'; saveDatabase();
-    await ctx.editMessageText('🎫 **توليد كروت شحن (قسائم):**\n\nأرسل الكود والمبلغ هكذا (بينهم مسافة):\n`الكود المبلغ`\n(مثال: `VIP100 100`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('🎫 **توليد كروت شحن (قسائم):**\n\nأرسل الكود والمبلغ هكذا (بينهم مسافة):\n<code>الكود المبلغ</code>\n(مثال: <code>VIP100 100</code>)', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_ban_user', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_BAN_USER'; saveDatabase();
-    await ctx.editMessageText('🚫 **حظر مستخدم:**\n\nأرسل الآيدي (ID) الخاص بالعميل لحظره نهائياً:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('🚫 **حظر مستخدم:**\n\nأرسل الآيدي (ID) الخاص بالعميل لحظره نهائياً:', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_unban_user', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_UNBAN_USER'; saveDatabase();
-    await ctx.editMessageText('✅ **فك حظر مستخدم:**\n\nأرسل الآيدي (ID) الخاص بالعميل لفك الحظر عنه:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('✅ **فك حظر مستخدم:**\n\nأرسل الآيدي (ID) الخاص بالعميل لفك الحظر عنه:', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_msg_by_id', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_USER_MSG'; saveDatabase();
-    await ctx.editMessageText('✉️ **مراسلة عميل عبر الـ ID:**\n\nأرسل الآيدي والرسالة هكذا:\n`الآيدي الرسالة`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('✉️ **مراسلة عميل عبر الـ ID:**\n\nأرسل الآيدي والرسالة هكذا:\n<code>الآيدي الرسالة</code>', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_broadcast', async (ctx) => { 
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.broadcast) botStates.broadcast = {};
     botStates.broadcast[ctx.from.id] = true; saveDatabase();
-    await ctx.editMessageText('📢 **إذاعة متطورة للعملاء:**\n\n- للإرسال النصي: أرسل النص مباشرة.\n- للإرسال بصورة وزر: أرسل صورة واكتب في الوصف (الكابشن): `النص | اسم الزر | الرابط`\n\nأو اكتب `إلغاء` للرجوع.', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{}); 
+    await ctx.editMessageText('📢 **إذاعة متطورة للعملاء:**\n\n- للإرسال النصي: أرسل النص مباشرة.\n- للإرسال بصورة وزر: أرسل صورة واكتب في الوصف (الكابشن): <code>النص | اسم الزر | الرابط</code>\n\nأو اكتب <code>إلغاء</code> للرجوع.', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{}); 
 });
 
 bot.action(/^approve_dep_(.+)_(.+)$/, async (ctx) => {
@@ -1718,9 +1718,9 @@ bot.action(/^approve_dep_(.+)_(.+)$/, async (ctx) => {
                 usersDb[targetUserId].walletHistory.push({ type: 'شحن فودافون كاش (موافقة أدمن)', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
                 saveDatabase();
                 
-                bot.telegram.sendMessage(targetUserId, `🎉 **تم تأكيد الدفع بنجاح!**\n💰 تمت إضافة: *${amount} EGP* لمحفظتك.\n✅ رصيدك الحالي: *${usersDb[targetUserId].balance.toFixed(2)} EGP*`, { parse_mode: 'Markdown' }).catch(()=>{});
+                bot.telegram.sendMessage(targetUserId, `🎉 **تم تأكيد الدفع بنجاح!**\n💰 تمت إضافة: <b>${amount} EGP</b> لمحفظتك.\n✅ رصيدك الحالي: <b>${usersDb[targetUserId].balance.toFixed(2)} EGP</b>`, { parse_mode: 'HTML' }).catch(()=>{});
                 
-                await ctx.editMessageText(`✅ **تمت الموافقة بنجاح!**\n\nتم شحن ${amount} EGP للعميل (ID: ${usersDb[targetUserId].uid})`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) }).catch(()=>{});
+                await ctx.editMessageText(`✅ **تمت الموافقة بنجاح!**\n\nتم شحن ${amount} EGP للعميل (ID: ${usersDb[targetUserId].uid})`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) }).catch(()=>{});
             } else {
                 await ctx.editMessageText('❌ العميل غير موجود.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
             }
@@ -1741,9 +1741,9 @@ bot.action(/^reject_dep_(.+)$/, async (ctx) => {
             pendingDeposits.splice(pendingIndex, 1);
             saveDatabase();
             
-            bot.telegram.sendMessage(targetUserId, `❌ **تم رفض طلب الشحن الخاص بك.**\n\nيرجى التأكد من إرفاق إثبات الدفع الصحيح والتواصل مع الدعم الفني إذا كانت هناك مشكلة.`, { parse_mode: 'Markdown' }).catch(()=>{});
+            bot.telegram.sendMessage(targetUserId, `❌ **تم رفض طلب الشحن الخاص بك.**\n\nيرجى التأكد من إرفاق إثبات الدفع الصحيح والتواصل مع الدعم الفني إذا كانت هناك مشكلة.`, { parse_mode: 'HTML' }).catch(()=>{});
             
-            await ctx.editMessageText(`❌ **تم رفض الطلب.**\n\nتم إلغاء شحن ${reqData.amount} EGP للعميل.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) }).catch(()=>{});
+            await ctx.editMessageText(`❌ **تم رفض الطلب.**\n\nتم إلغاء شحن ${reqData.amount} EGP للعميل.`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) }).catch(()=>{});
         } else {
             await ctx.editMessageText('❌ هذا الطلب غير موجود.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
         }
@@ -1843,7 +1843,7 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
     });
     buttons.push([Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]);
 
-    await ctx.editMessageText(`📦 خدمات قسم *${selectedCategory}*:`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+    await ctx.editMessageText(`📦 خدمات قسم <b>${selectedCategory}</b>:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
   } catch(err) {
       console.error(err);
   }
@@ -1863,7 +1863,7 @@ bot.action(/^notify_stock_(.+)$/, async (ctx) => {
         if (!stockAlerts[srvId]) stockAlerts[srvId] = [];
         if (!stockAlerts[srvId].includes(userId)) stockAlerts[srvId].push(userId);
         saveDatabase();
-        await ctx.editMessageText('🔔 **تم تفعيل الإشعار بنجاح!**\nسنرسل لك رسالة تلقائية فور قيام الإدارة بإضافة كميات جديدة من هذه الخدمة.', {parse_mode: 'Markdown'}).catch(()=>{});
+        await ctx.editMessageText('🔔 **تم تفعيل الإشعار بنجاح!**\nسنرسل لك رسالة تلقائية فور قيام الإدارة بإضافة كميات جديدة من هذه الخدمة.', {parse_mode: 'HTML'}).catch(()=>{});
     } catch (e) {}
 });
 
@@ -1875,7 +1875,7 @@ bot.action(/^rate_(\d+)_(.+)$/, async (ctx) => {
     ratings[srvId].totalStars += stars;
     ratings[srvId].count += 1;
     saveDatabase();
-    await ctx.editMessageText(`✅ **شكراً لتقييمك الرائع!**\nتقييمك للخدمة: ${'⭐'.repeat(stars)}\nرأيك يهمنا ويساعد العملاء الآخرين.`, {parse_mode: 'Markdown'}).catch(()=>{});
+    await ctx.editMessageText(`✅ **شكراً لتقييمك الرائع!**\nتقييمك للخدمة: ${'⭐'.repeat(stars)}\nرأيك يهمنا ويساعد العملاء الآخرين.`, {parse_mode: 'HTML'}).catch(()=>{});
 });
 
 bot.action(/^buyact_(.+)$/, async (ctx) => {
@@ -1910,7 +1910,7 @@ bot.action('confirm_stock_add', async (ctx) => {
             if (srv) srvName = srv.name_ar || srv.name || srv.title;
         }
         stockAlerts[srvId].forEach(uId => {
-            bot.telegram.sendMessage(uId, `🔔 **خبر سار!**\nالخدمة التي كنت تنتظرها **${srvName}** أصبحت متوفرة الآن في المتجر! سارع بالطلب قبل نفاذ الكمية.`, {parse_mode: 'Markdown'}).catch(()=>{});
+            bot.telegram.sendMessage(uId, `🔔 **خبر سار!**\nالخدمة التي كنت تنتظرها <b>${srvName}</b> أصبحت متوفرة الآن في المتجر! سارع بالطلب قبل نفاذ الكمية.`, {parse_mode: 'HTML'}).catch(()=>{});
         });
         stockAlerts[srvId] = []; 
     }
@@ -1990,7 +1990,7 @@ async function publishPriceDrop(ctx, userId, state, fileId) {
     const srvName = srv.name_ar || srv.name || srv.title;
 
     const safeName = safeHtml(srvName);
-    const msgText = `🔥 <b>توفرت كميات جديدة الآن!</b> 🎉\n\n📦 <b>${safeName}</b>\n📊 <b>الكمية المتوفرة:</b> كمية محدودة!\n💰 <b>السعر القديم:</b> ~${oldPrice} EGP~\n✨ <b>السعر الجديد:</b> ${price} EGP\n🏷 <b>نسبة الخصم:</b> ${discount}%\n\n🔥 <b>الكمية محدودة!</b>\n⚡ <b>سارع بالطلب الآن قبل نفاذ الكمية!</b>`;
+    const msgText = `🔥 <b>توفرت كميات جديدة الآن!</b> 🎉\n\n📦 <b>${safeName}</b>\n📊 <b>الكمية المتوفرة:</b> كمية محدودة!\n💰 <b>السعر القديم:</b> <s>${oldPrice} EGP</s>\n✨ <b>السعر الجديد:</b> ${price} EGP\n🏷 <b>نسبة الخصم:</b> ${discount}%\n\n🔥 <b>الكمية محدودة!</b>\n⚡ <b>سارع بالطلب الآن قبل نفاذ الكمية!</b>`;
 
     const me = await ctx.telegram.getMe().catch(() => ({username: 'AhmedStoreBot'}));
     const botUsername = me.username;
@@ -2054,7 +2054,7 @@ bot.on('photo', async (ctx, next) => {
             const fileUniqueId = photoObj.file_unique_id; 
             
             if (usedReceipts.includes(fileUniqueId)) {
-                await ctx.reply('⚠️ **تحذير أمني:**\nتم اكتشاف أن هذا الإيصال تم استخدامه مسبقاً! يرجى إرسال إيصال جديد وعدم تكرار المحاولة لتجنب حظر حسابك نهائياً.', {parse_mode: 'Markdown'}).catch(()=>{});
+                await ctx.reply('⚠️ <b>تحذير أمني:</b>\nتم اكتشاف أن هذا الإيصال تم استخدامه مسبقاً! يرجى إرسال إيصال جديد وعدم تكرار المحاولة لتجنب حظر حسابك نهائياً.', {parse_mode: 'HTML'}).catch(()=>{});
                 return;
             }
             
@@ -2065,7 +2065,7 @@ bot.on('photo', async (ctx, next) => {
             const reqData = { userId, userUid: usersDb[userId].uid, amount, receipt: fileId };
             pendingDeposits.push(reqData); saveDatabase();
             
-            await ctx.reply('✅ **تم استلام طلبك وإثبات الدفع!**\n⏳ جاري مراجعته من الإدارة وسيتم إضافة الرصيد لمحفظتك قريباً.', {parse_mode: 'Markdown'}).catch(()=>{});
+            await ctx.reply('✅ <b>تم استلام طلبك وإثبات الدفع!</b>\n⏳ جاري مراجعته من الإدارة وسيتم إضافة الرصيد لمحفظتك قريباً.', {parse_mode: 'HTML'}).catch(()=>{});
             
             for (let tgId in usersDb) {
                 if (String(usersDb[tgId].uid) === '1001') {
@@ -2102,9 +2102,9 @@ bot.on('text', async (ctx, next) => {
         if (state.step === 'WAIT_UID') {
             const targetUid = text;
             const targetUser = getUserByUid(targetUid);
-            if (!targetUser || targetUid === String(usersDb[userId].uid)) return await ctx.reply('❌ حساب غير صحيح. أرسل ID صحيح أو اكتب `إلغاء`:').catch(()=>{});
+            if (!targetUser || targetUid === String(usersDb[userId].uid)) return await ctx.reply('❌ حساب غير صحيح. أرسل ID صحيح أو اكتب <code>إلغاء</code>:', {parse_mode:'HTML'}).catch(()=>{});
             state.targetId = targetUser.telegramId; state.targetUid = targetUid; state.step = 'WAIT_AMOUNT'; saveDatabase();
-            return await ctx.reply('💰 **الرصيد المتاح:** ' + usersDb[userId].balance.toFixed(2) + ' EGP\n\nأرسل المبلغ المراد تحويله (أرقام فقط):').catch(()=>{});
+            return await ctx.reply('💰 <b>الرصيد المتاح:</b> ' + usersDb[userId].balance.toFixed(2) + ' EGP\n\nأرسل المبلغ المراد تحويله (أرقام فقط):', {parse_mode:'HTML'}).catch(()=>{});
         } else if (state.step === 'WAIT_AMOUNT') {
             if (text === 'إلغاء') { delete botStates.transfer[userId]; saveDatabase(); return await ctx.reply('✅ تم الإلغاء.'); }
             const amount = parseFloat(text);
@@ -2117,8 +2117,8 @@ bot.on('text', async (ctx, next) => {
             usersDb[state.targetId].walletHistory.push({ type: `استلام من ${usersDb[userId].uid}`, amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
             delete botStates.transfer[userId]; saveDatabase();
             
-            bot.telegram.sendMessage(state.targetId, `🎉 **استلام رصيد!**\nتم تحويل *${amount} EGP* إلى محفظتك من العميل ذو الـ ID: \`${usersDb[userId].uid}\``, { parse_mode: 'Markdown' }).catch(()=>{});
-            return await ctx.reply(`✅ **تم التحويل بنجاح!**\nتم تحويل ${amount} EGP للعميل.`, { parse_mode: 'Markdown' }).catch(()=>{});
+            bot.telegram.sendMessage(state.targetId, `🎉 <b>استلام رصيد!</b>\nتم تحويل <b>${amount} EGP</b> إلى محفظتك من العميل ذو الـ ID: <code>${usersDb[userId].uid}</code>`, { parse_mode: 'HTML' }).catch(()=>{});
+            return await ctx.reply(`✅ <b>تم التحويل بنجاح!</b>\nتم تحويل ${amount} EGP للعميل.`, { parse_mode: 'HTML' }).catch(()=>{});
         }
     }
 
@@ -2234,7 +2234,7 @@ bot.on('text', async (ctx, next) => {
 
                 if (!usersDb[userId].isVip && usersDb[userId].totalSpent >= 500) {
                     usersDb[userId].isVip = true;
-                    bot.telegram.sendMessage(userId, '👑 **تهانينا!**\nتمت ترقية حسابك إلى **VIP** لتحقيقك مشتريات بـ 500 EGP. ستحصل على أسعار مخفضة تلقائياً!').catch(()=>{});
+                    bot.telegram.sendMessage(userId, '👑 <b>تهانينا!</b>\nتمت ترقية حسابك إلى <b>VIP</b> لتحقيقك مشتريات بـ 500 EGP. ستحصل على أسعار مخفضة تلقائياً!', {parse_mode:'HTML'}).catch(()=>{});
                 }
                 
                 const currentOrder = { name: `${name} (${qty}x)`, srvId: String(srv.id), timestamp: Date.now(), reminded: false, price: parseFloat(price), profit: exactProfit, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }), details: "جاري المعالجة من المزود..." };
@@ -2345,14 +2345,14 @@ bot.on('text', async (ctx, next) => {
             usersDb[userId].balance += amount;
             usersDb[userId].walletHistory.push({ type: 'شحن كارت (' + textCode + ')', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
             saveDatabase(); 
-            return await ctx.reply(`🎉 **تم شحن محفظتك بنجاح!**\n💰 تمت إضافة: *${amount} EGP*\n💳 رصيدك الحالي: *${usersDb[userId].balance.toFixed(2)} EGP*`, { parse_mode: 'Markdown' }).catch(()=>{});
+            return await ctx.reply(`🎉 <b>تم شحن محفظتك بنجاح!</b>\n💰 تمت إضافة: <b>${amount} EGP</b>\n💳 رصيدك الحالي: <b>${usersDb[userId].balance.toFixed(2)} EGP</b>`, { parse_mode: 'HTML' }).catch(()=>{});
         }
         if (promoCodes[textCode]) {
             if (promoCodes[textCode].usedBy.map(String).includes(userId)) return await ctx.reply('❌ لقد قمت باستخدام كود الخصم هذا مسبقاً.').catch(()=>{});
             const amount = promoCodes[textCode].amount; usersDb[userId].balance += amount;
             usersDb[userId].walletHistory.push({ type: 'كود خصم (' + textCode + ')', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
             promoCodes[textCode].usedBy.push(userId); saveDatabase();
-            return await ctx.reply(`🎉 **كود خصم صحيح!**\n💰 تمت إضافة *${amount} EGP* لرصيدك.\n💳 رصيدك الحالي: *${usersDb[userId].balance.toFixed(2)} EGP*`, { parse_mode: 'Markdown' }).catch(()=>{});
+            return await ctx.reply(`🎉 <b>كود خصم صحيح!</b>\n💰 تمت إضافة <b>${amount} EGP</b> لرصيدك.\n💳 رصيدك الحالي: <b>${usersDb[userId].balance.toFixed(2)} EGP</b>`, { parse_mode: 'HTML' }).catch(()=>{});
         }
 
         return await ctx.reply('❌ الكود الذي أدخلته غير صحيح أو منتهي الصلاحية.');
@@ -2361,14 +2361,15 @@ bot.on('text', async (ctx, next) => {
     if (text === 'Ahmed/') {
         if (!botStates.adminLogin) botStates.adminLogin = {};
         botStates.adminLogin[userId] = 'WAIT_EMAIL'; saveDatabase();
-        return await ctx.reply('🔐 **تسجيل دخول الأدمن**\n\nيرجى إرسال البريد الإلكتروني (Email):').catch(()=>{});
+        return await ctx.reply('🔐 **تسجيل دخول الأدمن**\n\nيرجى إرسال البريد الإلكتروني (Email):', {parse_mode:'Markdown'}).catch(()=>{});
     }
 
     if (botStates.adminSession && botStates.adminSession[userId] && botStates.adminInput && botStates.adminInput[userId]) {
         const state = botStates.adminInput[userId];
 
         if (!state.startsWith('WAIT_ADD_STOCK_') && !state.startsWith('WAIT_BROADCAST') && !state.startsWith('WAIT_PD_')) {
-            delete botStates.adminInput[userId];
+            // Not deleting state immediately to allow multiple inputs if necessary,
+            // the specific handler will delete it when done.
         }
 
         if (state === 'WAIT_PD_SEARCH') {
@@ -2390,7 +2391,7 @@ bot.on('text', async (ctx, next) => {
             if (isNaN(newPrice) || newPrice < 0) return await ctx.reply('❌ سعر غير صحيح، يرجى إدخال أرقام فقط.');
             
             botStates.adminInput[userId] = `WAIT_PD_IMG_${srvId}_${newPrice}`; saveDatabase();
-            return await ctx.reply('📸 **الآن أرسل صورة للمنتج ليتم إرفاقها مع الإعلان في القناة.**\n\n(أو أرسل كلمة `تخطي` للنشر كنص فقط بدون صورة):', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+            return await ctx.reply('📸 <b>الآن أرسل صورة للمنتج ليتم إرفاقها مع الإعلان في القناة.</b>\n\n(أو أرسل كلمة <code>تخطي</code> للنشر كنص فقط بدون صورة):', {parse_mode:'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]])});
         }
 
         if (state.startsWith('WAIT_PD_IMG_') && text === 'تخطي') {
@@ -2400,12 +2401,12 @@ bot.on('text', async (ctx, next) => {
 
         if (state === 'WAIT_DROP_GROUP') {
             if (!text.startsWith('-100')) {
-                return await ctx.reply('❌ معرف الجروب غير صحيح! يجب أن يبدأ بـ `-100`.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+                return await ctx.reply('❌ معرف الجروب غير صحيح! يجب أن يبدأ بـ <code>-100</code>.', {parse_mode:'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
             }
             dropGroupId = text.trim();
             delete botStates.adminInput[userId]; saveDatabase();
             logAdminAction(userId, `تحديد جروب الدروبات: ${dropGroupId}`);
-            return await ctx.reply(`✅ **تم تعيين جروب الدروبات بنجاح!**\nالـ ID الجديد: \`${dropGroupId}\`\n\n⚠️ **تأكد أن البوت أدمن في الجروب ليتمكن من الإرسال.**`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            return await ctx.reply(`✅ <b>تم تعيين جروب الدروبات بنجاح!</b>\nالـ ID الجديد: <code>${dropGroupId}</code>\n\n⚠️ <b>تأكد أن البوت أدمن في الجروب ليتمكن من الإرسال.</b>`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_DROP_AMOUNT') {
@@ -2418,9 +2419,9 @@ bot.on('text', async (ctx, next) => {
             saveDatabase();
             
             try {
-                bot.telegram.sendMessage(dropGroupId, `🎉 **كود دروب سريع وصل!** 🎁\n\nأول شخص ينسخ هذا الكود ويرسله في بوت المتجر سيكسب رصيد **${amt} EGP** مجاناً!\n\nالكود: \`${code}\`\n\nيُستخدم في البوت من قسم (استخدام كود خصم).`, {parse_mode: 'Markdown'});
+                bot.telegram.sendMessage(dropGroupId, `🎉 <b>كود دروب سريع وصل!</b> 🎁\n\nأول شخص ينسخ هذا الكود ويرسله في بوت المتجر سيكسب رصيد <b>${amt} EGP</b> مجاناً!\n\nالكود: <code>${code}</code>\n\nيُستخدم في البوت من قسم (استخدام كود خصم).`, {parse_mode: 'HTML'});
                 logAdminAction(userId, `إرسال كود دروب بـ ${amt} جنيه`);
-                return await ctx.reply(`✅ **تم إرسال كود الدروب للجروب بنجاح!**\n\nالكود الذي تم إرساله: \`${code}\``, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+                return await ctx.reply(`✅ <b>تم إرسال كود الدروب للجروب بنجاح!</b>\n\nالكود الذي تم إرساله: <code>${code}</code>`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
             } catch (e) {
                 return await ctx.reply('❌ فشل إرسال الدروب للجروب. تأكد من صحة الـ ID وأن البوت مشرف هناك.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
             }
@@ -2433,7 +2434,7 @@ bot.on('text', async (ctx, next) => {
                 delete botStates.adminInput[userId];
                 saveDatabase();
                 logAdminAction(userId, 'إيقاف الاشتراك الإجباري');
-                return await ctx.reply('✅ تم مسح جميع القنوات وإيقاف نظام الاشتراك الإجباري بنجاح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+                return await ctx.reply('✅ <b>تم مسح جميع القنوات وإيقاف نظام الاشتراك الإجباري بنجاح.</b>', {parse_mode:'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
             }
             
             let chatId, link;
@@ -2441,7 +2442,7 @@ bot.on('text', async (ctx, next) => {
             if (input.startsWith('http')) {
                 link = input.split(' ')[0]; 
                 if (link.includes('t.me/+') || link.includes('joinchat')) {
-                    return await ctx.reply('❌ هذا رابط دعوة خاص! القنوات الخاصة لا يمكن للبوت التعرف عليها من الرابط فقط. برجاء إرسال الآيدي ثم مسافة ثم الرابط.\nمثال: `-100123456789 https://t.me/+abcdefg`');
+                    return await ctx.reply('❌ هذا رابط دعوة خاص! القنوات الخاصة لا يمكن للبوت التعرف عليها من الرابط فقط. برجاء إرسال الآيدي ثم مسافة ثم الرابط.\nمثال: <code>-100123456789 https://t.me/+abcdefg</code>', {parse_mode:'HTML'});
                 }
                 let usernameMatch = link.match(/t\.me\/([a-zA-Z0-9_]+)/);
                 if (usernameMatch && usernameMatch[1]) {
@@ -2477,7 +2478,7 @@ bot.on('text', async (ctx, next) => {
             delete botStates.adminInput[userId];
             saveDatabase();
             logAdminAction(userId, `تفعيل الاشتراك الإجباري وإضافة قناة: ${chatId}`);
-            return await ctx.reply(`✅ **تم إضافة القناة للاشتراك الإجباري بنجاح!**\nالآيدي/المعرف: \`${chatId}\`\nالرابط: ${link}\nإجمالي قنوات الاشتراك: ${forceSubscribeChannels.length}\n\n⚠️ **تذكر:** البوت لن يعمل إذا لم يكن "مشرفاً" في جميع هذه القنوات.`, { parse_mode: 'Markdown', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            return await ctx.reply(`✅ <b>تم إضافة القناة للاشتراك الإجباري بنجاح!</b>\nالآيدي/المعرف: <code>${chatId}</code>\nالرابط: ${link}\nإجمالي قنوات الاشتراك: ${forceSubscribeChannels.length}\n\n⚠️ <b>تذكر:</b> البوت لن يعمل إذا لم يكن "مشرفاً" في جميع هذه القنوات.`, { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_SALES_CHANNEL') {
@@ -2487,7 +2488,7 @@ bot.on('text', async (ctx, next) => {
                 delete botStates.adminInput[userId];
                 saveDatabase();
                 logAdminAction(userId, 'إيقاف النشر التلقائي في قناة المبيعات');
-                return await ctx.reply('✅ تم مسح جميع القنوات وإيقاف النشر التلقائي في قنوات المبيعات.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+                return await ctx.reply('✅ <b>تم مسح جميع القنوات وإيقاف النشر التلقائي في قنوات المبيعات.</b>', {parse_mode:'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
             }
             
             let newChannel = input;
@@ -2510,12 +2511,12 @@ bot.on('text', async (ctx, next) => {
             delete botStates.adminInput[userId];
             saveDatabase();
             logAdminAction(userId, `إضافة قناة مبيعات جديدة: ${newChannel}`);
-            return await ctx.reply(`✅ **تمت إضافة قناة المبيعات بنجاح!**\nالـ ID المضاف: \`${newChannel}\`\nإجمالي قنوات المبيعات: ${publicSalesChannels.length}\n\n⚠️ **تنبيه هام:** لا تنسَ إضافة البوت كأدمن في هذه القناة وإعطائه صلاحية إرسال الرسائل.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            return await ctx.reply(`✅ <b>تمت إضافة قناة المبيعات بنجاح!</b>\nالـ ID المضاف: <code>${newChannel}</code>\nإجمالي قنوات المبيعات: ${publicSalesChannels.length}\n\n⚠️ <b>تنبيه هام:</b> لا تنسَ إضافة البوت كأدمن في هذه القناة وإعطائه صلاحية إرسال الرسائل.`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_CHARGE_USER') {
             const parts = text.split(/\s+/);
-            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة. استخدم: `الآيدي المبلغ`', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة. استخدم: <code>الآيدي المبلغ</code>', {parse_mode:'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
             const targetUid = parts[0].trim();
             const amount = parseFloat(parts[1]);
             if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ المبلغ غير صحيح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
@@ -2525,12 +2526,13 @@ bot.on('text', async (ctx, next) => {
 
             targetUser.user.balance += amount;
             targetUser.user.walletHistory.push({ type: 'شحن من الإدارة', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+            delete botStates.adminInput[userId];
             saveDatabase();
             logAdminAction(userId, `شحن ${amount} EGP للعميل ${targetUid}`);
 
-            bot.telegram.sendMessage(targetUser.telegramId, `🎉 **تم شحن محفظتك من قِبل الإدارة!**\n💰 تمت إضافة: *${amount} EGP*\n💳 رصيدك الحالي: *${targetUser.user.balance.toFixed(2)} EGP*`, { parse_mode: 'Markdown' }).catch(()=>{});
+            bot.telegram.sendMessage(targetUser.telegramId, `🎉 <b>تم شحن محفظتك من قِبل الإدارة!</b>\n💰 تمت إضافة: <b>${amount} EGP</b>\n💳 رصيدك الحالي: <b>${targetUser.user.balance.toFixed(2)} EGP</b>`, { parse_mode: 'HTML' }).catch(()=>{});
 
-            return await ctx.reply(`✅ تم شحن رصيد العميل بنجاح!\n👤 العميل: \`${targetUid}\`\n💰 المبلغ: *${amount} EGP*`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            return await ctx.reply(`✅ تم شحن رصيد العميل بنجاح!\n👤 العميل: <code>${targetUid}</code>\n💰 المبلغ: <b>${amount} EGP</b>`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_PROMO_CREATE') {
@@ -2538,8 +2540,10 @@ bot.on('text', async (ctx, next) => {
             if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) );
             const code = parts[0].toUpperCase(); const amount = parseFloat(parts[1]);
             if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ القيمة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
-            promoCodes[code] = { amount, usedBy: [] }; saveDatabase();
-            return await ctx.reply(`✅ تم إنشاء كود الخصم!\n🎟 الكود: \`${code}\`\n💰 القيمة: *${amount} EGP*`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            promoCodes[code] = { amount, usedBy: [] }; 
+            delete botStates.adminInput[userId];
+            saveDatabase();
+            return await ctx.reply(`✅ تم إنشاء كود الخصم!\n🎟 الكود: <code>${code}</code>\n💰 القيمة: <b>${amount} EGP</b>`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_VOUCHER_CREATE') {
@@ -2547,24 +2551,30 @@ bot.on('text', async (ctx, next) => {
             if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             const code = parts[0].toUpperCase(); const amount = parseFloat(parts[1]);
             if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ القيمة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
-            vouchers[code] = { amount, isUsed: false }; saveDatabase();
-            return await ctx.reply(`✅ تم إنشاء كارت الشحن!\n🎟 الكود: \`${code}\`\n💰 القيمة: *${amount} EGP*`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            vouchers[code] = { amount, isUsed: false }; 
+            delete botStates.adminInput[userId];
+            saveDatabase();
+            return await ctx.reply(`✅ تم إنشاء كارت الشحن!\n🎟 الكود: <code>${code}</code>\n💰 القيمة: <b>${amount} EGP</b>`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_BAN_USER') {
             const targetUid = text;
             const targetUser = getUserByUid(targetUid);
             if (!targetUser) return await ctx.reply('❌ لم يتم العثور على عميل.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
-            targetUser.user.isBanned = true; saveDatabase();
-            return await ctx.reply(`✅ تم حظر العميل \`${targetUid}\` بنجاح.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            targetUser.user.isBanned = true; 
+            delete botStates.adminInput[userId];
+            saveDatabase();
+            return await ctx.reply(`✅ تم حظر العميل <code>${targetUid}</code> بنجاح.`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_UNBAN_USER') {
             const targetUid = text;
             const targetUser = getUserByUid(targetUid);
             if (!targetUser) return await ctx.reply('❌ لم يتم العثور على عميل.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
-            targetUser.user.isBanned = false; saveDatabase();
-            return await ctx.reply(`✅ تم فك الحظر عن العميل \`${targetUid}\` بنجاح.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            targetUser.user.isBanned = false; 
+            delete botStates.adminInput[userId];
+            saveDatabase();
+            return await ctx.reply(`✅ تم فك الحظر عن العميل <code>${targetUid}</code> بنجاح.`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_SEARCH_MARKUP' || state === 'WAIT_SEARCH_STOCK') {
@@ -2588,17 +2598,19 @@ bot.on('text', async (ctx, next) => {
 
             if (text === 'حذف') {
                 delete customProductMarkups[srvId];
+                delete botStates.adminInput[userId];
                 saveDatabase();
-                return await ctx.reply('✅ تم مسح النسبة المخصصة! المنتج سيعود لاستخدام النسبة العامة للمتجر.', {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+                return await ctx.reply('✅ تم مسح النسبة المخصصة! المنتج سيعود لاستخدام النسبة العامة للمتجر.', {parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
             }
 
             const percent = parseFloat(text);
             if (isNaN(percent) || percent < 0) return await ctx.reply('❌ يرجى إدخال رقم صحيح موجب أو كلمة "حذف".', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             
             customProductMarkups[srvId] = percent;
+            delete botStates.adminInput[userId];
             saveDatabase();
             logAdminAction(userId, `تحديد نسبة ربح للمنتج ${srvId} بـ ${percent}%`);
-            return await ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: *${percent}%*\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+            return await ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: <b>${percent}%</b>\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
         if (state.startsWith('WAIT_SET_FIXED_')) {
@@ -2624,7 +2636,7 @@ bot.on('text', async (ctx, next) => {
                 delete botStates.adminInput[userId];
                 saveDatabase();
                 logAdminAction(userId, `تحديد سعر ثابت للمنتج ${srvId} بـ ${price} جنيه`);
-                await ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: *${price} EGP*`, {parse_mode: 'Markdown'}).catch(()=>{});
+                await ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: <b>${price} EGP</b>`, {parse_mode: 'HTML'}).catch(()=>{});
             }
 
             const catIndex = botStates.lastAdminCatFixed ? botStates.lastAdminCatFixed[userId] : null;
@@ -2683,7 +2695,7 @@ bot.on('text', async (ctx, next) => {
             botStates.tempStock[userId] = { srvId: srvId, itemText: item };
             saveDatabase();
             
-            return await ctx.reply(`⚠️ **هل أنت متأكد من حفظ هذا العنصر في المخزن؟**\n\n<code>${safeHtml(item)}</code>`, {
+            return await ctx.reply(`⚠️ <b>هل أنت متأكد من حفظ هذا العنصر في المخزن؟</b>\n\n<code>${safeHtml(item)}</code>`, {
                 parse_mode: 'HTML',
                 ...Markup.inlineKeyboard([
                     [Markup.button.callback('✅ تأكيد الحفظ', 'confirm_stock_add'), Markup.button.callback('❌ إلغاء', 'cancel_stock_add')]
@@ -2705,13 +2717,16 @@ bot.on('text', async (ctx, next) => {
         if (state === 'WAIT_GLOBAL_MARKUP') {
             const val = parseFloat(text);
             if (isNaN(val) || val < 0) return await ctx.reply('❌ يرجى إدخال رقم صحيح وموجب.');
-            globalMarkupPercent = val; saveDatabase();
-            return await ctx.reply('✅ تم التحديث لتصبح: ' + globalMarkupPercent + '%');
+            globalMarkupPercent = val; 
+            delete botStates.adminInput[userId];
+            saveDatabase();
+            return await ctx.reply('✅ تم التحديث لتصبح: ' + globalMarkupPercent + '%', {parse_mode:'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
         if (state === 'WAIT_CUSTOM_MARKUP') {
             if (text === 'حذف الكل') {
                 customMarkups = {};
+                delete botStates.adminInput[userId];
                 saveDatabase();
                 logAdminAction(userId, 'مسح جميع نسب الأقسام المخصصة');
                 return await ctx.reply('✅ تم مسح جميع النسب المخصصة للأقسام!\nكل الأقسام ستتبع الآن النسبة العامة للمتجر.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
@@ -2730,19 +2745,22 @@ bot.on('text', async (ctx, next) => {
                     if (found) matchedCat = getServiceCategory(found);
                 }
                 customMarkups[matchedCat] = percent; updatedCount++;
-                reportMsg += '✅ ' + matchedCat + ' ⟵' + percent + '%\n';
+                reportMsg += '✅ ' + matchedCat + ' ⟵ ' + percent + '%\n';
             }
             if (updatedCount === 0) return await ctx.reply('❌ خطأ في الصيغة.');
-            saveDatabase(); return await ctx.reply(reportMsg);
+            delete botStates.adminInput[userId];
+            saveDatabase(); 
+            return await ctx.reply(reportMsg, {parse_mode:'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
         if (state === 'WAIT_FLASH_SALE') {
             const parts = text.split(/\s+/);
-            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة. أرسل: `النسبة الساعات` (مثال: `20 1`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة. أرسل: <code>النسبة الساعات</code> (مثال: <code>20 1</code>)', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
             const discountVal = parseFloat(parts[0]); const hoursVal = parseFloat(parts[1]);
             
             if (discountVal === 0 && hoursVal === 0) {
                 flashSale = { active: false, discount: 0, expiresAt: 0 }; 
+                delete botStates.adminInput[userId];
                 saveDatabase();
                 await ctx.reply('✅ تم إلغاء الخصم المؤقت.');
                 await showAdminPanel(ctx);
@@ -2754,6 +2772,7 @@ bot.on('text', async (ctx, next) => {
             }
             
             flashSale = { active: true, discount: discountVal, expiresAt: Date.now() + (hoursVal * 60 * 60 * 1000) }; 
+            delete botStates.adminInput[userId];
             saveDatabase();
 
             for (let tgId in usersDb) {
@@ -2813,7 +2832,9 @@ bot.on('text', async (ctx, next) => {
     }
 
     return await next();
-  } catch(e) {}
+  } catch(e) {
+      console.error("Text Handler Error:", e.message);
+  }
 });
 
 export default async function handler(req, res) {
