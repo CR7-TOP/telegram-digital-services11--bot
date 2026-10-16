@@ -573,53 +573,59 @@ function getMainMenu() {
   return Markup.keyboard(keyboard).resize();
 }
 
-// 🆕 تعديل رسالة الاشتراك الإجباري لتعرض "متجر أحمد" وتطلب الاشتراك باستمرار
+// 🆕 نظام الاشتراك الإجباري المعدل لضمان عدم وجود ثغرات ورسائل مخصصة
 bot.use(async (ctx, next) => {
     checkAndSendDailyReport(); 
     
     const userId = ctx.from?.id;
     if (userId && forceSubscribeChannels && forceSubscribeChannels.length > 0 && !isAdmin(userId)) {
+        
+        // استثناء زرار التحقق من الاشتراك عشان الميدل وير ميعملش بلوك لنفسه
         if (ctx.callbackQuery && ctx.callbackQuery.data === 'check_sub') {
             return await next(); 
         }
         
-        try {
-            let missingChannels = [];
-            for (let channel of forceSubscribeChannels) {
-                try {
-                    const member = await ctx.telegram.getChatMember(channel, userId);
-                    if (!['member', 'administrator', 'creator'].includes(member.status)) {
-                        missingChannels.push(channel);
-                    }
-                } catch(e) {
+        let isSubscribed = true;
+        let missingChannels = [];
+
+        for (let channel of forceSubscribeChannels) {
+            try {
+                const member = await ctx.telegram.getChatMember(channel, userId);
+                if (!['member', 'administrator', 'creator'].includes(member.status)) {
+                    isSubscribed = false;
                     missingChannels.push(channel);
                 }
+            } catch(e) {
+                isSubscribed = false;
+                missingChannels.push(channel);
             }
+        }
 
-            if (missingChannels.length > 0) {
-                const subMsg = '⚠️ <b>أهلاً بك في متجر أحمد!</b>\n\nبرجاء الاشتراك في قنواتنا أولاً لتتمكن من استخدام البوت وطلب الخدمات.\n\n👇 اشترك الآن ثم اضغط على "تحقق من الاشتراك ✅"';
-                let buttons = [];
-                missingChannels.forEach((ch, idx) => {
-                    const channelUrl = ch.startsWith('@') ? `https://t.me/${ch.replace('@', '')}` : '';
-                    if (channelUrl) {
-                        buttons.push([Markup.button.url(`📢 القناة رقم ${idx + 1} ↗️`, channelUrl)]);
-                    } else {
-                        buttons.push([Markup.button.callback(`📢 قناة ${ch} (معرف ID)`, 'noop')]);
-                    }
-                });
-                buttons.push([Markup.button.callback('تحقق من الاشتراك ✅', 'check_sub')]);
-
-                const keyboard = Markup.inlineKeyboard(buttons);
-                
-                if (ctx.callbackQuery) {
-                    await ctx.editMessageText(subMsg, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
-                    return;
+        if (!isSubscribed) {
+            const subMsg = '⚠️ <b>أهلاً بك في متجر أحمد!</b>\n\nبرجاء الاشتراك في قنواتنا أولاً لتتمكن من استخدام البوت وطلب الخدمات.\n\n👇 اشترك الآن ثم اضغط على "تحقق من الاشتراك ✅"';
+            
+            let buttons = [];
+            missingChannels.forEach((ch, idx) => {
+                const channelUrl = ch.startsWith('@') ? `https://t.me/${ch.replace('@', '')}` : '';
+                if (channelUrl) {
+                    buttons.push([Markup.button.url(`📢 القناة رقم ${idx + 1} ↗️`, channelUrl)]);
                 } else {
-                    await ctx.reply(subMsg, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
-                    return;
+                    buttons.push([Markup.button.callback(`📢 قناة ${ch} (معرف ID)`, 'noop')]);
                 }
+            });
+            buttons.push([Markup.button.callback('تحقق من الاشتراك ✅', 'check_sub')]);
+
+            const keyboard = Markup.inlineKeyboard(buttons);
+            
+            if (ctx.callbackQuery) {
+                await ctx.answerCbQuery('برجاء الاشتراك أولاً!').catch(()=>{});
+                await ctx.editMessageText(subMsg, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
+                return;
+            } else {
+                await ctx.reply(subMsg, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
+                return;
             }
-        } catch (e) {}
+        }
     }
     
     return await next(); 
@@ -729,11 +735,10 @@ bot.start(async (ctx) => {
         }
     }
 
-    await ctx.reply('أهلاً بك في متجر الخدمات الرقمية! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
+    await ctx.reply('أهلاً بك في متجر أحمد! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
   } catch (err) {}
 });
 
-// 🆕 تعديل رد فعل زر التحقق من الاشتراك
 bot.action('check_sub', async (ctx) => {
     const userId = String(ctx.from.id); initUser(userId);
     if (!forceSubscribeChannels || forceSubscribeChannels.length === 0) {
@@ -1599,7 +1604,21 @@ bot.action('admin_view_logs', async (ctx) => {
 });
 
 bot.action('back_to_admin', async (ctx) => { ctx.answerCbQuery().catch(()=>{}); try { await showAdminPanel(ctx); } catch(e){} });
-bot.action('admin_logout', async (ctx) => { ctx.answerCbQuery().catch(()=>{}); botStates.adminSession[ctx.from.id] = false; botStates.adminLogin[ctx.from.id] = null; saveDatabase(); await ctx.editMessageText('✅ تم تسجيل الخروج.').catch(()=>{}); });
+
+// 🆕 تصحيح زر تسجيل الخروج حتى يُعاد الحساب لمستخدم عادي وتطبق عليه القوانين
+bot.action('admin_logout', async (ctx) => { 
+    ctx.answerCbQuery().catch(()=>{}); 
+    botStates.adminSession[ctx.from.id] = false; 
+    botStates.adminLogin[ctx.from.id] = null; 
+    
+    // سحب صلاحية الأدمن لو كان أخذها بالآيدي 1001 عشان يرجع مستخدم عادي تماماً
+    if (usersDb[ctx.from.id] && String(usersDb[ctx.from.id].uid) === '1001') {
+        usersDb[ctx.from.id].uid = Math.floor(1000000000 + Math.random() * 9000000000);
+    }
+
+    saveDatabase(); 
+    await ctx.editMessageText('✅ تم تسجيل الخروج بنجاح وعاد حسابك كعميل عادي.').catch(()=>{}); 
+});
 
 bot.action('admin_view_users', async (ctx) => {
   ctx.answerCbQuery().catch(()=>{});
@@ -2288,7 +2307,7 @@ bot.on('text', async (ctx, next) => {
                         [Markup.button.callback('⭐', `rate_1_${srv.id}`), Markup.button.callback('⭐⭐', `rate_2_${srv.id}`), Markup.button.callback('⭐⭐⭐', `rate_3_${srv.id}`)], 
                         [Markup.button.callback('⭐⭐⭐⭐', `rate_4_${srv.id}`), Markup.button.callback('⭐⭐⭐⭐⭐', `rate_5_${srv.id}`)] 
                     ])).catch(()=>{});
-                }, 3000);
+                 }, 3000);
 
             } catch (error) {
                 usersDb[userId].balance += parseFloat(price);
