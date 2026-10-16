@@ -132,7 +132,7 @@ async function loadDatabase() {
         }
 
         if (data.forceSubscribeChannels !== undefined) {
-            forceSubscribeChannels = Array.isArray(data.forceSubscribeChannels) ? data.forceSubscribeChannels : [data.forceSubscribeChannels];
+            forceSubscribeChannels = Array.isArray(data.forceSubscribeChannels) ? data.forceSubscribeChannels : [data.forceSubscribeChannel];
         } else if (data.forceSubscribeChannel !== undefined && data.forceSubscribeChannel !== '') {
             forceSubscribeChannels = [data.forceSubscribeChannel];
         }
@@ -315,8 +315,6 @@ function getUserByUid(targetUid) {
 
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
-
-// 🔑 مفتاح CupponHub
 const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
 const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/reseller/api', headers: { 'X-API-Key': API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
 
@@ -573,14 +571,13 @@ function getMainMenu() {
   return Markup.keyboard(keyboard).resize();
 }
 
-// 🆕 نظام الاشتراك الإجباري المعدل لضمان عدم وجود ثغرات ورسائل مخصصة
+// 🆕 فحص الاشتراك الإجباري الدقيق والمحدث (لا يسمح بالمرور إلا إذا كان مشتركاً في الجميع)
 bot.use(async (ctx, next) => {
     checkAndSendDailyReport(); 
     
     const userId = ctx.from?.id;
     if (userId && forceSubscribeChannels && forceSubscribeChannels.length > 0 && !isAdmin(userId)) {
         
-        // استثناء زرار التحقق من الاشتراك عشان الميدل وير ميعملش بلوك لنفسه
         if (ctx.callbackQuery && ctx.callbackQuery.data === 'check_sub') {
             return await next(); 
         }
@@ -588,16 +585,17 @@ bot.use(async (ctx, next) => {
         let isSubscribed = true;
         let missingChannels = [];
 
-        for (let channel of forceSubscribeChannels) {
+        for (let channelObj of forceSubscribeChannels) {
+            let cid = typeof channelObj === 'string' ? channelObj : channelObj.chatId;
             try {
-                const member = await ctx.telegram.getChatMember(channel, userId);
+                const member = await ctx.telegram.getChatMember(cid, userId);
                 if (!['member', 'administrator', 'creator'].includes(member.status)) {
                     isSubscribed = false;
-                    missingChannels.push(channel);
+                    missingChannels.push(channelObj);
                 }
             } catch(e) {
                 isSubscribed = false;
-                missingChannels.push(channel);
+                missingChannels.push(channelObj);
             }
         }
 
@@ -606,11 +604,13 @@ bot.use(async (ctx, next) => {
             
             let buttons = [];
             missingChannels.forEach((ch, idx) => {
-                const channelUrl = ch.startsWith('@') ? `https://t.me/${ch.replace('@', '')}` : '';
-                if (channelUrl) {
-                    buttons.push([Markup.button.url(`📢 القناة رقم ${idx + 1} ↗️`, channelUrl)]);
+                let cid = typeof ch === 'string' ? ch : ch.chatId;
+                let clink = typeof ch === 'string' ? (ch.startsWith('@') ? `https://t.me/${ch.replace('@','')}` : null) : ch.link;
+
+                if (clink) {
+                    buttons.push([Markup.button.url(`📢 القناة رقم ${idx + 1} ↗️`, clink)]);
                 } else {
-                    buttons.push([Markup.button.callback(`📢 قناة ${ch} (معرف ID)`, 'noop')]);
+                    buttons.push([Markup.button.callback(`📢 القناة رقم ${idx + 1} (تواصل مع الدعم)`, 'noop')]);
                 }
             });
             buttons.push([Markup.button.callback('تحقق من الاشتراك ✅', 'check_sub')]);
@@ -735,7 +735,7 @@ bot.start(async (ctx) => {
         }
     }
 
-    await ctx.reply('أهلاً بك في متجر أحمد! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
+    await ctx.reply('أهلاً بك مجدداً في متجر أحمد! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
   } catch (err) {}
 });
 
@@ -747,9 +747,10 @@ bot.action('check_sub', async (ctx) => {
     }
     try {
         let isSubbedToAll = true;
-        for (let channel of forceSubscribeChannels) {
+        for (let channelObj of forceSubscribeChannels) {
+            let cid = typeof channelObj === 'string' ? channelObj : channelObj.chatId;
             try {
-                const member = await ctx.telegram.getChatMember(channel, userId);
+                const member = await ctx.telegram.getChatMember(cid, userId);
                 if (!['member', 'administrator', 'creator'].includes(member.status)) {
                     isSubbedToAll = false; break;
                 }
@@ -1088,8 +1089,8 @@ async function showAdminPanel(ctx) {
         [Markup.button.callback('🎁 إرسال كود دروب', 'admin_send_drop'), Markup.button.callback('⚙️ جروب الدروب', 'admin_set_drop_group')],
         
         [Markup.button.callback('🔄 تحديث وسحب الخدمات يدوياً', 'admin_force_refresh')],
-        [Markup.button.callback('📱 تغيير رقم الاستقبال', 'admin_change_wallet'), Markup.button.callback('📢 تعيين قنوات المبيعات', 'admin_set_sales_channel')],
-        [Markup.button.callback('🔒 ضبط الاشتراك الإجباري', 'admin_set_force_sub'), Markup.button.callback('💳 طلبات الشحن (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
+        [Markup.button.callback('📱 تغيير رقم الاستقبال', 'admin_change_wallet'), Markup.button.callback('📢 إضافة قناة مبيعات', 'admin_set_sales_channel')],
+        [Markup.button.callback('🔒 إضافة قناة اشتراك إجباري', 'admin_set_force_sub'), Markup.button.callback('💳 طلبات الشحن (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
         [Markup.button.callback('💲 تحديد سعر ثابت لمنتج', 'admin_fixed_price'), Markup.button.callback('👁️ إخفاء/إظهار منتج', 'admin_hide_cats')],
@@ -1241,14 +1242,14 @@ bot.action('admin_set_sales_channel', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_SALES_CHANNEL'; saveDatabase();
-    await ctx.editMessageText('📢 **تعيين قنوات المبيعات الحية:**\n\nأرسل معرف القناة (ID) لإضافتها، يجب أن يبدأ بـ `-100` (مثال: `-1001234567890`)\n\n🛑 لإيقاف النشر الآلي ومسح جميع القنوات أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('📢 **إضافة قنوات المبيعات الحية:**\n\nأرسل معرف القناة (ID) لإضافتها للقائمة (يمكنك إضافة أكثر من قناة بإرسالهم واحدة تلو الأخرى في هذا الإعداد).\nيجب أن يبدأ المعرف بـ `-100` (مثال: `-1001234567890`)\n\n🛑 لحذف جميع قنوات المبيعات وإيقاف النشر الآلي تماماً أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_set_force_sub', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_FORCE_SUB'; saveDatabase();
-    await ctx.editMessageText('🔒 **إعداد الاشتراك الإجباري:**\n\nأرسل مُعرف القناة أو الجروب لإضافته، ويجب أن يبدأ بـ `@` أو `-100` (مثال: `@XProStore`)\n\n⚠️ **تنبيه هام:** يجب إضافة البوت كـ(مشرف/Admin) في جميع هذه القنوات ليتمكن من فحص المشتركين.\n\n🛑 لإلغاء نظام الاشتراك الإجباري تماماً وحذف القنوات، أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+    await ctx.editMessageText('🔒 **إضافة قنوات الاشتراك الإجباري:**\n\nيمكنك إضافة أكثر من قناة بالدخول لهذا الإعداد وإرسالهم واحدة تلو الأخرى.\n\nأرسل معرف القناة (بـ @) أو الآيدي (-100) ثم مسافة ثم رابط الانضمام للقناة.\n\nمثال 1: `@XProStore https://t.me/XProStore`\nمثال 2: `-10012345678 https://t.me/+invite_link`\n\n⚠️ **تنبيه:** يجب إضافة البوت كـ(مشرف) في القنوات.\n\n🛑 لإلغاء وحذف جميع القنوات أرسل كلمة: `إيقاف`', { parse_mode: 'Markdown', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_force_refresh', async (ctx) => {
@@ -1605,13 +1606,12 @@ bot.action('admin_view_logs', async (ctx) => {
 
 bot.action('back_to_admin', async (ctx) => { ctx.answerCbQuery().catch(()=>{}); try { await showAdminPanel(ctx); } catch(e){} });
 
-// 🆕 تصحيح زر تسجيل الخروج حتى يُعاد الحساب لمستخدم عادي وتطبق عليه القوانين
+// 🆕 تصحيح زر تسجيل الخروج حتى يُعاد الحساب لمستخدم عادي وتطبق عليه قوانين الاشتراك الإجباري
 bot.action('admin_logout', async (ctx) => { 
     ctx.answerCbQuery().catch(()=>{}); 
     botStates.adminSession[ctx.from.id] = false; 
     botStates.adminLogin[ctx.from.id] = null; 
     
-    // سحب صلاحية الأدمن لو كان أخذها بالآيدي 1001 عشان يرجع مستخدم عادي تماماً
     if (usersDb[ctx.from.id] && String(usersDb[ctx.from.id].uid) === '1001') {
         usersDb[ctx.from.id].uid = Math.floor(1000000000 + Math.random() * 9000000000);
     }
@@ -2437,18 +2437,31 @@ bot.on('text', async (ctx, next) => {
                 return await ctx.reply('✅ تم مسح جميع القنوات وإيقاف نظام الاشتراك الإجباري بنجاح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
             
-            if (!text.startsWith('@') && !text.startsWith('-100')) {
+            const parts = text.split(/\s+/);
+            const chatId = parts[0];
+            let link = parts.length > 1 ? parts[1] : null;
+
+            if (!chatId.startsWith('@') && !chatId.startsWith('-100')) {
                  return await ctx.reply('❌ معرف القناة غير صحيح!\nيجب أن يبدأ المعرف بـ `@` أو `-100`. أرسل مجدداً:', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
             }
-            
-            let newChannel = text.trim();
-            if(!forceSubscribeChannels.includes(newChannel)) {
-                forceSubscribeChannels.push(newChannel);
+
+            if (chatId.startsWith('-100') && !link) {
+                 return await ctx.reply('❌ لأنك استخدمت آيدي خاص (-100)، **يجب** إرسال رابط الانضمام (Invite Link) معه.\n\nأرسل الآيدي ثم مسافة ثم الرابط.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
             }
+
+            if (chatId.startsWith('@') && !link) {
+                 link = `https://t.me/${chatId.replace('@', '')}`;
+            }
+
+            const exists = forceSubscribeChannels.some(ch => (typeof ch === 'string' ? ch === chatId : ch.chatId === chatId));
+            if (!exists) {
+                forceSubscribeChannels.push({ chatId: chatId, link: link });
+            }
+            
             delete botStates.adminInput[userId];
             saveDatabase();
-            logAdminAction(userId, `تفعيل الاشتراك الإجباري وإضافة قناة: ${newChannel}`);
-            return await ctx.reply(`✅ **تم إضافة القناة للاشتراك الإجباري بنجاح!**\nالقناة: \`${newChannel}\`\nإجمالي قنوات الاشتراك: ${forceSubscribeChannels.length}\n\n⚠️ **تذكر:** البوت لن يعمل إذا لم يكن "مشرفاً" في جميع هذه القنوات.`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+            logAdminAction(userId, `تفعيل الاشتراك الإجباري وإضافة قناة: ${chatId}`);
+            return await ctx.reply(`✅ **تم إضافة القناة للاشتراك الإجباري بنجاح!**\nالآيدي: \`${chatId}\`\nالرابط: ${link}\nإجمالي قنوات الاشتراك: ${forceSubscribeChannels.length}\n\n⚠️ **تذكر:** البوت لن يعمل إذا لم يكن "مشرفاً" في جميع هذه القنوات.`, { parse_mode: 'Markdown', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_SALES_CHANNEL') {
