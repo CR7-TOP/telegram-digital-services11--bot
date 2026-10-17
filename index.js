@@ -1447,7 +1447,7 @@ bot.action(/^setfixed_(.+)$/, async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_SET_FIXED_' + ctx.match[1]; saveDatabase();
-    await ctx.editMessageText('💲 أرسل السعر الثابت الجديد للمنتج بالجنيه المصري (مثال: 150).\n\n🗑️ لإلغاء السعر الثابت والعودة لنظام النسبة المئوية، اكتب كلمة: `حذف`\n🔙 للإلغاء والرجوع، اكتب كلمة: `رجوع`', {parse_mode: 'HTML'}).catch(()=>{});
+    await ctx.editMessageText('💲 أرسل السعر الثابت الجديد للمنتج بالجنيه المصري (مثال: 150).\n\n🗑️ لإلغاء السعر الثابت والعودة لنظام النسبة المئوية، اكتب كلمة: <code>حذف</code>\n🔙 للإلغاء والرجوع، اكتب كلمة: <code>رجوع</code>', {parse_mode: 'HTML'}).catch(()=>{});
 });
 
 bot.action('admin_ad_stats', async (ctx) => {
@@ -1513,14 +1513,14 @@ bot.action(/^setmarkup_(.+)$/, async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_SET_MARKUP_' + ctx.match[1]; saveDatabase();
-    await ctx.editMessageText('📈 أرسل النسبة المئوية للربح لهذا المنتج فقط (مثال: اكتب 50 لربح 50%).\n\n🗑️ لإلغاء النسبة المخصصة وجعل المنتج يتبع النسبة العامة، اكتب كلمة: `حذف`', {parse_mode: 'HTML'}).catch(()=>{});
+    await ctx.editMessageText('📈 أرسل النسبة المئوية للربح لهذا المنتج فقط (مثال: اكتب 50 لربح 50%).\n\n🗑️ لإلغاء النسبة المخصصة وجعل المنتج يتبع النسبة العامة، اكتب كلمة: <code>حذف</code>', {parse_mode: 'HTML'}).catch(()=>{});
 });
 
 bot.action(/^addstock_(.+)$/, async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_ADD_STOCK_' + ctx.match[1]; saveDatabase();
-    await ctx.editMessageText('📦 **إدارة المخزن المحلي لهذا المنتج:**\n\n➕ **للإضافة:** أرسل العنصر كرسالة (تقدر تبعت أكتر من عنصر ورا بعض).\n👀 **للعرض:** أرسل كلمة `عرض` لمعرفة محتويات المخزن.\n🗑️ **للحذف:** أرسل كلمة `حذف الكل` لتفريغ مخزن هذا المنتج بالكامل.\n🔙 **للخروج:** أرسل كلمة `رجوع`', {parse_mode: 'HTML'}).catch(()=>{});
+    await ctx.editMessageText('📦 **إدارة المخزن المحلي لهذا المنتج:**\n\n➕ **للإضافة:** أرسل العنصر كرسالة (تقدر تبعت أكتر من عنصر ورا بعض).\n👀 **للعرض:** أرسل كلمة <code>عرض</code> لمعرفة محتويات المخزن.\n🗑️ **للحذف:** أرسل كلمة <code>حذف الكل</code> لتفريغ مخزن هذا المنتج بالكامل.\n🔙 **للخروج:** أرسل كلمة <code>رجوع</code>', {parse_mode: 'HTML'}).catch(()=>{});
 });
 
 bot.action('admin_pending_deposits', async (ctx) => {
@@ -1936,7 +1936,7 @@ function extractUsefulData(obj) {
     if (!obj) return null;
     if (typeof obj === 'string' || typeof obj === 'number') return String(obj);
     let extracted = [];
-    const ignoreKeys = ['id', 'order', 'orders', 'order_id', 'status', 'created_at', 'updated_at', 'service_id', 'quantity', 'price', 'user_id', 'api', 'api_id', 'api_order_id', 'api_service_id', 'currency', 'charge', 'remains', 'start_count', 'link', 'cost', 'old_charge', 'items'];
+    const ignoreKeys = ['id', 'order', 'orders', 'order_id', 'status', 'created_at', 'updated_at', 'service_id', 'quantity', 'price', 'user_id', 'api', 'api_id', 'api_order_id', 'api_service_id', 'currency', 'charge', 'remains', 'start_count', 'link', 'cost', 'old_charge', 'unit_usdt', 'total_usdt', 'balance_after', 'stock_left', 'price_version_id', 'price_source', 'product', 'key'];
     
     function deepExtract(currentObj) {
         if (currentObj === null || currentObj === undefined) return;
@@ -1954,16 +1954,16 @@ function extractUsefulData(obj) {
                 }
             });
         } else if (typeof currentObj === 'object') {
-            for (let key in currentObj) {
-                if (ignoreKeys.includes(key.toLowerCase())) continue;
-                deepExtract(currentObj[key]);
+            for (let k in currentObj) {
+                if (ignoreKeys.includes(k.toLowerCase())) continue;
+                deepExtract(currentObj[k]);
             }
         }
     }
     
     deepExtract(obj);
     if (extracted.length === 0) return null;
-    return [...new Set(extracted)].join('\n');
+    return [...new Set(extracted)].join('\n\n');
 }
 
 async function publishPriceDrop(ctx, userId, state, fileId) {
@@ -2244,23 +2244,35 @@ bot.on('text', async (ctx, next) => {
                 let orderId = orderResponse.data?.order?.order_id || orderResponse.data?.order_id || orderResponse.data?.order?.id || orderResponse.data?.id || Math.floor(10000 + Math.random() * 90000);
                 let rawDetails = null;
 
-                await new Promise(resolve => setTimeout(resolve, 1500));
+                // 🆕 استخراج مباشر للرابط من المزود الثالث (CupponHub) من طلب الشراء الأساسي
+                if (srv.providerSource === 'api3' && orderResponse.data?.order?.items && Array.isArray(orderResponse.data.order.items) && orderResponse.data.order.items.length > 0) {
+                    rawDetails = orderResponse.data.order.items.join('\n\n');
+                }
 
-                try {
-                    const source = srv.providerSource || 'api1';
-                    if (source === 'api3') {
-                        const getOrderRes = await apiClient3.get(`/?action=order&order_id=${orderId}`);
-                        const orderData = getOrderRes.data?.order || getOrderRes.data;
-                        rawDetails = extractUsefulData(orderData);
-                    } else {
-                        const clientApi = source === 'api2' ? apiClient2 : apiClient1;
-                        const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : `/orders/${orderId}`;
-                        const getOrderRes = await clientApi.get(fetchOrderPath);
-                        const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
-                        rawDetails = extractUsefulData(orderData);
+                if (!rawDetails || rawDetails.trim() === '') {
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+
+                    try {
+                        const source = srv.providerSource || 'api1';
+                        if (source === 'api3') {
+                            const getOrderRes = await apiClient3.get(`/?action=order&order_id=${orderId}`);
+                            const orderData = getOrderRes.data?.order || getOrderRes.data;
+                            // 🆕 التركيز على مصفوفة items مباشرة
+                            if (orderData && orderData.items && Array.isArray(orderData.items) && orderData.items.length > 0) {
+                                rawDetails = orderData.items.join('\n\n');
+                            } else {
+                                rawDetails = extractUsefulData(orderData);
+                            }
+                        } else {
+                            const clientApi = source === 'api2' ? apiClient2 : apiClient1;
+                            const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : `/orders/${orderId}`;
+                            const getOrderRes = await clientApi.get(fetchOrderPath);
+                            const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
+                            rawDetails = extractUsefulData(orderData);
+                        }
+                    } catch(e) {
+                        console.log('تأخير في المزود لجلب الطلب: ' + orderId);
                     }
-                } catch(e) {
-                    console.log('تأخير في المزود لجلب الطلب: ' + orderId);
                 }
 
                 if (!rawDetails || rawDetails.trim() === '') {
