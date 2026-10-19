@@ -1098,7 +1098,7 @@ async function showAdminPanel(ctx) {
         [Markup.button.callback('⚡ خصم مؤقت (Flash Sale)', 'admin_flash_sale'), Markup.button.callback('🎫 توليد كروت شحن', 'admin_create_promo')],
         [Markup.button.callback('✉ مراسلة عميل بالـ ID', 'admin_msg_by_id'), Markup.button.callback('👥 شحن رصيد بالـ ID', 'admin_charge_by_id')], 
         [Markup.button.callback('🛠️ تبديل وضع الصيانة', 'admin_toggle_maintenance'), Markup.button.callback('📝 سجل نشاط الأدمن', 'admin_view_logs')],
-        [Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users'), Markup.button.callback('💸 تقرير الأرباح', 'admin_profit_report')],
+        [Markup.button.callback('📂 عرض حسابات العملاء', 'admin_view_users_pg_1'), Markup.button.callback('💸 تقرير الأرباح', 'admin_profit_report')],
         [Markup.button.callback('🚫 حظر مستخدم', 'admin_ban_user'), Markup.button.callback('✅ فك حظر مستخدم', 'admin_unban_user')],
         [Markup.button.callback('📢 إرسال رسالة (إذاعة)', 'admin_broadcast'), Markup.button.callback('📈 إحصائيات الإعلانات', 'admin_ad_stats')],
         [Markup.button.callback('🚪 تسجيل خروج', 'admin_logout')]
@@ -1618,19 +1618,64 @@ bot.action('admin_logout', async (ctx) => {
     await ctx.editMessageText('✅ تم تسجيل الخروج بنجاح وعاد حسابك كعميل عادي.').catch(()=>{}); 
 });
 
-bot.action('admin_view_users', async (ctx) => {
-  ctx.answerCbQuery().catch(()=>{});
-  try {
-    let userList = '👥 **قائمة العملاء:**\n\n'; let count = 0;
-    for (let tgId in usersDb) { 
-        const bStatus = usersDb[tgId].isBanned ? ' [محظور]' : '';
-        userList += '👤 ID: <code>' + usersDb[tgId].uid + '</code> | الرصيد: ' + parseFloat(usersDb[tgId].balance).toFixed(2) + ' EGP' + bStatus + '\n'; count++; 
-    }
-    if (count === 0) userList = 'لا يوجد عملاء.';
-    if (userList.length > 3900) userList = userList.substring(0, 3900) + '\n...';
-    await ctx.editMessageText(userList, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{}); 
-  } catch(e){}
+// ==========================================
+// 🆕 نظام عرض العملاء المحدث (نظام الصفحات)
+// ==========================================
+async function renderUsersPage(ctx, page) {
+    try {
+        let allUsers = [];
+        for (let tgId in usersDb) {
+            allUsers.push({ tgId, ...usersDb[tgId] });
+        }
+
+        const itemsPerPage = 20;
+        const totalUsers = allUsers.length;
+        const totalPages = Math.ceil(totalUsers / itemsPerPage) || 1;
+        const currentPage = Math.min(Math.max(page, 1), totalPages);
+
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        const endIndex = Math.min(startIndex + itemsPerPage, totalUsers);
+        const pageItems = allUsers.slice(startIndex, endIndex);
+
+        let msg = `👥 <b>قائمة العملاء (صفحة ${currentPage}/${totalPages}):</b>\n\n`;
+        if (totalUsers === 0) {
+            msg += 'لا يوجد عملاء حتى الآن.';
+        } else {
+            pageItems.forEach(u => {
+                const bStatus = u.isBanned ? ' 🔴 [محظور]' : '';
+                // 🛡️ عرض الرصيد الحقيقي كما هو بدقة
+                msg += `👤 ID: <code>${u.uid}</code> | الرصيد: <b>${parseFloat(u.balance).toFixed(2)} EGP</b>${bStatus}\n`;
+            });
+        }
+
+        let paginationRow = [];
+        if (currentPage > 1) {
+            paginationRow.push(Markup.button.callback('▶️ السابق', `admin_view_users_pg_${currentPage - 1}`));
+        }
+        paginationRow.push(Markup.button.callback(`📄 ${currentPage}/${totalPages}`, 'noop'));
+        if (currentPage < totalPages) {
+            paginationRow.push(Markup.button.callback('التالي ◀️', `admin_view_users_pg_${currentPage + 1}`));
+        }
+
+        let buttons = [];
+        if (totalPages > 1) buttons.push(paginationRow);
+        buttons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
+
+        await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+    } catch (e) {}
+}
+
+bot.action('admin_view_users_pg_1', async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    await renderUsersPage(ctx, 1);
 });
+
+bot.action(/^admin_view_users_pg_(\d+)$/, async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    const page = parseInt(ctx.match[1]);
+    await renderUsersPage(ctx, page);
+});
+// ==========================================
 
 bot.action('admin_set_global_markup', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
@@ -2097,9 +2142,6 @@ bot.on('text', async (ctx, next) => {
         return await next(); 
     }
 
-    // ====================================================
-    // 🆕 إضافة كود الإذاعة النصية هنا 👇
-    // ====================================================
     if (botStates.broadcast && botStates.broadcast[userId] && isAdmin(userId)) {
         if (text === 'إلغاء' || text === 'رجوع') {
             delete botStates.broadcast[userId]; saveDatabase();
@@ -2117,7 +2159,6 @@ bot.on('text', async (ctx, next) => {
         delete botStates.broadcast[userId]; saveDatabase();
         return await ctx.reply(`✅ تم الإرسال للجميع بنجاح (${count} عميل).`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
     }
-    // ====================================================
 
     if (botStates.transfer && botStates.transfer[userId]) {
         const state = botStates.transfer[userId];
