@@ -1104,7 +1104,15 @@ async function showAdminPanel(ctx) {
         [Markup.button.callback('🚪 تسجيل خروج', 'admin_logout')]
       ]);
 
-    if(ctx.callbackQuery) { await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{}); }
+    if(ctx.callbackQuery) {
+        // 🆕 حماية ضد أخطاء الرسائل المصورة عند الرجوع للوحة التحكم
+        if (ctx.callbackQuery.message && ctx.callbackQuery.message.photo) {
+            await ctx.deleteMessage().catch(()=>{});
+            await ctx.reply(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
+        } else {
+            await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
+        }
+    }
     else { await ctx.reply(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{}); }
   } catch(e){}
 }
@@ -1526,15 +1534,27 @@ bot.action(/^addstock_(.+)$/, async (ctx) => {
 bot.action('admin_pending_deposits', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
-        if (!pendingDeposits || pendingDeposits.length === 0) return await ctx.editMessageText('💳 **طلبات الشحن المعلقة:**\n\nلا توجد طلبات شحن معلقة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
-        let msg = '💳 **طلبات الشحن المعلقة (' + pendingDeposits.length + '):**\n\n';
+        let msg = '';
         let inlineButtons = [];
-        pendingDeposits.forEach((req, idx) => {
-            msg += `👤 ID: <code>${req.userUid}</code>\n💰 المبلغ: <b>${req.amount} EGP</b>\n📸 <b>(الإثبات مرفق)</b>\n━━━━━━━━━━━━\n`;
-            inlineButtons.push([ Markup.button.callback('✅ موافقة (' + req.amount + 'ج)', `approve_dep_${req.userId}_${req.amount}`), Markup.button.callback('❌ رفض', `reject_dep_${req.userId}`) ]);
-        });
-        inlineButtons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
-        await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(inlineButtons) }).catch(()=>{});
+        if (!pendingDeposits || pendingDeposits.length === 0) {
+            msg = '💳 <b>طلبات الشحن المعلقة:</b>\n\nلا توجد طلبات شحن معلقة حالياً.';
+            inlineButtons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
+        } else {
+            msg = '💳 <b>طلبات الشحن المعلقة (' + pendingDeposits.length + '):</b>\n\n';
+            pendingDeposits.forEach((req, idx) => {
+                msg += `👤 ID: <code>${req.userUid}</code>\n💰 المبلغ: <b>${req.amount} EGP</b>\n📸 <b>(الإثبات مرفق)</b>\n━━━━━━━━━━━━\n`;
+                inlineButtons.push([ Markup.button.callback('✅ موافقة (' + req.amount + 'ج)', `approve_dep_${req.userId}_${req.amount}`), Markup.button.callback('❌ رفض', `reject_dep_${req.userId}`) ]);
+            });
+            inlineButtons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
+        }
+
+        // 🆕 حماية ضد الرجوع من رسالة مصورة إلى رسالة نصية
+        if (ctx.callbackQuery.message && ctx.callbackQuery.message.photo) {
+            await ctx.deleteMessage().catch(()=>{});
+            await ctx.reply(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(inlineButtons) }).catch(()=>{});
+        } else {
+            await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(inlineButtons) }).catch(()=>{});
+        }
     } catch(e) {}
 });
 
@@ -1618,9 +1638,6 @@ bot.action('admin_logout', async (ctx) => {
     await ctx.editMessageText('✅ تم تسجيل الخروج بنجاح وعاد حسابك كعميل عادي.').catch(()=>{}); 
 });
 
-// ==========================================
-// 🆕 نظام عرض العملاء المحدث (نظام الصفحات)
-// ==========================================
 async function renderUsersPage(ctx, page) {
     try {
         let allUsers = [];
@@ -1643,7 +1660,6 @@ async function renderUsersPage(ctx, page) {
         } else {
             pageItems.forEach(u => {
                 const bStatus = u.isBanned ? ' 🔴 [محظور]' : '';
-                // 🛡️ عرض الرصيد الحقيقي كما هو بدقة
                 msg += `👤 ID: <code>${u.uid}</code> | الرصيد: <b>${parseFloat(u.balance).toFixed(2)} EGP</b>${bStatus}\n`;
             });
         }
@@ -1675,7 +1691,6 @@ bot.action(/^admin_view_users_pg_(\d+)$/, async (ctx) => {
     const page = parseInt(ctx.match[1]);
     await renderUsersPage(ctx, page);
 });
-// ==========================================
 
 bot.action('admin_set_global_markup', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
@@ -1747,6 +1762,7 @@ bot.action('admin_broadcast', async (ctx) => {
     await ctx.editMessageText('📢 **إذاعة متطورة للعملاء:**\n\n- للإرسال النصي: أرسل النص مباشرة.\n- للإرسال بصورة وزر: أرسل صورة واكتب في الوصف (الكابشن): <code>النص | اسم الزر | الرابط</code>\n\nأو اكتب <code>إلغاء</code> للرجوع.', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{}); 
 });
 
+// 🆕 حماية الردود من خطأ الصور (editMessageCaption بدلاً من editMessageText)
 bot.action(/^approve_dep_(.+)_(.+)$/, async (ctx) => {
     ctx.answerCbQuery('⏳ جاري شحن الرصيد للعميل...').catch(()=>{});
     try {
@@ -1763,14 +1779,29 @@ bot.action(/^approve_dep_(.+)_(.+)$/, async (ctx) => {
                 usersDb[targetUserId].walletHistory.push({ type: 'شحن فودافون كاش (موافقة أدمن)', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
                 saveDatabase();
                 
-                bot.telegram.sendMessage(targetUserId, `🎉 **تم تأكيد الدفع بنجاح!**\n💰 تمت إضافة: <b>${amount} EGP</b> لمحفظتك.\n✅ رصيدك الحالي: <b>${usersDb[targetUserId].balance.toFixed(2)} EGP</b>`, { parse_mode: 'HTML' }).catch(()=>{});
+                bot.telegram.sendMessage(targetUserId, `🎉 <b>تم تأكيد الدفع بنجاح!</b>\n💰 تمت إضافة: <b>${amount} EGP</b> لمحفظتك.\n✅ رصيدك الحالي: <b>${usersDb[targetUserId].balance.toFixed(2)} EGP</b>`, { parse_mode: 'HTML' }).catch(()=>{});
                 
-                await ctx.editMessageText(`✅ **تمت الموافقة بنجاح!**\n\nتم شحن ${amount} EGP للعميل (ID: ${usersDb[targetUserId].uid})`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) }).catch(()=>{});
+                const msgText = `✅ <b>تمت الموافقة بنجاح!</b>\n\nتم شحن ${amount} EGP للعميل (ID: ${usersDb[targetUserId].uid})`;
+                const keyboard = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) };
+                
+                if (ctx.callbackQuery.message && ctx.callbackQuery.message.photo) {
+                    await ctx.editMessageCaption(msgText, keyboard).catch(()=>{});
+                } else {
+                    await ctx.editMessageText(msgText, keyboard).catch(()=>{});
+                }
             } else {
-                await ctx.editMessageText('❌ العميل غير موجود.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
+                if (ctx.callbackQuery.message && ctx.callbackQuery.message.photo) {
+                    await ctx.editMessageCaption('❌ العميل غير موجود.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
+                } else {
+                    await ctx.editMessageText('❌ العميل غير موجود.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
+                }
             }
         } else {
-            await ctx.editMessageText('❌ هذا الطلب غير موجود أو تم التعامل معه مسبقاً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
+            if (ctx.callbackQuery.message && ctx.callbackQuery.message.photo) {
+                await ctx.editMessageCaption('❌ هذا الطلب غير موجود أو تم التعامل معه مسبقاً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
+            } else {
+                await ctx.editMessageText('❌ هذا الطلب غير موجود أو تم التعامل معه مسبقاً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
+            }
         }
     } catch(e) { console.error(e); }
 });
@@ -1786,11 +1817,22 @@ bot.action(/^reject_dep_(.+)$/, async (ctx) => {
             pendingDeposits.splice(pendingIndex, 1);
             saveDatabase();
             
-            bot.telegram.sendMessage(targetUserId, `❌ **تم رفض طلب الشحن الخاص بك.**\n\nيرجى التأكد من إرفاق إثبات الدفع الصحيح والتواصل مع الدعم الفني إذا كانت هناك مشكلة.`, { parse_mode: 'HTML' }).catch(()=>{});
+            bot.telegram.sendMessage(targetUserId, `❌ <b>تم رفض طلب الشحن الخاص بك.</b>\n\nيرجى التأكد من إرفاق إثبات الدفع الصحيح والتواصل مع الدعم الفني إذا كانت هناك مشكلة.`, { parse_mode: 'HTML' }).catch(()=>{});
             
-            await ctx.editMessageText(`❌ **تم رفض الطلب.**\n\nتم إلغاء شحن ${reqData.amount} EGP للعميل.`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) }).catch(()=>{});
+            const msgText = `❌ <b>تم رفض الطلب.</b>\n\nتم إلغاء شحن ${reqData.amount} EGP للعميل.`;
+            const keyboard = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) };
+            
+            if (ctx.callbackQuery.message && ctx.callbackQuery.message.photo) {
+                await ctx.editMessageCaption(msgText, keyboard).catch(()=>{});
+            } else {
+                await ctx.editMessageText(msgText, keyboard).catch(()=>{});
+            }
         } else {
-            await ctx.editMessageText('❌ هذا الطلب غير موجود.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
+            if (ctx.callbackQuery.message && ctx.callbackQuery.message.photo) {
+                await ctx.editMessageCaption('❌ هذا الطلب غير موجود.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
+            } else {
+                await ctx.editMessageText('❌ هذا الطلب غير موجود.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
+            }
         }
     } catch(e) {}
 });
