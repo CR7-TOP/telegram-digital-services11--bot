@@ -2097,6 +2097,28 @@ bot.on('text', async (ctx, next) => {
         return await next(); 
     }
 
+    // ====================================================
+    // 🆕 إضافة كود الإذاعة النصية هنا 👇
+    // ====================================================
+    if (botStates.broadcast && botStates.broadcast[userId] && isAdmin(userId)) {
+        if (text === 'إلغاء' || text === 'رجوع') {
+            delete botStates.broadcast[userId]; saveDatabase();
+            return await ctx.reply('✅ تم إلغاء الإذاعة.', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+        }
+
+        await ctx.reply('⏳ جاري إرسال الإذاعة النصية لجميع العملاء...').catch(()=>{});
+        let count = 0;
+        for (let tgId in usersDb) {
+            if (String(usersDb[tgId].uid) !== '1001') {
+                bot.telegram.sendMessage(tgId, text, { parse_mode: 'HTML' }).catch(() => {});
+                count++; if (count % 20 === 0) await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+        delete botStates.broadcast[userId]; saveDatabase();
+        return await ctx.reply(`✅ تم الإرسال للجميع بنجاح (${count} عميل).`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+    }
+    // ====================================================
+
     if (botStates.transfer && botStates.transfer[userId]) {
         const state = botStates.transfer[userId];
         if (state.step === 'WAIT_UID') {
