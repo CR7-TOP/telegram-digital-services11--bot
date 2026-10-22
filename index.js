@@ -39,6 +39,7 @@ let adCampaigns = {};
 let hiddenServices = []; 
 let fixedPrices = {}; 
 let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
+let instapayAccount = 'غير محدد'; // 🆕 متغير حساب انستاباي الجديد
 
 // 🆕 متغيرات الأنظمة الجديدة والسابقة
 let abandonedCarts = {}; 
@@ -118,6 +119,7 @@ async function loadDatabase() {
         hiddenServices = data.hiddenServices || [];
         fixedPrices = data.fixedPrices || {};
         if (data.vodafoneCashNumber) vodafoneCashNumber = data.vodafoneCashNumber;
+        if (data.instapayAccount) instapayAccount = data.instapayAccount; // 🆕 استرجاع حساب انستاباي
         
         abandonedCarts = data.abandonedCarts || {}; 
         usedReceipts = data.usedReceipts || [];
@@ -160,7 +162,7 @@ async function loadDatabase() {
 
 function saveDatabase() {
     try {
-        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId }; 
+        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId }; // 🆕 حفظ حساب انستاباي
         const savePromise = connectDB().then(() => {
             if (dbCollection) {
                 return dbCollection.updateOne({ _id: "main_data" }, { $set: data }, { upsert: true });
@@ -272,7 +274,7 @@ function checkAndSendDailyReport() {
 setInterval(() => {
     try {
         if (!ADMIN_CHANNEL_ID || ADMIN_CHANNEL_ID === '') return;
-        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId }, null, 2); 
+        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId }, null, 2); 
         const buffer = Buffer.from(dbDump, 'utf-8');
         bot.telegram.sendDocument(ADMIN_CHANNEL_ID, { source: buffer, filename: `XProStore_Backup_${new Date().toISOString().split('T')[0]}.json` }, { caption: `📦 نسخة احتياطية تلقائية لقاعدة البيانات\n📅 التاريخ: ${new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}` }).catch(()=>{});
     } catch (e) { console.error("Backup Error:", e); }
@@ -560,12 +562,13 @@ const categoryEmojis = {
   'iCloud': '☁️', 'Zoom': '📹', 'API Services': '🔌', 'أخرى': '📦'
 };
 
+// 🆕 تعديل اسم زر الشحن في القائمة الرئيسية
 function getMainMenu() {
   let keyboard = [
     ['🛍 الخدمات', '🔍 بحث عن خدمة'],
     ['🛒 طلباتي', '📜 سجل المحفظة'],
     ['💰 حسابي', '💸 تحويل رصيد'],
-    ['💳 شحن المحفظة (فودافون كاش)', '🎟 استخدام كود خصم'],
+    ['💳 شحن الحساب', '🎟 استخدام كود خصم'],
     ['🔗 دعوة الأصدقاء (اربح 2%)', '📞 الدعم الفني']
   ];
   return Markup.keyboard(keyboard).resize();
@@ -815,16 +818,36 @@ async function showProfile(ctx) {
     await ctx.reply('👤 **حسابي الشخصي:**\n\n🆔 رقم الحساب: `' + user.uid + '`\n🔰 مستوى الحساب: ' + vipTag + '\n💳 الرصيد الحالي: *' + parseFloat(user.balance).toFixed(2) + ' EGP*\n🛍 إجمالي المشتريات: ' + user.totalSpent.toFixed(2) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
 }
 
+// 🆕 نظام الشحن المحدث باختيار طريقة الدفع
 async function showDepositFlow(ctx) {
     const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
     if (usersDb[userId].isBanned) return;
     const hasPending = pendingDeposits.some(p => p.userId === userId);
     if(hasPending) return await ctx.reply('❌ **لا يمكنك تقديم طلب شحن جديد!**\nلديك بالفعل طلب شحن قيد المراجعة.', {parse_mode: 'Markdown'}).catch(()=>{});
+    
+    await ctx.reply('💳 **اختر طريقة الشحن المناسبة لك:**', {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+            [Markup.button.callback('🔴 شحن بالمحفظة (فودافون كاش)', 'dep_method_vfcash')],
+            [Markup.button.callback('🟣 انستاباي (InstaPay)', 'dep_method_instapay')]
+        ])
+    }).catch(()=>{});
+}
+
+// 🆕 التعامل مع زر اختيار طريقة الدفع
+bot.action(/^dep_method_(.+)$/, async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    const method = ctx.match[1]; // 'vfcash' or 'instapay'
+    const userId = String(ctx.from.id);
+
     if (!botStates) botStates = {};
     if (!botStates.deposit) botStates.deposit = {};
-    botStates.deposit[userId] = { step: 'WAIT_AMOUNT' }; saveDatabase();
-    await ctx.reply('💳 **شحن المحفظة (فودافون كاش)**\n\nمن فضلك أكتب **المبلغ** اللي هتحوله بالجنيه المصري (مثال: 100):').catch(()=>{});
-}
+    botStates.deposit[userId] = { step: 'WAIT_AMOUNT', method: method };
+    saveDatabase();
+
+    let methodText = method === 'vfcash' ? 'فودافون كاش' : 'انستاباي';
+    await ctx.editMessageText(`💳 **شحن الحساب عبر (${methodText})**\n\nمن فضلك أكتب **المبلغ** اللي هتحوله بالجنيه المصري (مثال: 100):`, {parse_mode: 'Markdown'}).catch(()=>{});
+});
 
 async function showOrdersMain(ctx) {
     const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
@@ -1023,7 +1046,7 @@ bot.command('history', showOrdersMain);
 bot.command('support', showSupport);
 
 bot.hears(/حسابي/, showProfile);
-bot.hears(/شحن المحفظة/, showDepositFlow);
+bot.hears(/شحن الحساب/, showDepositFlow); // 🆕 تحديث أمر الشحن
 bot.hears(/طلباتي/, showOrdersMain);
 bot.hears(/الدعم الفني/, showSupport);
 bot.hears(/الخدمات/, showCategories);
@@ -1069,6 +1092,7 @@ async function showAdminPanel(ctx) {
     }
     const maintStatus = maintenanceMode ? '🛠️ (مفعل - المتجر مغلق للصيانة)' : '✅ (متوقف - المتجر يعمل)';
 
+    // 🆕 إضافة حساب انستاباي للإحصائيات
     const text = `👑 <b>لوحة تحكم الأدمن</b>\n\n` +
                  `📊 <b>الإحصائيات المتقدمة:</b>\n` +
                  `👥 إجمالي العملاء: ${totalUsers}\n` +
@@ -1079,17 +1103,20 @@ async function showAdminPanel(ctx) {
                  `⚡ حالة الخصم المؤقت: ${flashStatus}\n` +
                  `🛑 وضع الصيانة: ${maintStatus}\n` +
                  `📱 رقم الكاش: <code>${vodafoneCashNumber}</code>\n` +
+                 `🟣 حساب انستاباي: <code>${instapayAccount}</code>\n` +
                  `📢 قنوات المبيعات: <code>${publicSalesChannels && publicSalesChannels.length > 0 ? publicSalesChannels.length + ' قناة' : 'غير محددة'}</code>\n` +
                  `🔒 الاشتراك الإجباري: <code>${forceSubscribeChannels && forceSubscribeChannels.length > 0 ? forceSubscribeChannels.length + ' قناة' : 'غير مفعل'}</code>`;
 
+    // 🆕 إضافة زر تغيير حساب انستاباي
     const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback('📉 إعلان انخفاض سعر (دروب)', 'admin_price_drop')],
         [Markup.button.callback('🔔 فحص وإرسال تذكيرات التجديد', 'admin_scan_renewals')],
         [Markup.button.callback('🎁 إرسال كود دروب', 'admin_send_drop'), Markup.button.callback('⚙️ جروب الدروب', 'admin_set_drop_group')],
         
         [Markup.button.callback('🔄 تحديث وسحب الخدمات يدوياً', 'admin_force_refresh')],
-        [Markup.button.callback('📱 تغيير رقم الاستقبال', 'admin_change_wallet'), Markup.button.callback('📢 إضافة قناة مبيعات', 'admin_set_sales_channel')],
-        [Markup.button.callback('🔒 إضافة قناة اشتراك إجباري', 'admin_set_force_sub'), Markup.button.callback('💳 طلبات الشحن (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
+        [Markup.button.callback('📱 تغيير رقم الكاش', 'admin_change_wallet'), Markup.button.callback('🏦 تغيير حساب انستاباي', 'admin_change_instapay')],
+        [Markup.button.callback('📢 إضافة قناة مبيعات', 'admin_set_sales_channel'), Markup.button.callback('🔒 إضافة قناة اشتراك إجباري', 'admin_set_force_sub')],
+        [Markup.button.callback('💳 طلبات الشحن (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
         [Markup.button.callback('💲 تحديد سعر ثابت لمنتج', 'admin_fixed_price'), Markup.button.callback('👁️ إخفاء/إظهار منتج', 'admin_hide_cats')],
@@ -1105,7 +1132,6 @@ async function showAdminPanel(ctx) {
       ]);
 
     if(ctx.callbackQuery) {
-        // 🆕 حماية ضد أخطاء الرسائل المصورة عند الرجوع للوحة التحكم
         if (ctx.callbackQuery.message && ctx.callbackQuery.message.photo) {
             await ctx.deleteMessage().catch(()=>{});
             await ctx.reply(text, { parse_mode: 'HTML', ...keyboard }).catch(()=>{});
@@ -1243,6 +1269,14 @@ bot.action('admin_change_wallet', async (ctx) => {
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = 'WAIT_NEW_WALLET'; saveDatabase();
     await ctx.editMessageText('📱 **تغيير رقم الاستقبال:**\n\nأرسل الرقم الجديد لمحفظة فودافون كاش الخاص بك:', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
+});
+
+// 🆕 أكشن تغيير حساب انستاباي
+bot.action('admin_change_instapay', async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    if (!botStates.adminInput) botStates.adminInput = {};
+    botStates.adminInput[ctx.from.id] = 'WAIT_NEW_INSTAPAY'; saveDatabase();
+    await ctx.editMessageText('🏦 **تغيير حساب انستاباي:**\n\nأرسل اليوزرنيم أو عنوان الدفع (عنوان التخاطر) الخاص بحساب انستاباي الجديد:', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action('admin_set_sales_channel', async (ctx) => {
@@ -1542,13 +1576,14 @@ bot.action('admin_pending_deposits', async (ctx) => {
         } else {
             msg = '💳 <b>طلبات الشحن المعلقة (' + pendingDeposits.length + '):</b>\n\n';
             pendingDeposits.forEach((req, idx) => {
-                msg += `👤 ID: <code>${req.userUid}</code>\n💰 المبلغ: <b>${req.amount} EGP</b>\n📸 <b>(الإثبات مرفق)</b>\n━━━━━━━━━━━━\n`;
+                // 🆕 إضافة توضيح طريقة الدفع للطلبات المعلقة
+                const methodLabel = req.method === 'instapay' ? '🟣 انستاباي' : '🔴 فودافون كاش';
+                msg += `👤 ID: <code>${req.userUid}</code>\n💰 المبلغ: <b>${req.amount} EGP</b>\n💳 الطريقة: <b>${methodLabel}</b>\n📸 <b>(الإثبات مرفق)</b>\n━━━━━━━━━━━━\n`;
                 inlineButtons.push([ Markup.button.callback('✅ موافقة (' + req.amount + 'ج)', `approve_dep_${req.userId}_${req.amount}`), Markup.button.callback('❌ رفض', `reject_dep_${req.userId}`) ]);
             });
             inlineButtons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
         }
 
-        // 🆕 حماية ضد الرجوع من رسالة مصورة إلى رسالة نصية
         if (ctx.callbackQuery.message && ctx.callbackQuery.message.photo) {
             await ctx.deleteMessage().catch(()=>{});
             await ctx.reply(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(inlineButtons) }).catch(()=>{});
@@ -1762,7 +1797,6 @@ bot.action('admin_broadcast', async (ctx) => {
     await ctx.editMessageText('📢 **إذاعة متطورة للعملاء:**\n\n- للإرسال النصي: أرسل النص مباشرة.\n- للإرسال بصورة وزر: أرسل صورة واكتب في الوصف (الكابشن): <code>النص | اسم الزر | الرابط</code>\n\nأو اكتب <code>إلغاء</code> للرجوع.', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{}); 
 });
 
-// 🆕 حماية الردود من خطأ الصور (editMessageCaption بدلاً من editMessageText)
 bot.action(/^approve_dep_(.+)_(.+)$/, async (ctx) => {
     ctx.answerCbQuery('⏳ جاري شحن الرصيد للعميل...').catch(()=>{});
     try {
@@ -2147,17 +2181,19 @@ bot.on('photo', async (ctx, next) => {
             
             usedReceipts.push(fileUniqueId);
             
+            // 🆕 تمرير الطريقة للطلبات المعلقة
+            const reqData = { userId, userUid: usersDb[userId].uid, amount, receipt: fileId, method: botStates.deposit[userId].method };
             delete botStates.deposit[userId]; saveDatabase();
             
-            const reqData = { userId, userUid: usersDb[userId].uid, amount, receipt: fileId };
             pendingDeposits.push(reqData); saveDatabase();
             
             await ctx.reply('✅ <b>تم استلام طلبك وإثبات الدفع!</b>\n⏳ جاري مراجعته من الإدارة وسيتم إضافة الرصيد لمحفظتك قريباً.', {parse_mode: 'HTML'}).catch(()=>{});
             
             for (let tgId in usersDb) {
                 if (String(usersDb[tgId].uid) === '1001') {
+                    const methodLabel = reqData.method === 'instapay' ? '🟣 انستاباي' : '🔴 فودافون كاش';
                     bot.telegram.sendPhoto(tgId, fileId, {
-                        caption: `🔔 <b>طلب شحن يدوي للمراجعة</b>\n\n👤 المستخدم: <code>${reqData.userUid}</code>\n💰 المبلغ المطلوب: <b>${reqData.amount} EGP</b>`,
+                        caption: `🔔 <b>طلب شحن يدوي للمراجعة</b>\n\n👤 المستخدم: <code>${reqData.userUid}</code>\n💰 المبلغ المطلوب: <b>${reqData.amount} EGP</b>\n💳 الطريقة: <b>${methodLabel}</b>`,
                         parse_mode: 'HTML',
                         ...Markup.inlineKeyboard([
                             [Markup.button.callback('✅ موافقة', `approve_dep_${reqData.userId}_${reqData.amount}`), Markup.button.callback('❌ رفض', `reject_dep_${reqData.userId}`)]
@@ -2178,7 +2214,7 @@ bot.on('text', async (ctx, next) => {
     if (usersDb[userId].isBanned) return;
     const text = ctx.message.text.trim();
 
-    const menuCommands = ['الخدمات', 'طلباتي', 'حسابي', 'سجل المحفظة', 'شحن المحفظة', 'استخدام كود', 'دعوة الأصدقاء', 'الدعم الفني', 'بحث', 'تحويل رصيد'];
+    const menuCommands = ['الخدمات', 'طلباتي', 'حسابي', 'سجل المحفظة', 'شحن الحساب', 'استخدام كود', 'دعوة الأصدقاء', 'الدعم الفني', 'بحث', 'تحويل رصيد'];
     if (menuCommands.some(cmd => text.includes(cmd))) {
         clearUserStates(userId);
         return await next(); 
@@ -2275,7 +2311,7 @@ bot.on('text', async (ctx, next) => {
                  {
                    parse_mode: 'HTML',
                    ...Markup.inlineKeyboard([
-                       [Markup.button.callback('💳 شحن المحفظة (فودافون كاش)', 'main_categories')],
+                       [Markup.button.callback('💳 شحن الحساب', 'main_categories')],
                        [Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]
                    ])
                  }
@@ -2487,6 +2523,14 @@ bot.on('text', async (ctx, next) => {
         if (!state.startsWith('WAIT_ADD_STOCK_') && !state.startsWith('WAIT_BROADCAST') && !state.startsWith('WAIT_PD_')) {
             // Not deleting state immediately to allow multiple inputs if necessary,
             // the specific handler will delete it when done.
+        }
+
+        // 🆕 إعداد حساب انستاباي
+        if (state === 'WAIT_NEW_INSTAPAY') {
+            instapayAccount = text.trim();
+            delete botStates.adminInput[userId]; saveDatabase();
+            logAdminAction(userId, `تغيير حساب انستاباي إلى: ${instapayAccount}`);
+            return await ctx.reply(`✅ <b>تم تغيير حساب انستاباي بنجاح!</b>\nالحساب الجديد: <code>${instapayAccount}</code>`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
         }
 
         if (state === 'WAIT_PD_SEARCH') {
@@ -2938,14 +2982,26 @@ bot.on('text', async (ctx, next) => {
       } else { botStates.adminLogin[userId] = null; saveDatabase(); return await ctx.reply('❌ كلمة مرور خاطئة.').catch(()=>{}); }
     }
 
+    // 🆕 تم تعديل هذا الجزء للتعامل مع طرق الدفع المختلفة بناءً على اختيار العميل
     if (botStates.deposit && botStates.deposit[userId]) {
-      const state = botStates.deposit[userId];
-      if (state.step === 'WAIT_AMOUNT') {
-        const amount = parseFloat(text);
-        if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ أدخل مبلغاً صحيحاً وموجباً:').catch(()=>{});
-        state.amount = amount; state.step = 'WAIT_RECEIPT'; saveDatabase();
-        return await ctx.reply(`💳 **الخطوة الأخيرة:**\n\nقم بتحويل مبلغ (*${amount} EGP*) على هذا الرقم:\n📱 \`${vodafoneCashNumber}\`\n\n📸 **الآن: قم بإرسال صورة (سكرين شوت) تؤكد إتمامك للتحويل لكي يتم مراجعتها وإضافة الرصيد.**`, { parse_mode: 'Markdown' }).catch(()=>{});
-      }
+        const state = botStates.deposit[userId];
+        if (state.step === 'WAIT_AMOUNT') {
+            const amount = parseFloat(text);
+            if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ أدخل مبلغاً صحيحاً وموجباً:').catch(()=>{});
+            
+            state.amount = amount; 
+            state.step = 'WAIT_RECEIPT'; 
+            saveDatabase();
+            
+            let paymentInfo = '';
+            if (state.method === 'instapay') {
+                paymentInfo = `🟣 انستاباي (InstaPay):\n🔗 <code>${instapayAccount}</code>`;
+            } else {
+                paymentInfo = `🔴 فودافون كاش:\n📱 <code>${vodafoneCashNumber}</code>`;
+            }
+            
+            return await ctx.reply(`💳 <b>الخطوة الأخيرة:</b>\n\nقم بتحويل مبلغ (<b>${amount} EGP</b>) على هذا الحساب:\n${paymentInfo}\n\n📸 <b>الآن: قم بإرسال صورة (سكرين شوت) تؤكد إتمامك للتحويل لكي يتم مراجعتها وإضافة الرصيد.</b>`, { parse_mode: 'HTML' }).catch(()=>{});
+        }
     }
 
     return await next();
