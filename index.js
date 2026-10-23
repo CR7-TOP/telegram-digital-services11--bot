@@ -3,16 +3,26 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import http from 'http';
 import { MongoClient } from 'mongodb'; 
+import crypto from 'crypto'; // 🆕 مكتبة التشفير الخاصة بـ Bybit
 
 dotenv.config();
 
 // ==========================================
 // ⚠️ إعدادات عامة
 // ==========================================
-const USD_TO_EGP_RATE = 50; 
+let usdToEgpRate = 50; // 🆕 تم تحويله لمتغير قابل للتعديل من لوحة الأدمن
 const ADMIN_CHANNEL_ID = process.env.ADMIN_CHANNEL_ID || '-1004393113868'; 
 let publicSalesChannels = process.env.PUBLIC_SALES_CHANNEL ? [process.env.PUBLIC_SALES_CHANNEL] : []; 
 let forceSubscribeChannels = []; 
+
+// ==========================================
+// 🔐 بيانات الدفع الآلي (الكريبتو) 🆕
+// ==========================================
+const BSC_WALLET = "0x7999903bf48b4821eb43f5e2d09003b4e877dda6";
+const BSC_API_KEY = "FVVUK6BT15W7RS8W9JVUZNSGAF6IJKEJHF";
+const BYBIT_UID = "491230990";
+const BYBIT_API_KEY = "usPuzbsS6BDf8qORyq";
+const BYBIT_API_SECRET = "reJE6KUy0VF28JoEcWf6JCYX6msPt1UMTVOM";
 
 // ==========================================
 // 🛡️ إعدادات الاتصال بقاعدة بيانات MongoDB 
@@ -39,9 +49,8 @@ let adCampaigns = {};
 let hiddenServices = []; 
 let fixedPrices = {}; 
 let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
-let instapayAccount = 'غير محدد'; // 🆕 متغير حساب انستاباي الجديد
+let instapayAccount = 'غير محدد'; 
 
-// 🆕 متغيرات الأنظمة الجديدة والسابقة
 let abandonedCarts = {}; 
 let usedReceipts = []; 
 let stockAlerts = {}; 
@@ -106,6 +115,7 @@ async function loadDatabase() {
     if (data) {
         usersDb = data.usersDb || {};
         globalMarkupPercent = data.globalMarkupPercent !== undefined ? data.globalMarkupPercent : 15;
+        usdToEgpRate = data.usdToEgpRate !== undefined ? data.usdToEgpRate : 50; // 🆕 استرجاع السعر
         customMarkups = data.customMarkups || {};
         pendingDeposits = data.pendingDeposits || [];
         promoCodes = data.promoCodes || {};
@@ -119,7 +129,7 @@ async function loadDatabase() {
         hiddenServices = data.hiddenServices || [];
         fixedPrices = data.fixedPrices || {};
         if (data.vodafoneCashNumber) vodafoneCashNumber = data.vodafoneCashNumber;
-        if (data.instapayAccount) instapayAccount = data.instapayAccount; // 🆕 استرجاع حساب انستاباي
+        if (data.instapayAccount) instapayAccount = data.instapayAccount; 
         
         abandonedCarts = data.abandonedCarts || {}; 
         usedReceipts = data.usedReceipts || [];
@@ -162,7 +172,7 @@ async function loadDatabase() {
 
 function saveDatabase() {
     try {
-        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId }; // 🆕 حفظ حساب انستاباي
+        const data = { usersDb, globalMarkupPercent, usdToEgpRate, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId }; // 🆕 حفظ السعر 
         const savePromise = connectDB().then(() => {
             if (dbCollection) {
                 return dbCollection.updateOne({ _id: "main_data" }, { $set: data }, { upsert: true });
@@ -274,7 +284,7 @@ function checkAndSendDailyReport() {
 setInterval(() => {
     try {
         if (!ADMIN_CHANNEL_ID || ADMIN_CHANNEL_ID === '') return;
-        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId }, null, 2); 
+        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, usdToEgpRate, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId }, null, 2); 
         const buffer = Buffer.from(dbDump, 'utf-8');
         bot.telegram.sendDocument(ADMIN_CHANNEL_ID, { source: buffer, filename: `XProStore_Backup_${new Date().toISOString().split('T')[0]}.json` }, { caption: `📦 نسخة احتياطية تلقائية لقاعدة البيانات\n📅 التاريخ: ${new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}` }).catch(()=>{});
     } catch (e) { console.error("Backup Error:", e); }
@@ -449,7 +459,7 @@ async function fetchAllServices() {
                     item.id = String(item.id || item.product_id || item.service_id || item.uuid || item.code || generateStableId(item.name));
                     item.category = item.category || item.category_name || detectCategoryFromName(item.name);
                     let rawPriceUSD = parseFloat(item.price || item.rate || item.price_amount || 0);
-                    let egpPrice = (rawPriceUSD * USD_TO_EGP_RATE).toFixed(2);
+                    let egpPrice = (rawPriceUSD * usdToEgpRate).toFixed(2); // 🆕 تحديث السعر
                     item.price = egpPrice;
                     item.price_amount = egpPrice; 
                 });
@@ -482,7 +492,7 @@ async function fetchAllServices() {
                     item.id = String(uniqueId);
                     item.category = detectCategoryFromName(item.name) !== 'أخرى' ? detectCategoryFromName(item.name) : (item.category || item.category_name || 'أخرى');
                     let rawPriceUSD = parseFloat(item.price_usdt_from || item.price || item.rate || item.price_amount || 0);
-                    let egpPrice = (rawPriceUSD * USD_TO_EGP_RATE).toFixed(2);
+                    let egpPrice = (rawPriceUSD * usdToEgpRate).toFixed(2); // 🆕 تحديث السعر
                     item.price = egpPrice;
                     item.price_amount = egpPrice;
                 });
@@ -562,7 +572,6 @@ const categoryEmojis = {
   'iCloud': '☁️', 'Zoom': '📹', 'API Services': '🔌', 'أخرى': '📦'
 };
 
-// 🆕 تعديل اسم زر الشحن في القائمة الرئيسية
 function getMainMenu() {
   let keyboard = [
     ['🛍 الخدمات', '🔍 بحث عن خدمة'],
@@ -818,16 +827,18 @@ async function showProfile(ctx) {
     await ctx.reply('👤 **حسابي الشخصي:**\n\n🆔 رقم الحساب: `' + user.uid + '`\n🔰 مستوى الحساب: ' + vipTag + '\n💳 الرصيد الحالي: *' + parseFloat(user.balance).toFixed(2) + ' EGP*\n🛍 إجمالي المشتريات: ' + user.totalSpent.toFixed(2) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
 }
 
-// 🆕 نظام الشحن المحدث باختيار طريقة الدفع
+// 🆕 نظام الشحن المحدث باختيار طريقة الدفع (إضافة الكريبتو)
 async function showDepositFlow(ctx) {
     const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
     if (usersDb[userId].isBanned) return;
-    const hasPending = pendingDeposits.some(p => p.userId === userId);
+    const hasPending = pendingDeposits.some(p => p.userId === userId && p.status !== 'pending'); 
     if(hasPending) return await ctx.reply('❌ **لا يمكنك تقديم طلب شحن جديد!**\nلديك بالفعل طلب شحن قيد المراجعة.', {parse_mode: 'Markdown'}).catch(()=>{});
     
     await ctx.reply('💳 **اختر طريقة الشحن المناسبة لك:**', {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
+            [Markup.button.callback('🟡 الدفع عبر Bybit (تلقائي)', 'dep_method_bybit')],
+            [Markup.button.callback('🟢 شحن BEP20 USDT (تلقائي)', 'dep_method_bep20')],
             [Markup.button.callback('🔴 شحن بالمحفظة (فودافون كاش)', 'dep_method_vfcash')],
             [Markup.button.callback('🟣 انستاباي (InstaPay)', 'dep_method_instapay')]
         ])
@@ -837,11 +848,24 @@ async function showDepositFlow(ctx) {
 // 🆕 التعامل مع زر اختيار طريقة الدفع
 bot.action(/^dep_method_(.+)$/, async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
-    const method = ctx.match[1]; // 'vfcash' or 'instapay'
+    const method = ctx.match[1]; 
     const userId = String(ctx.from.id);
 
     if (!botStates) botStates = {};
     if (!botStates.deposit) botStates.deposit = {};
+    
+    if (method === 'bep20') {
+        botStates.deposit[userId] = { step: 'WAIT_USD_BEP20', method: 'bep20' }; saveDatabase();
+        await ctx.editMessageText('🟢 **شحن عبر شبكة BEP20**\n\nأرسل المبلغ بالدولار الذي تريد إضافته (مثال: 5, 10, 50):', {parse_mode: 'Markdown'}).catch(()=>{});
+        return;
+    }
+    
+    if (method === 'bybit') {
+        botStates.deposit[userId] = { step: 'WAIT_USD_BYBIT', method: 'bybit' }; saveDatabase();
+        await ctx.editMessageText('🟡 **الدفع عبر Bybit**\n\nأرسل المبلغ بالدولار الذي تريد إضافته (مثال: 5, 10, 50):', {parse_mode: 'Markdown'}).catch(()=>{});
+        return;
+    }
+    
     botStates.deposit[userId] = { step: 'WAIT_AMOUNT', method: method };
     saveDatabase();
 
@@ -1046,7 +1070,7 @@ bot.command('history', showOrdersMain);
 bot.command('support', showSupport);
 
 bot.hears(/حسابي/, showProfile);
-bot.hears(/شحن الحساب/, showDepositFlow); // 🆕 تحديث أمر الشحن
+bot.hears(/شحن الحساب/, showDepositFlow); 
 bot.hears(/طلباتي/, showOrdersMain);
 bot.hears(/الدعم الفني/, showSupport);
 bot.hears(/الخدمات/, showCategories);
@@ -1092,7 +1116,7 @@ async function showAdminPanel(ctx) {
     }
     const maintStatus = maintenanceMode ? '🛠️ (مفعل - المتجر مغلق للصيانة)' : '✅ (متوقف - المتجر يعمل)';
 
-    // 🆕 إضافة حساب انستاباي للإحصائيات
+    // 🆕 عرض سعر الدولار
     const text = `👑 <b>لوحة تحكم الأدمن</b>\n\n` +
                  `📊 <b>الإحصائيات المتقدمة:</b>\n` +
                  `👥 إجمالي العملاء: ${totalUsers}\n` +
@@ -1100,6 +1124,7 @@ async function showAdminPanel(ctx) {
                  `🛍️ إجمالي المشتريات بالمتجر: ${totalStoreSpent.toFixed(2)} EGP\n` +
                  `📦 إجمالي الطلبات المنفذة: ${totalOrdersCount}\n\n` +
                  `📈 نسبة الربح العامة: ${globalMarkupPercent}%\n` +
+                 `💲 سعر الدولار الحالي: <b>${usdToEgpRate} EGP</b>\n` +
                  `⚡ حالة الخصم المؤقت: ${flashStatus}\n` +
                  `🛑 وضع الصيانة: ${maintStatus}\n` +
                  `📱 رقم الكاش: <code>${vodafoneCashNumber}</code>\n` +
@@ -1107,8 +1132,9 @@ async function showAdminPanel(ctx) {
                  `📢 قنوات المبيعات: <code>${publicSalesChannels && publicSalesChannels.length > 0 ? publicSalesChannels.length + ' قناة' : 'غير محددة'}</code>\n` +
                  `🔒 الاشتراك الإجباري: <code>${forceSubscribeChannels && forceSubscribeChannels.length > 0 ? forceSubscribeChannels.length + ' قناة' : 'غير مفعل'}</code>`;
 
-    // 🆕 إضافة زر تغيير حساب انستاباي
+    // 🆕 زر ضبط السعر
     const keyboard = Markup.inlineKeyboard([
+        [Markup.button.callback(`💲 ضبط سعر الدولار (${usdToEgpRate}ج)`, 'admin_set_usd_rate')],
         [Markup.button.callback('📉 إعلان انخفاض سعر (دروب)', 'admin_price_drop')],
         [Markup.button.callback('🔔 فحص وإرسال تذكيرات التجديد', 'admin_scan_renewals')],
         [Markup.button.callback('🎁 إرسال كود دروب', 'admin_send_drop'), Markup.button.callback('⚙️ جروب الدروب', 'admin_set_drop_group')],
@@ -1150,6 +1176,14 @@ bot.action(/^admin_/, async (ctx, next) => {
 bot.action(/^approve_dep_|^reject_dep_/, async (ctx, next) => {
     if(!isAdmin(ctx.from.id)) return ctx.answerCbQuery('❌ غير مصرح لك', {show_alert: true});
     return await next();
+});
+
+// 🆕 أكشن تعديل السعر
+bot.action('admin_set_usd_rate', async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    if (!botStates.adminInput) botStates.adminInput = {};
+    botStates.adminInput[ctx.from.id] = 'WAIT_USD_RATE'; saveDatabase();
+    await ctx.editMessageText('💲 أرسل سعر الدولار الجديد مقابل الجنيه (مثال: 50):', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
 bot.action(/^admin_services_api_pg_(\d+)$/, async (ctx) => {
@@ -1271,7 +1305,6 @@ bot.action('admin_change_wallet', async (ctx) => {
     await ctx.editMessageText('📱 **تغيير رقم الاستقبال:**\n\nأرسل الرقم الجديد لمحفظة فودافون كاش الخاص بك:', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
-// 🆕 أكشن تغيير حساب انستاباي
 bot.action('admin_change_instapay', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
@@ -1565,6 +1598,7 @@ bot.action(/^addstock_(.+)$/, async (ctx) => {
     await ctx.editMessageText('📦 **إدارة المخزن المحلي لهذا المنتج:**\n\n➕ **للإضافة:** أرسل العنصر كرسالة (تقدر تبعت أكتر من عنصر ورا بعض).\n👀 **للعرض:** أرسل كلمة <code>عرض</code> لمعرفة محتويات المخزن.\n🗑️ **للحذف:** أرسل كلمة <code>حذف الكل</code> لتفريغ مخزن هذا المنتج بالكامل.\n🔙 **للخروج:** أرسل كلمة <code>رجوع</code>', {parse_mode: 'HTML'}).catch(()=>{});
 });
 
+// 🆕 تحديث عرض طلبات الشحن ليظهر الكريبتو اليدوي
 bot.action('admin_pending_deposits', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1576,10 +1610,17 @@ bot.action('admin_pending_deposits', async (ctx) => {
         } else {
             msg = '💳 <b>طلبات الشحن المعلقة (' + pendingDeposits.length + '):</b>\n\n';
             pendingDeposits.forEach((req, idx) => {
-                // 🆕 إضافة توضيح طريقة الدفع للطلبات المعلقة
-                const methodLabel = req.method === 'instapay' ? '🟣 انستاباي' : '🔴 فودافون كاش';
-                msg += `👤 ID: <code>${req.userUid}</code>\n💰 المبلغ: <b>${req.amount} EGP</b>\n💳 الطريقة: <b>${methodLabel}</b>\n📸 <b>(الإثبات مرفق)</b>\n━━━━━━━━━━━━\n`;
-                inlineButtons.push([ Markup.button.callback('✅ موافقة (' + req.amount + 'ج)', `approve_dep_${req.userId}_${req.amount}`), Markup.button.callback('❌ رفض', `reject_dep_${req.userId}`) ]);
+                let methodLabel = 'غير معروف';
+                if (req.method === 'instapay') methodLabel = '🟣 انستاباي';
+                else if (req.method === 'vfcash') methodLabel = '🔴 فودافون كاش';
+                else if (req.method === 'bybit_manual') methodLabel = '🟡 Bybit (يدوي)';
+                else if (req.method === 'bep20') methodLabel = '🟢 BEP20 (قيد الفحص)';
+
+                msg += `👤 ID: <code>${req.userUid}</code>\n💰 المبلغ: <b>${req.amount || (req.expectedAmount * usdToEgpRate).toFixed(2)} EGP</b>\n💳 الطريقة: <b>${methodLabel}</b>\n📸 <b>(الإثبات/المعرف مرفق)</b>\n━━━━━━━━━━━━\n`;
+                
+                if (req.method !== 'bep20') {
+                    inlineButtons.push([ Markup.button.callback('✅ موافقة (' + (req.amount || req.expectedAmount) + 'ج)', `approve_dep_${req.userId}_${req.amount}`), Markup.button.callback('❌ رفض', `reject_dep_${req.userId}`) ]);
+                }
             });
             inlineButtons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
         }
@@ -1810,7 +1851,7 @@ bot.action(/^approve_dep_(.+)_(.+)$/, async (ctx) => {
             
             if (usersDb[targetUserId]) {
                 usersDb[targetUserId].balance += amount;
-                usersDb[targetUserId].walletHistory.push({ type: 'شحن فودافون كاش (موافقة أدمن)', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+                usersDb[targetUserId].walletHistory.push({ type: 'شحن محفظة (موافقة أدمن)', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
                 saveDatabase();
                 
                 bot.telegram.sendMessage(targetUserId, `🎉 <b>تم تأكيد الدفع بنجاح!</b>\n💰 تمت إضافة: <b>${amount} EGP</b> لمحفظتك.\n✅ رصيدك الحالي: <b>${usersDb[targetUserId].balance.toFixed(2)} EGP</b>`, { parse_mode: 'HTML' }).catch(()=>{});
@@ -2181,7 +2222,6 @@ bot.on('photo', async (ctx, next) => {
             
             usedReceipts.push(fileUniqueId);
             
-            // 🆕 تمرير الطريقة للطلبات المعلقة
             const reqData = { userId, userUid: usersDb[userId].uid, amount, receipt: fileId, method: botStates.deposit[userId].method };
             delete botStates.deposit[userId]; saveDatabase();
             
@@ -2385,7 +2425,6 @@ bot.on('text', async (ctx, next) => {
                 let orderId = orderResponse.data?.order?.order_id || orderResponse.data?.order_id || orderResponse.data?.order?.id || orderResponse.data?.id || Math.floor(10000 + Math.random() * 90000);
                 let rawDetails = null;
 
-                // 🆕 استخراج مباشر للرابط من المزود الثالث (CupponHub) من طلب الشراء الأساسي
                 if (srv.providerSource === 'api3' && orderResponse.data?.order?.items && Array.isArray(orderResponse.data.order.items) && orderResponse.data.order.items.length > 0) {
                     rawDetails = orderResponse.data.order.items.join('\n\n');
                 }
@@ -2398,7 +2437,6 @@ bot.on('text', async (ctx, next) => {
                         if (source === 'api3') {
                             const getOrderRes = await apiClient3.get(`/?action=order&order_id=${orderId}`);
                             const orderData = getOrderRes.data?.order || getOrderRes.data;
-                            // 🆕 التركيز على مصفوفة items مباشرة
                             if (orderData && orderData.items && Array.isArray(orderData.items) && orderData.items.length > 0) {
                                 rawDetails = orderData.items.join('\n\n');
                             } else {
@@ -2520,12 +2558,15 @@ bot.on('text', async (ctx, next) => {
     if (botStates.adminSession && botStates.adminSession[userId] && botStates.adminInput && botStates.adminInput[userId]) {
         const state = botStates.adminInput[userId];
 
-        if (!state.startsWith('WAIT_ADD_STOCK_') && !state.startsWith('WAIT_BROADCAST') && !state.startsWith('WAIT_PD_')) {
-            // Not deleting state immediately to allow multiple inputs if necessary,
-            // the specific handler will delete it when done.
+        // 🆕 إعداد سعر الدولار
+        if (state === 'WAIT_USD_RATE') {
+            const newRate = parseFloat(text);
+            if(isNaN(newRate) || newRate <= 0) return await ctx.reply('❌ رقم غير صحيح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+            usdToEgpRate = newRate; delete botStates.adminInput[userId]; saveDatabase();
+            logAdminAction(userId, `تحديث سعر الدولار إلى ${newRate}`);
+            return await ctx.reply(`✅ تم تحديث سعر الدولار إلى ${newRate} جنيه بنجاح.`, {parse_mode:'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]])});
         }
 
-        // 🆕 إعداد حساب انستاباي
         if (state === 'WAIT_NEW_INSTAPAY') {
             instapayAccount = text.trim();
             delete botStates.adminInput[userId]; saveDatabase();
@@ -2982,9 +3023,91 @@ bot.on('text', async (ctx, next) => {
       } else { botStates.adminLogin[userId] = null; saveDatabase(); return await ctx.reply('❌ كلمة مرور خاطئة.').catch(()=>{}); }
     }
 
-    // 🆕 تم تعديل هذا الجزء للتعامل مع طرق الدفع المختلفة بناءً على اختيار العميل
     if (botStates.deposit && botStates.deposit[userId]) {
         const state = botStates.deposit[userId];
+        
+        // 🆕 إعداد الدفع عبر BEP20
+        if (state.step === 'WAIT_USD_BEP20') {
+            const usdAmt = parseInt(text);
+            if (isNaN(usdAmt) || usdAmt < 1) return await ctx.reply('❌ يرجى إرسال رقم صحيح (مثال: 5).').catch(()=>{});
+            
+            const randomFraction = Math.floor(Math.random() * 9999) / 100000;
+            const exactAmount = (usdAmt + randomFraction).toFixed(5);
+            
+            pendingDeposits.push({ userId, userUid: usersDb[userId].uid, type: 'crypto', method: 'bep20', expectedAmount: parseFloat(exactAmount), usdBase: usdAmt, status: 'pending', time: Date.now() });
+            delete botStates.deposit[userId]; saveDatabase();
+
+            const msg = `🟢 **شحن شبكة BEP20**\n\n📌 **عنوان الإيداع (اضغط للنسخ):**\n\`${BSC_WALLET}\`\n\n💰 **المبلغ الدقيق المطلوب:** \`${exactAmount}\` USDT\n🌐 **الشبكة:** BNB Smart Chain (BEP20)\n\n⚠️ **تنبيه هام:** أرسل المبلغ الدقيق الموضح أعلاه فقط. سيتم التحقق من الدفع وإضافة الرصيد تلقائياً بدون الحاجة لإرسال أي شيء.`;
+            return await ctx.reply(msg, {parse_mode: 'Markdown'}).catch(()=>{});
+        }
+
+        // 🆕 إعداد الدفع عبر Bybit
+        if (state.step === 'WAIT_USD_BYBIT') {
+            const usdAmt = parseFloat(text);
+            if (isNaN(usdAmt) || usdAmt <= 0) return await ctx.reply('❌ يرجى إرسال رقم صحيح.').catch(()=>{});
+            
+            botStates.deposit[userId].step = 'WAIT_BYBIT_TXID';
+            botStates.deposit[userId].amount = usdAmt;
+            saveDatabase();
+
+            const msg = `🟡 **الدفع عبر Bybit**\n\n📌 **معرف Bybit UID (اضغط للنسخ):**\n\`${BYBIT_UID}\`\n\n💰 **المبلغ المطلوب:** $${usdAmt}\n\n📝 **التعليمات:**\n1. أرسل المبلغ الدقيق إلى هذا المعرف عبر تحويل Bybit داخلي.\n2. ابحث عن **TxID** (رقم المعاملة) في تفاصيل التحويل، ثم أرسله هنا في رسالة للتحقق:\n\n⏳ في انتظار رقم المعاملة...`;
+            return await ctx.reply(msg, {parse_mode: 'Markdown'}).catch(()=>{});
+        }
+
+        // 🆕 التحقق من TxID لـ Bybit
+        if (state.step === 'WAIT_BYBIT_TXID') {
+            const txid = text.trim();
+            const usdAmt = botStates.deposit[userId].amount;
+            
+            if (usedReceipts.includes(txid)) return await ctx.reply('⚠️ تم استخدام رقم المعاملة هذا مسبقاً!').catch(()=>{});
+            
+            await ctx.reply('⏳ جاري التحقق من المعاملة عبر سيرفرات Bybit...').catch(()=>{});
+            
+            try {
+                const timestamp = Date.now().toString();
+                const recvWindow = '10000';
+                const params = `txID=${txid}`; 
+                const signStr = timestamp + BYBIT_API_KEY + recvWindow + params;
+                const signature = crypto.createHmac('sha256', BYBIT_API_SECRET).update(signStr).digest('hex');
+                
+                const res = await axios.get(`https://api.bybit.com/v5/asset/deposit/query-internal-record?${params}`, {
+                    headers: { 'X-BAPI-API-KEY': BYBIT_API_KEY, 'X-BAPI-TIMESTAMP': timestamp, 'X-BAPI-SIGN': signature, 'X-BAPI-RECV-WINDOW': recvWindow }
+                });
+
+                if (res.data && res.data.retCode === 0 && res.data.result.list && res.data.result.list.length > 0) {
+                    const txData = res.data.result.list[0];
+                    const receivedAmt = parseFloat(txData.amount);
+                    
+                    usedReceipts.push(txid);
+                    delete botStates.deposit[userId];
+                    
+                    const egpAdded = receivedAmt * usdToEgpRate; // 🆕 الضرب في سعر الدولار
+                    usersDb[userId].balance += egpAdded;
+                    usersDb[userId].walletHistory.push({ type: `شحن آلي (Bybit)`, amount: egpAdded, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+                    saveDatabase();
+
+                    await ctx.reply(`✅ **تم تأكيد الدفع بنجاح!**\nتم إضافة ${egpAdded.toFixed(2)} EGP إلى محفظتك.`, {parse_mode: 'Markdown'}).catch(()=>{});
+                    notifyAdmin(`💰 <b>شحن آلي Bybit:</b>\nالعميل: <code>${usersDb[userId].uid}</code>\nالمبلغ: $${receivedAmt}\nتم إضافة: ${egpAdded} EGP`);
+                    return;
+                }
+            } catch (e) {
+                console.error('Bybit Error:', e.message);
+            }
+
+            // 🆕 التحويل اليدوي إذا فشل الـ API
+            pendingDeposits.push({ userId, userUid: usersDb[userId].uid, amount: usdAmt * usdToEgpRate, method: 'bybit_manual', txid: txid, receipt: txid }); 
+            delete botStates.deposit[userId]; saveDatabase();
+            
+            await ctx.reply('تم إرسال الطلب للإدارة للمراجعة وتأكيد التحويل (بسبب ضغط الشبكة أو تأخر التحديث). سيتم الشحن قريباً.').catch(()=>{});
+            
+            for (let tgId in usersDb) {
+                if (String(usersDb[tgId].uid) === '1001') {
+                    bot.telegram.sendMessage(tgId, `🔔 <b>طلب شحن Bybit يحتاج مراجعة</b>\n👤 العميل: <code>${usersDb[userId].uid}</code>\n💰 المبلغ المتوقع: <b>$${usdAmt}</b> (ما يعادل ${usdAmt * usdToEgpRate}ج)\n🔢 TxID: <code>${txid}</code>`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('✅ موافقة', `approve_dep_${userId}_${usdAmt * usdToEgpRate}`), Markup.button.callback('❌ رفض', `reject_dep_${userId}`)]]) }).catch(()=>{});
+                }
+            }
+            return;
+        }
+
         if (state.step === 'WAIT_AMOUNT') {
             const amount = parseFloat(text);
             if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ أدخل مبلغاً صحيحاً وموجباً:').catch(()=>{});
@@ -3009,6 +3132,49 @@ bot.on('text', async (ctx, next) => {
       console.error("Text Handler Error:", e.message);
   }
 });
+
+// ==========================================
+// 🔍 الفحص الآلي المستمر لشبكة BEP20 بالخلفية 🆕
+// ==========================================
+setInterval(async () => {
+    if (!BSC_API_KEY || pendingDeposits.filter(p => p.method === 'bep20' && p.status === 'pending').length === 0) return;
+    
+    try {
+        const url = `https://api.bscscan.com/api?module=account&action=tokentx&contractaddress=0x55d398326f99059ff775485246999027b3197955&address=${BSC_WALLET}&page=1&offset=20&sort=desc&apikey=${BSC_API_KEY}`;
+        const res = await axios.get(url);
+        
+        if (res.data && res.data.status === '1') {
+            const txs = res.data.result;
+            
+            for (let i = pendingDeposits.length - 1; i >= 0; i--) {
+                const req = pendingDeposits[i];
+                if (req.method !== 'bep20' || req.status !== 'pending') continue;
+                
+                if (Date.now() - req.time > 3 * 60 * 60 * 1000) { pendingDeposits.splice(i, 1); continue; }
+
+                for (let tx of txs) {
+                    const amountUSDT = parseFloat(tx.value) / 1e18; 
+                    
+                    if (Math.abs(req.expectedAmount - amountUSDT) < 0.00001 && !usedReceipts.includes(tx.hash)) {
+                        usedReceipts.push(tx.hash);
+                        
+                        const egpAdded = amountUSDT * usdToEgpRate; 
+                        if(usersDb[req.userId]) {
+                            usersDb[req.userId].balance += egpAdded;
+                            usersDb[req.userId].walletHistory.push({ type: `شحن آلي (BEP20)`, amount: egpAdded, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+                            
+                            bot.telegram.sendMessage(req.userId, `✅ **تم تأكيد الدفع الآلي (BEP20)!**\nتم إضافة ${egpAdded.toFixed(2)} EGP إلى محفظتك بنجاح 🚀`, {parse_mode: 'Markdown'}).catch(()=>{});
+                            notifyAdmin(`💰 <b>شحن آلي BEP20:</b>\nالعميل: <code>${usersDb[req.userId]?.uid}</code>\nالمبلغ: $${amountUSDT.toFixed(5)}\nتم إضافة: ${egpAdded.toFixed(2)} EGP`);
+                        }
+                        pendingDeposits.splice(i, 1);
+                        break;
+                    }
+                }
+            }
+            saveDatabase();
+        }
+    } catch (e) {}
+}, 60000); 
 
 export default async function handler(req, res) {
   if (req.method === 'POST') {
