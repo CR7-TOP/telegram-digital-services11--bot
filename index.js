@@ -53,6 +53,17 @@ let botStates = {
 
 const userRequestLocks = {};
 
+// 🛡️ دالة توليد كود قصير للأزرار لتخطي حد الـ 64 حرف في تليجرام
+function getShortHash(str) {
+    let hash = 0;
+    const s = String(str);
+    for (let i = 0; i < s.length; i++) {
+        hash = ((hash << 5) - hash) + s.charCodeAt(i);
+        hash |= 0; 
+    }
+    return Math.abs(hash).toString(36);
+}
+
 function isAdmin(userId) {
     const idStr = String(userId);
     return (usersDb[idStr] && String(usersDb[idStr].uid) === '1001') || (botStates && botStates.adminSession && botStates.adminSession[idStr]);
@@ -67,7 +78,7 @@ function broadcastSale(serviceName, qty, price, userUid, paymentMethod, srvId, b
         let keyboard = {};
         if (srvId && botUsername && botUsername !== 'undefined') {
             keyboard = Markup.inlineKeyboard([
-                [Markup.button.url('🛒 شراء نفس المنتج', `https://t.me/${botUsername}?start=buy_${srvId}`)]
+                [Markup.button.url('🛒 شراء نفس المنتج', `https://t.me/${botUsername}?start=buy_auto`)] // تم إخفاء الـ srvId هنا لمنع الخطأ
             ]);
         }
 
@@ -382,7 +393,6 @@ const preferredCategoriesOrder = [
     'API Services', 'أخرى'
 ];
 
-// 🆕 دالة لترتيب وتجميع الخدمات (حسب الأهمية ثم أبجدياً لتجميع المتشابه)
 function sortServicesByImportance(servicesList) {
     return servicesList.sort((a, b) => {
         const catA = getServiceCategory(a);
@@ -394,12 +404,11 @@ function sortServicesByImportance(servicesList) {
         if (indexB === -1) indexB = 999;
 
         if (indexA !== indexB) {
-            return indexA - indexB; // الأهمية أولاً
+            return indexA - indexB; 
         }
         
-        // لو في نفس القسم، نرتبهم أبجدياً عشان الحاجات اللي شبه بعض تيجي ورا بعض
-        const nameA = (a.name_ar || a.name || a.title || '').toLowerCase();
-        const nameB = (b.name_ar || b.name || b.title || '').toLowerCase();
+        const nameA = String(a.name_ar || a.name || a.title || '').toLowerCase();
+        const nameB = String(b.name_ar || b.name || b.title || '').toLowerCase();
         return nameA.localeCompare(nameB, 'ar');
     });
 }
@@ -434,6 +443,7 @@ async function fetchAllServices() {
                     item.providerSource = 'api1'; 
                     item.name = item.name || item.name_ar || item.title || "خدمة";
                     item.id = String(item.id || item.service_id || generateStableId(item.name));
+                    item.internal_id = '1' + getShortHash(item.id);
                 });
                 services.push(...s1);
             }
@@ -451,6 +461,7 @@ async function fetchAllServices() {
                     item.providerSource = 'api2'; 
                     item.name = item.name || item.title || item.name_ar || "خدمة بدون اسم";
                     item.id = String(item.id || item.product_id || item.service_id || item.uuid || item.code || generateStableId(item.name));
+                    item.internal_id = '2' + getShortHash(item.id);
                     item.category = item.category || item.category_name || detectCategoryFromName(item.name);
                     let rawPriceUSD = parseFloat(item.price || item.rate || item.price_amount || 0);
                     let egpPrice = (rawPriceUSD * USD_TO_EGP_RATE).toFixed(2);
@@ -474,6 +485,7 @@ async function fetchAllServices() {
                     item.name = item.name || item.name_ar || item.title || "خدمة بدون اسم";
                     let uniqueId = item.key || item.id || item.product_id || generateStableId(item.name);
                     item.id = String(uniqueId);
+                    item.internal_id = '3' + getShortHash(item.id);
                     item.category = detectCategoryFromName(item.name) !== 'أخرى' ? detectCategoryFromName(item.name) : (item.category || item.category_name || 'أخرى');
                     let rawPriceUSD = parseFloat(item.price_usdt_from || item.price || item.rate || item.price_amount || 0);
                     let egpPrice = (rawPriceUSD * USD_TO_EGP_RATE).toFixed(2);
@@ -496,6 +508,7 @@ async function fetchAllServices() {
                     item.providerSource = 'api4'; 
                     item.name = item.name || item.title || item.name_ar || "خدمة بدون اسم";
                     item.id = String(item.id || item.product_id || item.service_id || item.uuid || item.code || generateStableId(item.name));
+                    item.internal_id = '4' + getShortHash(item.id);
                     item.category = item.category || item.category_name || detectCategoryFromName(item.name);
                     
                     let rawPrice = parseFloat(item.price || item.rate || item.price_amount || 0);
@@ -595,7 +608,7 @@ bot.use(async (ctx, next) => {
 
 function safeHtml(text) { return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
-async function processBuyAction(ctx, userId, srvId) {
+async function processBuyAction(ctx, userId, srvInternalId) {
     try {
          initUser(userId); 
          if (!usersDb[userId] || usersDb[userId].isBanned) return;
@@ -605,7 +618,9 @@ async function processBuyAction(ctx, userId, srvId) {
              await backgroundServiceUpdate();
          }
          if (!cachedServices) cachedServices = [];
-         const srv = cachedServices.find(s => String(s.id) === String(srvId));
+         
+         const srv = cachedServices.find(s => s.internal_id === srvInternalId || String(s.id) === String(srvInternalId));
+         
          if(!srv) {
              if (ctx.callbackQuery) await ctx.editMessageText('❌ الخدمة غير متوفرة حالياً.').catch(()=>{});
              else await ctx.reply('❌ الخدمة غير متوفرة حالياً.').catch(()=>{});
@@ -1027,7 +1042,6 @@ bot.action(/^prv_(\d+)$/, async (ctx) => {
     await ctx.editMessageText(`🛠️ <b>التحكم في مزود (${prvNum}):</b>\nماذا تريد أن تفعل بخدمات هذا المزود؟`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
 });
 
-// 🆕 تحديث دالة عرض الخدمات لدعم العودة بعد إرسال رسالة نصية (مثل السعر)
 async function renderProviderServices(ctx, providerNum, actionType, page, isTextContext = false) {
     if (cachedServices.length === 0) {
         if (!isTextContext && ctx.callbackQuery) {
@@ -1037,8 +1051,6 @@ async function renderProviderServices(ctx, providerNum, actionType, page, isText
     }
     const providerId = `api${providerNum}`;
     let services = cachedServices.filter(s => s.providerSource === providerId);
-
-    // 🆕 تطبيق دالة الترتيب (الأهمية ثم أبجدياً)
     services = sortServicesByImportance(services);
 
     if (services.length === 0) {
@@ -1058,12 +1070,12 @@ async function renderProviderServices(ctx, providerNum, actionType, page, isText
         let btnText = ''; let cbData = '';
         if (actionType === 'hide') {
             const isHidden = hiddenServices.includes(String(srv.id));
-            btnText = (isHidden ? '🔴 مخفي: ' : '🟢 ظاهر: ') + (srv.name_ar || srv.name || srv.title).substring(0, 30);
-            cbData = `prv_tog_hide_${srv.id}_${providerNum}_${currentPage}`; 
+            btnText = (isHidden ? '🔴 مخفي: ' : '🟢 ظاهر: ') + (srv.name_ar || srv.name || srv.title).substring(0, 25);
+            cbData = `prv_tog_hide_${srv.internal_id}_${providerNum}_${currentPage}`; 
         } else if (actionType === 'price') {
             const fp = fixedPrices[String(srv.id)];
-            btnText = (fp ? `[${fp}ج] ` : '⏳ ') + (srv.name_ar || srv.name || srv.title).substring(0, 30);
-            cbData = `prv_setfixed_${srv.id}_${providerNum}_${currentPage}`; 
+            btnText = (fp ? `[${fp}ج] ` : '⏳ ') + (srv.name_ar || srv.name || srv.title).substring(0, 25);
+            cbData = `prv_setfixed_${srv.internal_id}_${providerNum}_${currentPage}`; 
         }
         return [Markup.button.callback(btnText, cbData)];
     });
@@ -1096,9 +1108,13 @@ bot.action(/^prv_list_(hide|price)_(\d+)_(\d+)$/, async (ctx) => {
 
 bot.action(/^prv_tog_hide_(.+)_(\d+)_(\d+)$/, async (ctx) => {
     ctx.answerCbQuery('تم تحديث حالة الخدمة! 🔄').catch(()=>{});
-    const srvId = ctx.match[1];
+    const srvInternal = ctx.match[1];
     const prvNum = ctx.match[2];
     const page = parseInt(ctx.match[3]);
+    
+    const srv = cachedServices.find(s => s.internal_id === srvInternal);
+    if (!srv) return;
+    const srvId = srv.id;
 
     if (hiddenServices.includes(srvId)) { hiddenServices = hiddenServices.filter(id => id !== srvId); } 
     else { hiddenServices.push(srvId); }
@@ -1108,9 +1124,14 @@ bot.action(/^prv_tog_hide_(.+)_(\d+)_(\d+)$/, async (ctx) => {
 
 bot.action(/^prv_setfixed_(.+)_(\d+)_(\d+)$/, async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
-    const srvId = ctx.match[1];
+    const srvInternal = ctx.match[1];
     const prvNum = ctx.match[2];
     const pg = ctx.match[3];
+    
+    const srv = cachedServices.find(s => s.internal_id === srvInternal);
+    if (!srv) return;
+    const srvId = srv.id;
+
     if (!botStates.adminInput) botStates.adminInput = {};
     botStates.adminInput[ctx.from.id] = `WAIT_PRV_FIXED_${srvId}_${prvNum}_${pg}`;
     saveDatabase();
@@ -1139,7 +1160,7 @@ bot.action(/^admin_services_api_pg_(\d+)$/, async (ctx) => {
             let apiLabel = 'API 1';
             if (apiSource === 'api2') apiLabel = 'API 2';
             if (apiSource === 'api3') apiLabel = 'API 3';
-            if (apiSource === 'api4') apiLabel = 'API 4'; 
+            if (apiSource === 'api4') apiLabel = 'API 4';
 
             msg += `🔹 ${actualIndex}. <b>${safeHtml(srvName)}</b>\n   📌 المعرف: <code>[${apiLabel}]</code>\n━━━━━━━━━━━━\n`;
         });
@@ -1308,13 +1329,7 @@ bot.action('admin_check_api_balance', async (ctx) => {
         try { const res1 = await apiClient1.get('/me/wallet'); msg += `🔹 المزود 1: <b>${parseFloat(res1.data?.data?.balance || res1.data?.balance || 0).toFixed(2)} EGP</b>\n`; } catch(e) { msg += `🔹 المزود 1: خطأ ❌\n`; }
         try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود 2: <b>$${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}</b>\n`; } catch(e) { msg += `🔹 المزود 2: خطأ ❌\n`; }
         try { const res3 = await apiClient3.get('/?action=balance'); msg += `🔹 المزود 3: <b>${parseFloat(res3.data?.balance_usdt || res3.data?.data?.balance || 0).toFixed(2)} USDT</b>\n`; } catch(e) { msg += `🔹 المزود 3: خطأ ❌\n`; }
-        
-        try { 
-            const res4 = await apiClient4.get('/me'); 
-            msg += `🔹 المزود 4: <b>${parseFloat(res4.data?.data?.balance || res4.data?.balance || 0).toFixed(2)}</b>\n`; 
-        } catch(e) { 
-            msg += `🔹 المزود 4: خطأ ❌\n`; 
-        }
+        try { const res4 = await apiClient4.get('/me'); msg += `🔹 المزود 4: <b>${parseFloat(res4.data?.data?.balance || res4.data?.balance || 0).toFixed(2)}</b>\n`; } catch(e) { msg += `🔹 المزود 4: خطأ ❌\n`; }
         
         await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
@@ -1329,14 +1344,7 @@ bot.action('admin_check_api_status', async (ctx) => {
         try { const start1 = Date.now(); await apiClient1.get('/services?limit=1'); msg += `🔹 المزود 1: يعمل ✅ (${Date.now() - start1}ms)\n`; } catch(e) { msg += `🔹 المزود 1: متعطل ❌\n`; }
         try { const start2 = Date.now(); await apiClient2.get('/products'); msg += `🔹 المزود 2: يعمل ✅ (${Date.now() - start2}ms)\n`; } catch(e) { msg += `🔹 المزود 2: متعطل ❌\n`; }
         try { const start3 = Date.now(); await apiClient3.get('/?action=products'); msg += `🔹 المزود 3: يعمل ✅ (${Date.now() - start3}ms)\n`; } catch(e) { msg += `🔹 المزود 3: متعطل ❌\n`; }
-        
-        try { 
-            const start4 = Date.now(); 
-            await apiClient4.get('/products'); 
-            msg += `🔹 المزود 4: يعمل ✅ (${Date.now() - start4}ms)\n`; 
-        } catch(e) { 
-            msg += `🔹 المزود 4: متعطل ❌ (${e.response?.status || e.message})\n`; 
-        }
+        try { const start4 = Date.now(); await apiClient4.get('/products'); msg += `🔹 المزود 4: يعمل ✅ (${Date.now() - start4}ms)\n`; } catch(e) { msg += `🔹 المزود 4: متعطل ❌ (${e.response?.status || e.message})\n`; }
         
         await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
@@ -1553,6 +1561,7 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
+// ✅ حل مشكلة قائمة الخدمات اللي كانت بتقف
 bot.action(/^cat_(\d+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1579,7 +1588,7 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
       return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
     });
     
-    // 🆕 تطبيق الترتيب الأبجدي والأهمية على قائمة العملاء عشان الخدمات المتشابهة تتجمع
+    // الترتيب والتجميع
     categoryServices = sortServicesByImportance(categoryServices).slice(0, 90); 
 
     if (categoryServices.length === 0) return await ctx.editMessageText('لا توجد خدمات حالياً في هذا القسم.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
@@ -1599,7 +1608,7 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
         }
         
         return [
-            Markup.button.callback(`🛒 ${emoji}${cleanName}${ratingStr} -${price} EGP`, `buyact_${srv.id}`)
+            Markup.button.callback(`🛒 ${emoji}${cleanName}${ratingStr} -${price} EGP`, `buyact_${srv.internal_id}`)
         ];
     });
     buttons.push([Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]);
@@ -1619,10 +1628,13 @@ bot.action('cancel_action', async (ctx) => {
 bot.action(/^notify_stock_(.+)$/, async (ctx) => {
     ctx.answerCbQuery('تم تفعيل إشعار التوفر! 🔔').catch(()=>{});
     try {
-        const srvId = ctx.match[1];
+        const srvInternalId = ctx.match[1];
+        const srv = cachedServices.find(s => s.internal_id === srvInternalId);
+        if (!srv) return;
+        
         const userId = String(ctx.from.id);
-        if (!stockAlerts[srvId]) stockAlerts[srvId] = [];
-        if (!stockAlerts[srvId].includes(userId)) stockAlerts[srvId].push(userId);
+        if (!stockAlerts[srv.id]) stockAlerts[srv.id] = [];
+        if (!stockAlerts[srv.id].includes(userId)) stockAlerts[srv.id].push(userId);
         saveDatabase();
         await ctx.editMessageText('🔔 **تم تفعيل الإشعار بنجاح!**\nسنرسل لك رسالة تلقائية فور قيام الإدارة بإضافة كميات جديدة من هذه الخدمة.', {parse_mode: 'HTML'}).catch(()=>{});
     } catch (e) {}
@@ -1631,10 +1643,14 @@ bot.action(/^notify_stock_(.+)$/, async (ctx) => {
 bot.action(/^rate_(\d+)_(.+)$/, async (ctx) => {
     ctx.answerCbQuery('شكراً لتقييمك!').catch(()=>{});
     const stars = parseInt(ctx.match[1]);
-    const srvId = ctx.match[2];
-    if (!ratings[srvId]) ratings[srvId] = { totalStars: 0, count: 0 };
-    ratings[srvId].totalStars += stars;
-    ratings[srvId].count += 1;
+    const srvInternalId = ctx.match[2];
+    
+    const srv = cachedServices.find(s => s.internal_id === srvInternalId);
+    if (!srv) return;
+
+    if (!ratings[srv.id]) ratings[srv.id] = { totalStars: 0, count: 0 };
+    ratings[srv.id].totalStars += stars;
+    ratings[srv.id].count += 1;
     saveDatabase();
     await ctx.editMessageText(`✅ **شكراً لتقييمك الرائع!**\nتقييمك للخدمة: ${'⭐'.repeat(stars)}\nرأيك يهمنا ويساعد العملاء الآخرين.`, {parse_mode: 'HTML'}).catch(()=>{});
 });
@@ -1644,8 +1660,8 @@ bot.action(/^buyact_(.+)$/, async (ctx) => {
   try {
      const userId = String(ctx.from.id);
      initUser(userId); 
-     const srvId = ctx.match[1];
-     await processBuyAction(ctx, userId, srvId); 
+     const srvInternalId = ctx.match[1];
+     await processBuyAction(ctx, userId, srvInternalId); 
   } catch(err){
       console.error("Buy action error:", err);
   }
@@ -1757,7 +1773,7 @@ async function publishPriceDrop(ctx, userId, state, fileId) {
     const botUsername = me.username;
     
     const keyboard = Markup.inlineKeyboard([
-         [Markup.button.url('🛒 شراء الآن', `https://t.me/${botUsername}?start=buy_${srvId}`)]
+         [Markup.button.url('🛒 شراء الآن', `https://t.me/${botUsername}?start=buy_auto`)]
     ]);
 
     try {
@@ -1995,8 +2011,8 @@ bot.on('text', async (ctx, next) => {
                  
                  setTimeout(() => {
                      ctx.reply('⭐ كيف تقيم جودة هذه الخدمة؟', Markup.inlineKeyboard([ 
-                        [Markup.button.callback('⭐', `rate_1_${srv.id}`), Markup.button.callback('⭐⭐', `rate_2_${srv.id}`), Markup.button.callback('⭐⭐⭐', `rate_3_${srv.id}`)], 
-                        [Markup.button.callback('⭐⭐⭐⭐', `rate_4_${srv.id}`), Markup.button.callback('⭐⭐⭐⭐⭐', `rate_5_${srv.id}`)] 
+                        [Markup.button.callback('⭐', `rate_1_${srv.internal_id}`), Markup.button.callback('⭐⭐', `rate_2_${srv.internal_id}`), Markup.button.callback('⭐⭐⭐', `rate_3_${srv.internal_id}`)], 
+                        [Markup.button.callback('⭐⭐⭐⭐', `rate_4_${srv.internal_id}`), Markup.button.callback('⭐⭐⭐⭐⭐', `rate_5_${srv.internal_id}`)] 
                     ])).catch(()=>{});
                  }, 3000);
                  return; 
@@ -2091,8 +2107,8 @@ bot.on('text', async (ctx, next) => {
                 
                 setTimeout(() => {
                     ctx.reply('⭐ كيف تقيم جودة هذه الخدمة؟', Markup.inlineKeyboard([ 
-                        [Markup.button.callback('⭐', `rate_1_${srv.id}`), Markup.button.callback('⭐⭐', `rate_2_${srv.id}`), Markup.button.callback('⭐⭐⭐', `rate_3_${srv.id}`)], 
-                        [Markup.button.callback('⭐⭐⭐⭐', `rate_4_${srv.id}`), Markup.button.callback('⭐⭐⭐⭐⭐', `rate_5_${srv.id}`)] 
+                        [Markup.button.callback('⭐', `rate_1_${srv.internal_id}`), Markup.button.callback('⭐⭐', `rate_2_${srv.internal_id}`), Markup.button.callback('⭐⭐⭐', `rate_3_${srv.internal_id}`)], 
+                        [Markup.button.callback('⭐⭐⭐⭐', `rate_4_${srv.internal_id}`), Markup.button.callback('⭐⭐⭐⭐⭐', `rate_5_${srv.internal_id}`)] 
                     ])).catch(()=>{});
                  }, 3000);
 
@@ -2111,9 +2127,9 @@ bot.on('text', async (ctx, next) => {
                 
                 let failMsg = `❌ فشل الشراء من المزود الأساسي.\n\n⚠️ السبب: ${apiErrorMsg}\n\n✅ <b>تم استرجاع مبلغ (${price} EGP) إلى محفظتك بنجاح.</b>`;
                 if(processingMsg) {
-                    await ctx.telegram.editMessageText(ctx.chat.id, processingMsg.message_id, null, failMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔔 أعلمني عند التوفر', `notify_stock_${srv.id}`)], [Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]]) }).catch(()=>{});
+                    await ctx.telegram.editMessageText(ctx.chat.id, processingMsg.message_id, null, failMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔔 أعلمني عند التوفر', `notify_stock_${srv.internal_id}`)], [Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]]) }).catch(()=>{});
                 } else {
-                    await ctx.reply(failMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔔 أعلمني عند التوفر', `notify_stock_${srv.id}`)], [Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]]) }).catch(()=>{});
+                    await ctx.reply(failMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔔 أعلمني عند التوفر', `notify_stock_${srv.internal_id}`)], [Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]]) }).catch(()=>{});
                 }
             }
         } catch (err){
@@ -2156,7 +2172,7 @@ bot.on('text', async (ctx, next) => {
     if (botStates.adminSession && botStates.adminSession[userId] && botStates.adminInput && botStates.adminInput[userId]) {
         const state = botStates.adminInput[userId];
 
-        // 🆕 التعامل مع إدخال السعر الثابت والعودة التلقائية للقائمة
+        // 🆕 حل رجوع القائمة تلقائياً بعد إرسال السعر أو الحذف
         if (state.startsWith('WAIT_PRV_FIXED_')) {
             const parts = state.replace('WAIT_PRV_FIXED_', '').split('_');
             const srvId = parts[0];
@@ -2183,7 +2199,7 @@ bot.on('text', async (ctx, next) => {
                 logAdminAction(userId, `تحديد سعر ثابت للمنتج ${srvId} بـ ${price} جنيه`);
                 await ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: <b>${price} EGP</b>`, {parse_mode: 'HTML'}).catch(()=>{});
                 
-                // 🆕 هنا الدالة هترجع تبعتلك القائمة تاني كرسالة جديدة عشان تكمل شغلك بدون ما تقف
+                // هنا البوت هيبعت القائمة في رسالة جديدة بعد التأكيد عشان تكمل تعديل بكل سهولة
                 return await renderProviderServices(ctx, prvNum, 'price', page, true);
             }
         }
@@ -2410,14 +2426,17 @@ bot.on('text', async (ctx, next) => {
             if (state === 'WAIT_SEARCH_STOCK') prefix = 'addstock_';
 
             let buttons = results.slice(0, 15).map(srv => {
-                return [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ` (${srv.providerSource})`, prefix + srv.id)]
+                return [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ` (${srv.providerSource})`, prefix + srv.internal_id)]
             });
             buttons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
             return await ctx.reply('🔍 اختر المنتج من القائمة:', Markup.inlineKeyboard(buttons));
         }
 
         if (state.startsWith('WAIT_SET_MARKUP_')) {
-            const srvId = String(state.split('WAIT_SET_MARKUP_')[1]);
+            const srvInternalId = String(state.split('WAIT_SET_MARKUP_')[1]);
+            const srv = cachedServices.find(s => s.internal_id === srvInternalId);
+            if (!srv) return await ctx.reply('❌ الخدمة غير موجودة.');
+            const srvId = srv.id;
 
             if (text === 'حذف') {
                 delete customProductMarkups[srvId];
@@ -2437,7 +2456,10 @@ bot.on('text', async (ctx, next) => {
         }
 
         if (state.startsWith('WAIT_ADD_STOCK_')) {
-            const srvId = String(state.split('WAIT_ADD_STOCK_')[1]);
+            const srvInternalId = String(state.split('WAIT_ADD_STOCK_')[1]);
+            const srv = cachedServices.find(s => s.internal_id === srvInternalId);
+            if (!srv) return await ctx.reply('❌ الخدمة غير موجودة.');
+            const srvId = srv.id;
 
             if (text === 'إلغاء' || text === 'رجوع') {
                 delete botStates.adminInput[userId];
@@ -2571,7 +2593,7 @@ bot.on('text', async (ctx, next) => {
                 const avg = (ratings[srv.id].totalStars / ratings[srv.id].count).toFixed(1);
                 ratingStr = ` (⭐ ${avg})`;
             }
-            return [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ratingStr + ' - ' + calculateRetailPrice(srv, usersDb[userId]) + ' EGP', `buyact_${srv.id}`)]
+            return [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ratingStr + ' - ' + calculateRetailPrice(srv, usersDb[userId]) + ' EGP', `buyact_${srv.internal_id}`)]
         });
         
         return await ctx.reply('🔍 نتائج البحث:', Markup.inlineKeyboard(buttons)).catch(()=>{});
