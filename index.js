@@ -168,11 +168,10 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 
 // 🚀🚀🚀 [نظام كاسحة الألغام] 🚀🚀🚀
-// هذا الكود يمنع البوت من التعليق بسبب زحمة رسائل تليجرام القديمة
+// يمنع البوت من التعليق بسبب زحمة رسائل تليجرام القديمة
 bot.use(async (ctx, next) => {
     if (ctx.message && ctx.message.date) {
         const now = Math.floor(Date.now() / 1000);
-        // تجاهل أي رسالة مر عليها أكثر من 60 ثانية لتفريغ الطابور
         if (now - ctx.message.date > 60) {
             return; 
         }
@@ -291,15 +290,11 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 إعداد المزودين الـ 3
+// 🌐 إعداد المزودين الـ 3 الأصلين (1، 2، و CupponHub 3)
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
-const API_KEY_4 = process.env.PROVIDER4_API_KEY || 'vbr_live_5da642c3da__Kxebdst1Oini_PHpGBY8urPLZXp5CzO2iy8tSNumQU';
-const apiClient4 = axios.create({ 
-    baseURL: 'https://web-production-1c7b1.up.railway.app/api/reseller', 
-    headers: { 'Authorization': 'Bearer ' + API_KEY_4, 'X-API-Key': API_KEY_4, 'Content-Type': 'application/json' }, 
-    timeout: 4000 // 🛡️ تم التخفيض لمنع Vercel Crash
-});
+const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
+const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/reseller/api', headers: { 'X-API-Key': API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
 
 function generateStableId(nameStr) {
     let hash = 0;
@@ -421,10 +416,10 @@ const categoryEmojis = {
 
 async function fetchAllServices() {
     let services = [];
-    const [res1Result, res2Result, res4Result] = await Promise.allSettled([
+    const [res1Result, res2Result, res3Result] = await Promise.allSettled([
         apiClient1.get('/services?limit=1000'),
         apiClient2.get('/products'),
-        apiClient4.get('/products') 
+        apiClient3.get('/?action=products') 
     ]);
 
     if (res1Result.status === 'fulfilled') {
@@ -465,29 +460,26 @@ async function fetchAllServices() {
         } catch(e) {}
     }
 
-    if (res4Result.status === 'fulfilled') {
+    if (res3Result.status === 'fulfilled') {
         try {
-            let s4 = res4Result.value.data?.data || res4Result.value.data?.products || res4Result.value.data?.services || res4Result.value.data;
-            if (!Array.isArray(s4) && typeof s4 === 'object') {
-                for (let key in s4) { if (Array.isArray(s4[key])) { s4 = s4[key]; break; } }
+            let s3 = res3Result.value.data?.products || res3Result.value.data?.data || res3Result.value.data?.services || res3Result.value.data;
+            if (!Array.isArray(s3) && typeof s3 === 'object') {
+                for (let key in s3) { if (Array.isArray(s3[key])) { s3 = s3[key]; break; } }
             }
-            if (Array.isArray(s4)) {
-                s4.forEach(item => { 
-                    item.providerSource = 'api4'; 
-                    item.name = item.name || item.title || item.name_ar || "خدمة بدون اسم";
-                    item.id = String(item.id || item.product_id || item.service_id || item.uuid || item.code || generateStableId(item.name));
-                    item.internal_id = '4' + getShortHash(item.id);
-                    item.category = item.category || item.category_name || detectCategoryFromName(item.name);
-                    
-                    let rawPrice = parseFloat(item.price || item.rate || item.price_amount || 0);
-                    if (item.currency === 'USD' || rawPrice < 100) {
-                        item.price = (rawPrice * USD_TO_EGP_RATE).toFixed(2);
-                    } else {
-                        item.price = rawPrice.toFixed(2);
-                    }
-                    item.price_amount = item.price; 
+            if (Array.isArray(s3)) {
+                s3.forEach(item => { 
+                    item.providerSource = 'api3'; 
+                    item.name = item.name || item.name_ar || item.title || "خدمة بدون اسم";
+                    let uniqueId = item.key || item.id || item.product_id || generateStableId(item.name);
+                    item.id = String(uniqueId);
+                    item.internal_id = '3' + getShortHash(item.id);
+                    item.category = detectCategoryFromName(item.name) !== 'أخرى' ? detectCategoryFromName(item.name) : (item.category || item.category_name || 'أخرى');
+                    let rawPriceUSD = parseFloat(item.price_usdt_from || item.price || item.rate || item.price_amount || 0);
+                    let egpPrice = (rawPriceUSD * USD_TO_EGP_RATE).toFixed(2);
+                    item.price = egpPrice;
+                    item.price_amount = egpPrice;
                 });
-                services.push(...s4);
+                services.push(...s3);
             }
         } catch(e) {}
     }
@@ -495,7 +487,6 @@ async function fetchAllServices() {
     return services;
 }
 
-// 🛡️ دالة السحب في الخلفية لعدم تعطيل البوت
 async function backgroundServiceUpdate() {
     if (isFetchingServices) return;
     isFetchingServices = true;
@@ -519,8 +510,8 @@ async function placeOrderWithBestProvider(srv, qty) {
 
     if (source === 'api2') {
          return await apiClient2.post('/order', { service_id: srvIdConverted, product_id: srvIdConverted, productId: srvIdConverted, quantity: parsedQty });
-    } else if (source === 'api4') {
-         return await apiClient4.post('/orders', { product_id: srvIdConverted, service_id: srvIdConverted, quantity: parsedQty }).catch(() => apiClient4.post('/order', { product_id: srvIdConverted, quantity: parsedQty }));
+    } else if (source === 'api3') {
+         return await apiClient3.post('/?action=purchase', { product: srv.key || String(srv.id), quantity: parsedQty }, { headers: { 'Idempotency-Key': 'shop-order-' + Date.now() + '-' + Math.floor(Math.random() * 1000) } });
     } else {
          return await apiClient1.post('/orders', { service_id: srvIdConverted, quantity: parsedQty });
     }
@@ -583,7 +574,6 @@ async function processBuyAction(ctx, userId, srvInternalId) {
              if (ctx.callbackQuery) await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
              else await ctx.reply('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
              
-             // 🛡️ سحب لا يعطل المعالجة
              backgroundServiceUpdate();
              return;
          }
@@ -840,7 +830,6 @@ async function showCategories(ctx) {
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return await ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
     if (cachedServices.length === 0) {
-        // 🛡️ استدعاء غير معرقل (Non-blocking) للحفاظ على سرعة البوت وعدم الإغلاق
         const msg = '⏳ جاري ربط السيرفرات لأول مرة... يرجى المحاولة بعد قليل.';
         if (ctx.callbackQuery) ctx.editMessageText(msg).catch(()=>{});
         else ctx.reply(msg).catch(()=>{});
@@ -911,7 +900,7 @@ bot.action('admin_force_refresh', async (ctx) => {
     ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
     try {
         isFetchingServices = false;
-        backgroundServiceUpdate(); // 🛡️ سحب غير معرقل
+        backgroundServiceUpdate(); 
         await ctx.reply('✅ **تم بدء التحديث!**\nسيتم سحب الخدمات من المزودين الثلاثة في الخلفية.', { parse_mode: 'HTML' }).catch(()=>{});
     } catch (e) { await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{}); }
 });
@@ -1001,7 +990,7 @@ bot.action('admin_manage_providers', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     const buttons = [
         [Markup.button.callback('⚙️ مزود 1 (XProStore)', 'prv_1'), Markup.button.callback('⚙️ مزود 2 (ZFour)', 'prv_2')],
-        [Markup.button.callback('⚙️ مزود 3 (الجديد)', 'prv_4')], 
+        [Markup.button.callback('⚙️ مزود 3 (CupponHub)', 'prv_3')],
         [Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]
     ];
     await ctx.editMessageText('⚙️ <b>إدارة خدمات المزودين:</b>\nاختر المزود الذي تريد التحكم في خدماته:', { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
@@ -1010,7 +999,7 @@ bot.action('admin_manage_providers', async (ctx) => {
 bot.action(/^prv_(\d+)$/, async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     const prvNum = ctx.match[1];
-    let label = prvNum === '4' ? '3 (الجديد)' : prvNum;
+    let label = prvNum === '3' ? '3 (CupponHub)' : prvNum;
     const buttons = [
         [Markup.button.callback('👁️ إخفاء / إظهار خدمات', `prv_list_hide_${prvNum}_1`)],
         [Markup.button.callback('💲 تحديد أسعار ثابتة', `prv_list_price_${prvNum}_1`)],
@@ -1024,13 +1013,13 @@ async function renderProviderServices(ctx, providerNum, actionType, page, isText
         if (!isTextContext && ctx.callbackQuery) {
             await ctx.editMessageText('⏳ لحظات، جاري جلب الخدمات...').catch(()=>{});
         }
-        backgroundServiceUpdate();
+        await backgroundServiceUpdate();
     }
     const providerId = `api${providerNum}`;
     let services = cachedServices.filter(s => s.providerSource === providerId);
     services = sortServicesByImportance(services);
 
-    let label = providerNum === '4' ? '3 (الجديد)' : providerNum;
+    let label = providerNum === '3' ? '3 (CupponHub)' : providerNum;
 
     if (services.length === 0) {
          const emptyMsg = `❌ لا توجد خدمات حالياً في المزود (${label}).`;
@@ -1120,7 +1109,7 @@ bot.action(/^prv_setfixed_(.+)_(\d+)_(\d+)$/, async (ctx) => {
 bot.action(/^admin_services_api_pg_(\d+)$/, async (ctx) => {
     ctx.answerCbQuery('⏳ جاري جلب الخدمات...').catch(()=>{});
     try {
-        if (!cachedServices || cachedServices.length === 0) backgroundServiceUpdate();
+        if (!cachedServices || cachedServices.length === 0) await backgroundServiceUpdate();
         const visibleServices = cachedServices.filter(s => !hiddenServices.includes(String(s.id)));
         if (visibleServices.length === 0) return await ctx.editMessageText('❌ لا توجد خدمات ظاهرة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
 
@@ -1138,7 +1127,7 @@ bot.action(/^admin_services_api_pg_(\d+)$/, async (ctx) => {
             const apiSource = srv.providerSource || 'api1';
             let apiLabel = 'API 1';
             if (apiSource === 'api2') apiLabel = 'API 2';
-            if (apiSource === 'api4') apiLabel = 'API 3 (الجديد)'; 
+            if (apiSource === 'api3') apiLabel = 'API 3';
 
             msg += `🔹 ${actualIndex}. <b>${safeHtml(srvName)}</b>\n   📌 المعرف: <code>[${apiLabel}]</code>\n━━━━━━━━━━━━\n`;
         });
@@ -1299,10 +1288,10 @@ bot.action('admin_check_api_balance', async (ctx) => {
         try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود 2: <b>$${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}</b>\n`; } catch(e) { msg += `🔹 المزود 2: خطأ ❌\n`; }
         
         try { 
-            const res4 = await apiClient4.get('/me'); 
-            msg += `🔹 المزود 3 (الجديد): <b>${parseFloat(res4.data?.data?.balance || res4.data?.balance || 0).toFixed(2)}</b>\n`; 
+            const res3 = await apiClient3.get('/?action=balance'); 
+            msg += `🔹 المزود 3 (CupponHub): <b>${parseFloat(res3.data?.balance_usdt || res3.data?.data?.balance || 0).toFixed(2)} USDT</b>\n`; 
         } catch(e) { 
-            msg += `🔹 المزود 3 (الجديد): خطأ ❌\n`; 
+            msg += `🔹 المزود 3 (CupponHub): خطأ ❌\n`; 
         }
         
         await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
@@ -1319,11 +1308,11 @@ bot.action('admin_check_api_status', async (ctx) => {
         try { const start2 = Date.now(); await apiClient2.get('/products'); msg += `🔹 المزود 2: يعمل ✅ (${Date.now() - start2}ms)\n`; } catch(e) { msg += `🔹 المزود 2: متعطل ❌\n`; }
         
         try { 
-            const start4 = Date.now(); 
-            await apiClient4.get('/products'); 
-            msg += `🔹 المزود 3 (الجديد): يعمل ✅ (${Date.now() - start4}ms)\n`; 
+            const start3 = Date.now(); 
+            await apiClient3.get('/?action=products'); 
+            msg += `🔹 المزود 3 (CupponHub): يعمل ✅ (${Date.now() - start3}ms)\n`; 
         } catch(e) { 
-            msg += `🔹 المزود 3 (الجديد): متعطل ❌ (${e.response?.status || e.message})\n`; 
+            msg += `🔹 المزود 3 (CupponHub): متعطل ❌ (${e.response?.status || e.message})\n`; 
         }
         
         await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
@@ -1541,7 +1530,6 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
-// 🛡️ التعديل الجذري في الأقسام لحل مشكلة عدم الفتح بسبب عدم تطابق الـ Regex
 bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1549,7 +1537,7 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
     if (usersDb[userId].isBanned) return;
 
     const catIndex = parseInt(ctx.match[1]);
-    const page = parseInt(ctx.match[2]) || 1; // لو مفيش رقم صفحة، اعتبرها الصفحة 1
+    const page = parseInt(ctx.match[2]) || 1; 
     const selectedCategory = usersDb[userId].tempCategories ? usersDb[userId].tempCategories[catIndex] : null;
     
     if (!selectedCategory) { 
@@ -1557,7 +1545,6 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
     }
 
     if (cachedServices.length === 0) {
-        // لو مفيش خدمات، نبلغ العميل ونطلب في الخلفية بدون ما نقفل البوت
         await ctx.editMessageText('⏳ جاري تحميل الخدمات السريعة... يرجى الانتظار ثواني والضغط مرة أخرى.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
         backgroundServiceUpdate();
         return;
@@ -2039,11 +2026,16 @@ bot.on('text', async (ctx, next) => {
 
                     try {
                         const source = srv.providerSource || 'api1';
-                        const clientApi = source === 'api2' ? apiClient2 : (source === 'api4' ? apiClient4 : apiClient1);
-                        const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : (source === 'api4' ? `/orders/${orderId}` : `/orders/${orderId}`);
+                        const clientApi = source === 'api2' ? apiClient2 : (source === 'api3' ? apiClient3 : apiClient1);
+                        const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : (source === 'api3' ? `/?action=order&order_id=${orderId}` : `/orders/${orderId}`);
                         const getOrderRes = await clientApi.get(fetchOrderPath);
                         const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
-                        rawDetails = extractUsefulData(orderData);
+                        
+                        if (source === 'api3' && orderData && orderData.items && Array.isArray(orderData.items) && orderData.items.length > 0) {
+                            rawDetails = orderData.items.join('\n\n');
+                        } else {
+                            rawDetails = extractUsefulData(orderData);
+                        }
                     } catch(e) {
                         console.log('تأخير في المزود لجلب الطلب: ' + orderId);
                     }
@@ -2194,7 +2186,7 @@ bot.on('text', async (ctx, next) => {
             const query = text.toLowerCase();
             if (!cachedServices || cachedServices.length === 0) cachedServices = await fetchAllServices();
             const results = cachedServices.filter(s => (s.name_ar || s.name || s.title || '').toLowerCase().includes(query));
-            if(results.length === 0) return await ctx.reply('❌ لا توجد نتائج مطابقة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]])});
+            if(results.length === 0) return await ctx.reply('❌ لا توجد نتائج مطابقة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
             
             let buttons = results.slice(0, 15).map(srv => {
                 return [Markup.button.callback((srv.name_ar || srv.name || srv.title), `pdsel_${srv.id}`)]
@@ -2621,16 +2613,16 @@ bot.on('text', async (ctx, next) => {
   }
 });
 
-// 🚀🚀🚀 [قلب البوت ونظام الحماية من السقوط] 🚀🚀🚀
+// 🚀🚀🚀 [نظام حماية Vercel ومنع التعليق من الجذور] 🚀🚀🚀
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
-        // 🛡️ الموتور الأساسي: نرد على تليجرام فوراً بعد ثانيتين ونص عشان يفك الطابور وميعلقش تاني!
+        // 1. نرد على تليجرام فوراً عشان ميعملش Loop ويبعت الرسايل 1000 مرة
         setTimeout(() => {
             if (!res.headersSent) {
                 res.status(200).send('OK');
             }
-        }, 2500);
+        }, 1500);
 
         await loadDatabase(); 
 
@@ -2665,6 +2657,7 @@ export default async function handler(req, res) {
             return;
         }
 
+        // 2. السماح بتنفيذ الأوامر بأمان
         await bot.handleUpdate(req.body); 
 
         if (pendingSaves.length > 0) {
