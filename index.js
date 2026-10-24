@@ -53,7 +53,6 @@ let botStates = {
 
 const userRequestLocks = {};
 
-// 🛡️ دالة توليد كود قصير للأزرار لتخطي حد الـ 64 حرف في تليجرام
 function getShortHash(str) {
     let hash = 0;
     const s = String(str);
@@ -296,16 +295,13 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 إعداد المزودين الـ 3 (تم حذف المزود الثالث القديم)
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
-
-// 🆕 إعداد المزود الجديد (بقى هو رقم 4 برمجياً عشان ميبوظش القديم) وتم زيادة وقت الانتظار لـ 15 ثانية
 const API_KEY_4 = process.env.PROVIDER4_API_KEY || 'vbr_live_5da642c3da__Kxebdst1Oini_PHpGBY8urPLZXp5CzO2iy8tSNumQU';
 const apiClient4 = axios.create({ 
     baseURL: 'https://web-production-1c7b1.up.railway.app/api/reseller', 
     headers: { 'Authorization': 'Bearer ' + API_KEY_4, 'X-API-Key': API_KEY_4, 'Content-Type': 'application/json' }, 
-    timeout: 15000 // 🛡️ 15 ثانية لتفادي نوم سيرفر Railway
+    timeout: 15000 
 });
 
 function generateStableId(nameStr) {
@@ -428,7 +424,6 @@ const categoryEmojis = {
 
 async function fetchAllServices() {
     let services = [];
-    // ❌ تم حذف المزود الثالث من مصفوفة الجلب
     const [res1Result, res2Result, res4Result] = await Promise.allSettled([
         apiClient1.get('/services?limit=1000'),
         apiClient2.get('/products'),
@@ -914,6 +909,15 @@ bot.action('main_menu', async (ctx) => {
     } catch(e){}
 });
 
+bot.action('admin_force_refresh', async (ctx) => {
+    ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
+    try {
+        isFetchingServices = false;
+        await backgroundServiceUpdate();
+        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين الثلاثة في ذاكرة البوت.', { parse_mode: 'HTML' }).catch(()=>{});
+    } catch (e) { await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{}); }
+});
+
 async function showAdminPanel(ctx) {
   try {
     const userIdStr = String(ctx.from ? ctx.from.id : (ctx.chat ? ctx.chat.id : ""));
@@ -1230,15 +1234,6 @@ bot.action('admin_set_force_sub', async (ctx) => {
     await ctx.editMessageText('🔒 **إضافة قنوات الاشتراك الإجباري:**\n\nيمكنك إضافة أكثر من قناة بالدخول لهذا الإعداد وإرسالهم واحدة تلو الأخرى.\n\n✨ **أرسل رابط القناة مباشرة** (سواء كانت عامة أو خاصة البوت سيتعرف عليها).\nمثال: <code>https://t.me/AhmedStore</code>\n\n⚠️ **تنبيه:** يجب رفع البوت كـ(مشرف) في القناة أولاً.\n\n🛑 لإلغاء وحذف جميع القنوات أرسل كلمة: <code>إيقاف</code>', { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
-bot.action('admin_force_refresh', async (ctx) => {
-    ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
-    try {
-        isFetchingServices = false;
-        await backgroundServiceUpdate();
-        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين في ذاكرة البوت.', { parse_mode: 'HTML' }).catch(()=>{});
-    } catch (e) { await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{}); }
-});
-
 
 bot.action('admin_ad_stats', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
@@ -1327,7 +1322,7 @@ bot.action('admin_check_api_status', async (ctx) => {
         
         try { 
             const start4 = Date.now(); 
-            await apiClient4.get('/me'); 
+            await apiClient4.get('/products'); 
             msg += `🔹 المزود 3 (الجديد): يعمل ✅ (${Date.now() - start4}ms)\n`; 
         } catch(e) { 
             msg += `🔹 المزود 3 (الجديد): متعطل ❌ (${e.response?.status || e.message})\n`; 
@@ -2478,7 +2473,7 @@ bot.on('text', async (ctx, next) => {
                 delete localInventory[srvId]; 
                 saveDatabase();
                 logAdminAction(userId, `تفريغ مخزن المنتج ${srvId}`);
-                return await ctx.reply('✅ تم تفريغ المخزن المحلي لهذا المنتج بنجاح، وسيتم السحب الآن من البوت الأم تلقائياً!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+                return await ctx.reply('✅ تم تفريغ المخزن المحلي لهذا المنتج بنجاح، وسيتم السحب الآن من البوت الأم تلقائياً!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
 
             const item = text;
@@ -2637,6 +2632,15 @@ bot.on('text', async (ctx, next) => {
   } catch(e) {
       console.error("Text Handler Error:", e.message);
   }
+});
+
+bot.action('admin_force_refresh', async (ctx) => {
+    ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
+    try {
+        isFetchingServices = false;
+        await backgroundServiceUpdate();
+        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين الثلاثة في ذاكرة البوت.', { parse_mode: 'HTML' }).catch(()=>{});
+    } catch (e) { await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{}); }
 });
 
 export default async function handler(req, res) {
