@@ -292,12 +292,12 @@ const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/ap
 const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
 const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/reseller/api', headers: { 'X-API-Key': API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
 
-// 🆕 إعداد المزود الرابع الجديد
+// 🆕 إعداد المزود الرابع الجديد مع تمديد الـ Timeout لـ 8 ثواني لتفادي مشكلة الـ Railway Sleep
 const API_KEY_4 = process.env.PROVIDER4_API_KEY || 'vbr_live_764da0f949_E0rTqAIA-WS2pUbhSnEtcXyZRmowYgkO4v6KzEiPorE';
 const apiClient4 = axios.create({ 
     baseURL: 'https://web-production-1c7b1.up.railway.app/api', 
     headers: { 'Authorization': 'Bearer ' + API_KEY_4, 'X-API-Key': API_KEY_4, 'Content-Type': 'application/json' }, 
-    timeout: 4500 
+    timeout: 8000 // 🛡️ زيادة الوقت للسماح للسيرفر بالاستيقاظ
 });
 
 function generateStableId(nameStr) {
@@ -394,14 +394,13 @@ function detectServiceEmoji(name) {
     return '🔹'; 
 }
 
-// 🆕 دمج المزود الرابع في السحب
 async function fetchAllServices() {
     let services = [];
     const [res1Result, res2Result, res3Result, res4Result] = await Promise.allSettled([
         apiClient1.get('/services?limit=1000'),
         apiClient2.get('/products'),
         apiClient3.get('/?action=products'),
-        apiClient4.get('/services').catch(() => apiClient4.get('/products')) // التجربة على المسارين لضمان العمل
+        apiClient4.get('/services').catch(() => apiClient4.get('/products')) 
     ]);
 
     if (res1Result.status === 'fulfilled') {
@@ -463,7 +462,6 @@ async function fetchAllServices() {
         } catch(e) {}
     }
 
-    // 🆕 معالجة المزود الرابع
     if (res4Result.status === 'fulfilled') {
         try {
             let s4 = res4Result.value.data?.data || res4Result.value.data?.products || res4Result.value.data?.services || res4Result.value.data;
@@ -478,7 +476,6 @@ async function fetchAllServices() {
                     item.category = item.category || item.category_name || detectCategoryFromName(item.name);
                     
                     let rawPrice = parseFloat(item.price || item.rate || item.price_amount || 0);
-                    // لو المزود الرابع بيتعامل بالدولار نضربه في التحويل، لو مصري هنسيبه (بافتراض إنه دولار كالمعتاد)
                     if (item.currency === 'USD' || rawPrice < 100) {
                         item.price = (rawPrice * USD_TO_EGP_RATE).toFixed(2);
                     } else {
@@ -520,7 +517,6 @@ async function placeOrderWithBestProvider(srv, qty) {
     } else if (source === 'api3') {
          return await apiClient3.post('/?action=purchase', { product: srv.key || String(srv.id), quantity: parsedQty }, { headers: { 'Idempotency-Key': 'shop-order-' + Date.now() + '-' + Math.floor(Math.random() * 1000) } });
     } else if (source === 'api4') {
-         // 🆕 إرسال الطلب للمزود الرابع
          return await apiClient4.post('/order', { service_id: srvIdConverted, product_id: srvIdConverted, quantity: parsedQty }).catch(() => apiClient4.post('/orders', { service_id: srvIdConverted, quantity: parsedQty }));
     } else {
          return await apiClient1.post('/orders', { service_id: srvIdConverted, quantity: parsedQty });
@@ -969,7 +965,6 @@ async function showAdminPanel(ctx) {
                  `📢 قنوات المبيعات: <code>${publicSalesChannels && publicSalesChannels.length > 0 ? publicSalesChannels.length + ' قناة' : 'غير محددة'}</code>\n` +
                  `🔒 الاشتراك الإجباري: <code>${forceSubscribeChannels && forceSubscribeChannels.length > 0 ? forceSubscribeChannels.length + ' قناة' : 'غير مفعل'}</code>`;
 
-    // 🆕 استبدال أزرار الإخفاء وتحديد السعر بزر واحد (إدارة المزودين)
     const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback('⚙️ إدارة خدمات المزودين (إخفاء / أسعار)', 'admin_manage_providers')],
         [Markup.button.callback('📉 إعلان انخفاض سعر (دروب)', 'admin_price_drop'), Markup.button.callback('🔔 فحص وإرسال تذكيرات', 'admin_scan_renewals')],
@@ -1011,9 +1006,6 @@ bot.action(/^approve_dep_|^reject_dep_/, async (ctx, next) => {
     return await next();
 });
 
-// ==========================================
-// 🆕 نظام إدارة خدمات المزودين الجديد بالكامل (إخفاء + أسعار ثابتة)
-// ==========================================
 bot.action('admin_manage_providers', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     const buttons = [
@@ -1109,8 +1101,6 @@ bot.action(/^prv_setfixed_(.+)_(\d+)_(\d+)$/, async (ctx) => {
     saveDatabase();
     await ctx.editMessageText('💲 أرسل السعر الثابت الجديد للمنتج بالجنيه المصري (مثال: 150).\n\n🗑️ لإلغاء السعر الثابت والعودة للنسبة، اكتب: <code>حذف</code>\n🔙 للرجوع دون تعديل، اكتب: <code>رجوع</code>', {parse_mode: 'HTML'}).catch(()=>{});
 });
-// ==========================================
-
 
 bot.action(/^admin_services_api_pg_(\d+)$/, async (ctx) => {
     ctx.answerCbQuery('⏳ جاري جلب الخدمات...').catch(()=>{});
@@ -1134,7 +1124,7 @@ bot.action(/^admin_services_api_pg_(\d+)$/, async (ctx) => {
             let apiLabel = 'API 1';
             if (apiSource === 'api2') apiLabel = 'API 2';
             if (apiSource === 'api3') apiLabel = 'API 3';
-            if (apiSource === 'api4') apiLabel = 'API 4'; // 🆕
+            if (apiSource === 'api4') apiLabel = 'API 4';
 
             msg += `🔹 ${actualIndex}. <b>${safeHtml(srvName)}</b>\n   📌 المعرف: <code>[${apiLabel}]</code>\n━━━━━━━━━━━━\n`;
         });
@@ -1338,7 +1328,7 @@ bot.action('admin_check_api_balance', async (ctx) => {
     } catch(e) {}
 });
 
-// 🆕 تحديث فحص حالة السيرفرات ليضيف المزود الرابع
+// 🆕 تحديث فحص حالة السيرفرات مع إظهار تفاصيل الأخطاء
 bot.action('admin_check_api_status', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1348,8 +1338,8 @@ bot.action('admin_check_api_status', async (ctx) => {
         try { const start1 = Date.now(); await apiClient1.get('/services?limit=1'); msg += `🔹 المزود 1: يعمل ✅ (${Date.now() - start1}ms)\n`; } catch(e) { msg += `🔹 المزود 1: متعطل ❌\n`; }
         try { const start2 = Date.now(); await apiClient2.get('/products'); msg += `🔹 المزود 2: يعمل ✅ (${Date.now() - start2}ms)\n`; } catch(e) { msg += `🔹 المزود 2: متعطل ❌\n`; }
         try { const start3 = Date.now(); await apiClient3.get('/?action=products'); msg += `🔹 المزود 3: يعمل ✅ (${Date.now() - start3}ms)\n`; } catch(e) { msg += `🔹 المزود 3: متعطل ❌\n`; }
-        // 🆕 حالة المزود الرابع
-        try { const start4 = Date.now(); await apiClient4.get('/services').catch(()=>apiClient4.get('/products')); msg += `🔹 المزود 4: يعمل ✅ (${Date.now() - start4}ms)\n`; } catch(e) { msg += `🔹 المزود 4: متعطل ❌\n`; }
+        // 🆕 حالة المزود الرابع (مع كتابة سبب العطل)
+        try { const start4 = Date.now(); await apiClient4.get('/services').catch(()=>apiClient4.get('/products')); msg += `🔹 المزود 4: يعمل ✅ (${Date.now() - start4}ms)\n`; } catch(e) { msg += `🔹 المزود 4: متعطل ❌ (${e.response?.status || e.message})\n`; }
         
         await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
