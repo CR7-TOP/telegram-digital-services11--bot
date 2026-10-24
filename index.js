@@ -1,7 +1,6 @@
 import { Telegraf, Markup } from 'telegraf';
 import axios from 'axios';
 import dotenv from 'dotenv';
-import http from 'http';
 import { MongoClient } from 'mongodb'; 
 
 dotenv.config();
@@ -17,7 +16,8 @@ let forceSubscribeChannels = [];
 // ==========================================
 // 🛡️ إعدادات الاتصال بقاعدة بيانات MongoDB 
 // ==========================================
-const MONGODB_URI = "mongodb+srv://ahmwogod24920s_db_user:LwAbx06XOKBWel9j@cluster0.sjxm2ga.mongodb.net/xprostore?retryWrites=true&w=majority&appName=Cluster0";
+// تم ربطها بـ Vercel Environment Variables للأمان
+const MONGODB_URI = process.env.MONGODB_URI;
 const client = new MongoClient(MONGODB_URI);
 let dbCollection = null;
 let pendingSaves = []; 
@@ -39,7 +39,7 @@ let adCampaigns = {};
 let hiddenServices = []; 
 let fixedPrices = {}; 
 let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
-let instapayAccount = 'غير محدد'; // 🆕 متغير حساب انستاباي الجديد
+let instapayAccount = 'غير محدد'; 
 
 // 🆕 متغيرات الأنظمة الجديدة والسابقة
 let abandonedCarts = {}; 
@@ -119,7 +119,7 @@ async function loadDatabase() {
         hiddenServices = data.hiddenServices || [];
         fixedPrices = data.fixedPrices || {};
         if (data.vodafoneCashNumber) vodafoneCashNumber = data.vodafoneCashNumber;
-        if (data.instapayAccount) instapayAccount = data.instapayAccount; // 🆕 استرجاع حساب انستاباي
+        if (data.instapayAccount) instapayAccount = data.instapayAccount; 
         
         abandonedCarts = data.abandonedCarts || {}; 
         usedReceipts = data.usedReceipts || [];
@@ -162,7 +162,7 @@ async function loadDatabase() {
 
 function saveDatabase() {
     try {
-        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId }; // 🆕 حفظ حساب انستاباي
+        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId };
         const savePromise = connectDB().then(() => {
             if (dbCollection) {
                 return dbCollection.updateOne({ _id: "main_data" }, { $set: data }, { upsert: true });
@@ -172,20 +172,6 @@ function saveDatabase() {
         pendingSaves.push(savePromise); 
     } catch (e) {}
 }
-
-const PORT = 3000;
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.write('البوت يعمل بكفاءة وقاعدة البيانات السحابية متصلة 🚀');
-    res.end();
-});
-
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Web server started on port ${PORT}`);
-    setInterval(() => {
-        http.get(`http://localhost:${PORT}`, (res) => {}).on('error', (err) => {});
-    }, 4 * 60 * 1000); 
-}).on('error', (err) => {});
 
 process.on('uncaughtException', (err) => { console.error(err); });
 process.on('unhandledRejection', (reason, promise) => { console.error(reason); });
@@ -271,6 +257,7 @@ function checkAndSendDailyReport() {
     } catch(e) {}
 }
 
+// دالة أخذ النسخة الاحتياطية
 setInterval(() => {
     try {
         if (!ADMIN_CHANNEL_ID || ADMIN_CHANNEL_ID === '') return;
@@ -317,7 +304,7 @@ function getUserByUid(targetUid) {
 
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
-const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
+const API_KEY_3 = process.env.PROVIDER3_API_KEY;
 const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/reseller/api', headers: { 'X-API-Key': API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
 
 function generateStableId(nameStr) {
@@ -562,7 +549,6 @@ const categoryEmojis = {
   'iCloud': '☁️', 'Zoom': '📹', 'API Services': '🔌', 'أخرى': '📦'
 };
 
-// 🆕 تعديل اسم زر الشحن في القائمة الرئيسية
 function getMainMenu() {
   let keyboard = [
     ['🛍 الخدمات', '🔍 بحث عن خدمة'],
@@ -818,7 +804,6 @@ async function showProfile(ctx) {
     await ctx.reply('👤 **حسابي الشخصي:**\n\n🆔 رقم الحساب: `' + user.uid + '`\n🔰 مستوى الحساب: ' + vipTag + '\n💳 الرصيد الحالي: *' + parseFloat(user.balance).toFixed(2) + ' EGP*\n🛍 إجمالي المشتريات: ' + user.totalSpent.toFixed(2) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
 }
 
-// 🆕 نظام الشحن المحدث باختيار طريقة الدفع
 async function showDepositFlow(ctx) {
     const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
     if (usersDb[userId].isBanned) return;
@@ -834,10 +819,9 @@ async function showDepositFlow(ctx) {
     }).catch(()=>{});
 }
 
-// 🆕 التعامل مع زر اختيار طريقة الدفع
 bot.action(/^dep_method_(.+)$/, async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
-    const method = ctx.match[1]; // 'vfcash' or 'instapay'
+    const method = ctx.match[1]; 
     const userId = String(ctx.from.id);
 
     if (!botStates) botStates = {};
@@ -1046,7 +1030,7 @@ bot.command('history', showOrdersMain);
 bot.command('support', showSupport);
 
 bot.hears(/حسابي/, showProfile);
-bot.hears(/شحن الحساب/, showDepositFlow); // 🆕 تحديث أمر الشحن
+bot.hears(/شحن الحساب/, showDepositFlow); 
 bot.hears(/طلباتي/, showOrdersMain);
 bot.hears(/الدعم الفني/, showSupport);
 bot.hears(/الخدمات/, showCategories);
@@ -1092,7 +1076,6 @@ async function showAdminPanel(ctx) {
     }
     const maintStatus = maintenanceMode ? '🛠️ (مفعل - المتجر مغلق للصيانة)' : '✅ (متوقف - المتجر يعمل)';
 
-    // 🆕 إضافة حساب انستاباي للإحصائيات
     const text = `👑 <b>لوحة تحكم الأدمن</b>\n\n` +
                  `📊 <b>الإحصائيات المتقدمة:</b>\n` +
                  `👥 إجمالي العملاء: ${totalUsers}\n` +
@@ -1107,7 +1090,6 @@ async function showAdminPanel(ctx) {
                  `📢 قنوات المبيعات: <code>${publicSalesChannels && publicSalesChannels.length > 0 ? publicSalesChannels.length + ' قناة' : 'غير محددة'}</code>\n` +
                  `🔒 الاشتراك الإجباري: <code>${forceSubscribeChannels && forceSubscribeChannels.length > 0 ? forceSubscribeChannels.length + ' قناة' : 'غير مفعل'}</code>`;
 
-    // 🆕 إضافة زر تغيير حساب انستاباي
     const keyboard = Markup.inlineKeyboard([
         [Markup.button.callback('📉 إعلان انخفاض سعر (دروب)', 'admin_price_drop')],
         [Markup.button.callback('🔔 فحص وإرسال تذكيرات التجديد', 'admin_scan_renewals')],
@@ -1271,7 +1253,6 @@ bot.action('admin_change_wallet', async (ctx) => {
     await ctx.editMessageText('📱 **تغيير رقم الاستقبال:**\n\nأرسل الرقم الجديد لمحفظة فودافون كاش الخاص بك:', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
-// 🆕 أكشن تغيير حساب انستاباي
 bot.action('admin_change_instapay', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
@@ -1576,7 +1557,6 @@ bot.action('admin_pending_deposits', async (ctx) => {
         } else {
             msg = '💳 <b>طلبات الشحن المعلقة (' + pendingDeposits.length + '):</b>\n\n';
             pendingDeposits.forEach((req, idx) => {
-                // 🆕 إضافة توضيح طريقة الدفع للطلبات المعلقة
                 const methodLabel = req.method === 'instapay' ? '🟣 انستاباي' : '🔴 فودافون كاش';
                 msg += `👤 ID: <code>${req.userUid}</code>\n💰 المبلغ: <b>${req.amount} EGP</b>\n💳 الطريقة: <b>${methodLabel}</b>\n📸 <b>(الإثبات مرفق)</b>\n━━━━━━━━━━━━\n`;
                 inlineButtons.push([ Markup.button.callback('✅ موافقة (' + req.amount + 'ج)', `approve_dep_${req.userId}_${req.amount}`), Markup.button.callback('❌ رفض', `reject_dep_${req.userId}`) ]);
@@ -2181,7 +2161,6 @@ bot.on('photo', async (ctx, next) => {
             
             usedReceipts.push(fileUniqueId);
             
-            // 🆕 تمرير الطريقة للطلبات المعلقة
             const reqData = { userId, userUid: usersDb[userId].uid, amount, receipt: fileId, method: botStates.deposit[userId].method };
             delete botStates.deposit[userId]; saveDatabase();
             
@@ -2318,7 +2297,6 @@ bot.on('text', async (ctx, next) => {
                ).catch(()=>{});
              }
              
-             // 🛡️ فحص المخزن المحلي: إذا توفر يسلم فوراً، وإذا كان فارغاً يحول الطلب للبوت الأم تلقائياً
              const hasLocalStock = localInventory && localInventory[String(srv.id)] && Array.isArray(localInventory[String(srv.id)]) && localInventory[String(srv.id)].length >= qty;
 
              let processingMsg = await ctx.reply('⏳ <b>جاري المعالجة...</b>', {parse_mode: 'HTML'}).catch(()=>{});
@@ -2328,7 +2306,7 @@ bot.on('text', async (ctx, next) => {
              if (hasLocalStock) {
                  const deliveredItems = localInventory[String(srv.id)].splice(0, qty);
                  if (localInventory[String(srv.id)].length === 0) {
-                     delete localInventory[String(srv.id)]; // تنظيف القيد الفارغ ليعود للمزود تلقائياً
+                     delete localInventory[String(srv.id)]; 
                  }
                  
                  usersDb[userId].balance -= parseFloat(price);
@@ -2385,7 +2363,6 @@ bot.on('text', async (ctx, next) => {
                 let orderId = orderResponse.data?.order?.order_id || orderResponse.data?.order_id || orderResponse.data?.order?.id || orderResponse.data?.id || Math.floor(10000 + Math.random() * 90000);
                 let rawDetails = null;
 
-                // 🆕 استخراج مباشر للرابط من المزود الثالث (CupponHub) من طلب الشراء الأساسي
                 if (srv.providerSource === 'api3' && orderResponse.data?.order?.items && Array.isArray(orderResponse.data.order.items) && orderResponse.data.order.items.length > 0) {
                     rawDetails = orderResponse.data.order.items.join('\n\n');
                 }
@@ -2398,7 +2375,6 @@ bot.on('text', async (ctx, next) => {
                         if (source === 'api3') {
                             const getOrderRes = await apiClient3.get(`/?action=order&order_id=${orderId}`);
                             const orderData = getOrderRes.data?.order || getOrderRes.data;
-                            // 🆕 التركيز على مصفوفة items مباشرة
                             if (orderData && orderData.items && Array.isArray(orderData.items) && orderData.items.length > 0) {
                                 rawDetails = orderData.items.join('\n\n');
                             } else {
@@ -2520,12 +2496,6 @@ bot.on('text', async (ctx, next) => {
     if (botStates.adminSession && botStates.adminSession[userId] && botStates.adminInput && botStates.adminInput[userId]) {
         const state = botStates.adminInput[userId];
 
-        if (!state.startsWith('WAIT_ADD_STOCK_') && !state.startsWith('WAIT_BROADCAST') && !state.startsWith('WAIT_PD_')) {
-            // Not deleting state immediately to allow multiple inputs if necessary,
-            // the specific handler will delete it when done.
-        }
-
-        // 🆕 إعداد حساب انستاباي
         if (state === 'WAIT_NEW_INSTAPAY') {
             instapayAccount = text.trim();
             delete botStates.adminInput[userId]; saveDatabase();
@@ -2845,7 +2815,7 @@ bot.on('text', async (ctx, next) => {
             }
 
             if (text === 'حذف الكل') {
-                delete localInventory[srvId]; // 🛡️ حذف القيد بالكامل ليعود المنتج للسحب من المزود
+                delete localInventory[srvId]; 
                 saveDatabase();
                 logAdminAction(userId, `تفريغ مخزن المنتج ${srvId}`);
                 return await ctx.reply('✅ تم تفريغ المخزن المحلي لهذا المنتج بنجاح، وسيتم السحب الآن من البوت الأم تلقائياً!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
@@ -2982,7 +2952,6 @@ bot.on('text', async (ctx, next) => {
       } else { botStates.adminLogin[userId] = null; saveDatabase(); return await ctx.reply('❌ كلمة مرور خاطئة.').catch(()=>{}); }
     }
 
-    // 🆕 تم تعديل هذا الجزء للتعامل مع طرق الدفع المختلفة بناءً على اختيار العميل
     if (botStates.deposit && botStates.deposit[userId]) {
         const state = botStates.deposit[userId];
         if (state.step === 'WAIT_AMOUNT') {
@@ -3010,6 +2979,7 @@ bot.on('text', async (ctx, next) => {
   }
 });
 
+// دالة الـ Handler الأساسية لتشغيل البوت على Vercel Serverless Function
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
@@ -3018,6 +2988,7 @@ export default async function handler(req, res) {
         return res.status(500).send('DB Error'); 
     }
 
+    // جزء استقبال رسائل التأكيد الآلية
     if (req.body && req.body.secret === 'AHMED_VFCASH_100') {
         const smsText = req.body.message || '';
         if (smsText.includes('تم استلام') && smsText.includes('جنيه')) {
@@ -3059,8 +3030,4 @@ export default async function handler(req, res) {
   } else {
     res.status(200).send('Bot is running on Vercel with MongoDB! 🚀');
   }
-}
-
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-    bot.launch().then(() => console.log('🚀 Bot launched via Long Polling!'));
 }
