@@ -41,7 +41,6 @@ let fixedPrices = {};
 let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
 let instapayAccount = 'غير محدد'; 
 
-// 🆕 متغيرات الأنظمة الجديدة والسابقة
 let abandonedCarts = {}; 
 let usedReceipts = []; 
 let stockAlerts = {}; 
@@ -286,13 +285,11 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 إعداد المزودين الـ 4
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
 const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/reseller/api', headers: { 'X-API-Key': API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
 
-// 🆕 إعداد المزود الرابع الجديد (تم تحديث المسار بناءً على الـ API Docs الخاصة به)
 const API_KEY_4 = process.env.PROVIDER4_API_KEY || 'vbr_live_5da642c3da__Kxebdst1Oini_PHpGBY8urPLZXp5CzO2iy8tSNumQU';
 const apiClient4 = axios.create({ 
     baseURL: 'https://web-production-1c7b1.up.railway.app/api/reseller', 
@@ -375,33 +372,58 @@ function getServiceCategory(s) {
   } catch(e) { return 'أخرى'; }
 }
 
-function detectServiceEmoji(name) {
-    const n = String(name || '').toLowerCase();
-    if(n.includes('apple') || n.includes('mac')) return '🎵';
-    if(n.includes('video') || n.includes('netflix') || n.includes('youtube') || n.includes('prime')) return '▶️';
-    if(n.includes('vpn') || n.includes('nord') || n.includes('proton') || n.includes('express')) return '🔒';
-    if(n.includes('ai') || n.includes('gpt') || n.includes('bot') || n.includes('claude') || n.includes('gemini')) return '❇️';
-    if(n.includes('pdf') || n.includes('doc') || n.includes('notion') || n.includes('manus')) return '📓';
-    if(n.includes('cloud') || n.includes('drive') || n.includes('icloud')) return '☁️';
-    if(n.includes('edu') || n.includes('learn') || n.includes('course') || n.includes('duolingo') || n.includes('coursera')) return '🎓';
-    if(n.includes('game') || n.includes('play')) return '🎮';
-    if(n.includes('code') || n.includes('api') || n.includes('dev') || n.includes('cursor') || n.includes('replit')) return '🖱️';
-    if(n.includes('design') || n.includes('art') || n.includes('draw') || n.includes('figma') || n.includes('canva') || n.includes('adobe')) return '🎨';
-    if(n.includes('voice') || n.includes('audio') || n.includes('eleven')) return '🎙️';
-    if(n.includes('sim') || n.includes('mobile')) return '📱';
-    if(n.includes('mail') || n.includes('email')) return '📧';
-    if(n.includes('zoom') || n.includes('meeting')) return '📹';
-    return '🔹'; 
+const preferredCategoriesOrder = [
+    'ChatGPT', 'Netflix', 'YouTube', 'Spotify', 'Canva', 'CapCut', 'Microsoft', 
+    'Gemini', 'Claude', 'Adobe', 'Grammarly', 'Duolingo', 'Zoom', 'Gmail', 'iCloud', 
+    'ExpressVPN', 'NordVPN', 'Apple Music', 'Notion', 'iLovePDF', 'Coursera', 'Prime Video', 'Crunchyroll', 
+    'Perplexity', 'eSIM', 'ElevenLabs', 'Leonardo', 'Figma', 'QuillBot', 'Proton', 'Cursor', 'Grok', 'Replit', 
+    'JetBrains', 'Autodesk', 'Avira', 'HMA VPN', 
+    'Gamma', 'Bolt', 'Framer', 'Kling', 'Miro', 'Lovable', 'n8n', 'Railway', 'Higgsfield', 'Wispr Flow', 'Manus', 
+    'API Services', 'أخرى'
+];
+
+// 🆕 دالة لترتيب وتجميع الخدمات (حسب الأهمية ثم أبجدياً لتجميع المتشابه)
+function sortServicesByImportance(servicesList) {
+    return servicesList.sort((a, b) => {
+        const catA = getServiceCategory(a);
+        const catB = getServiceCategory(b);
+        let indexA = preferredCategoriesOrder.indexOf(catA);
+        let indexB = preferredCategoriesOrder.indexOf(catB);
+        
+        if (indexA === -1) indexA = 999;
+        if (indexB === -1) indexB = 999;
+
+        if (indexA !== indexB) {
+            return indexA - indexB; // الأهمية أولاً
+        }
+        
+        // لو في نفس القسم، نرتبهم أبجدياً عشان الحاجات اللي شبه بعض تيجي ورا بعض
+        const nameA = (a.name_ar || a.name || a.title || '').toLowerCase();
+        const nameB = (b.name_ar || b.name || b.title || '').toLowerCase();
+        return nameA.localeCompare(nameB, 'ar');
+    });
 }
 
-// 🆕 دمج المزود الرابع في السحب بمسار /products الصحيح
+const categoryEmojis = {
+  'ChatGPT': '❇️', 'Claude': '🧠', 'Gemini': '✨', 'Grok': '✖️', 'Notion': '📓', 'Perplexity': '💠', 
+  'Cursor': '🖱️', 'CapCut': '✂️', 'Canva': '🖌️', 'YouTube': '▶️', 'Spotify': '🎧', 'Adobe': '🅰️', 
+  'Microsoft': '🪟', 'Figma': '🪄', 'Grammarly': '✍️', 'Duolingo': '🦉', 'Lovable': '❤️', 
+  'Apple Music': '🎵', 'Coursera': '🎓', 'ElevenLabs': '🎙️', 'Gamma': '📊', 'Kling': '🎞️', 
+  'Leonardo': '🖼️', 'Autodesk': '🏗️', 'Bolt': '⚡', 'Gmail': '📧', 'Framer': '🖼️', 
+  'Higgsfield': '🚀', 'Manus': '📝', 'n8n': '⚙️', 'NordVPN': '🛡️', 'ExpressVPN': '🛡️', 
+  'HMA VPN': '🌍', 'Proton': '🔒', 'QuillBot': '🤖', 'Railway': '🚂', 'Replit': '💻', 
+  'Wispr Flow': '🌊', 'Netflix': '🍿', 'Crunchyroll': '🍘', 'Prime Video': '🎬', 
+  'eSIM': '📱', 'iLovePDF': '📄', 'Avira': '☂️', 'Miro': '🗺️', 'JetBrains': '💻', 
+  'iCloud': '☁️', 'Zoom': '📹', 'API Services': '🔌', 'أخرى': '📦'
+};
+
 async function fetchAllServices() {
     let services = [];
     const [res1Result, res2Result, res3Result, res4Result] = await Promise.allSettled([
         apiClient1.get('/services?limit=1000'),
         apiClient2.get('/products'),
         apiClient3.get('/?action=products'),
-        apiClient4.get('/products') // المسار الصحيح للمزود الرابع
+        apiClient4.get('/products') 
     ]);
 
     if (res1Result.status === 'fulfilled') {
@@ -463,7 +485,6 @@ async function fetchAllServices() {
         } catch(e) {}
     }
 
-    // 🆕 معالجة المزود الرابع بالمسار الصحيح
     if (res4Result.status === 'fulfilled') {
         try {
             let s4 = res4Result.value.data?.data || res4Result.value.data?.products || res4Result.value.data?.services || res4Result.value.data;
@@ -474,7 +495,6 @@ async function fetchAllServices() {
                 s4.forEach(item => { 
                     item.providerSource = 'api4'; 
                     item.name = item.name || item.title || item.name_ar || "خدمة بدون اسم";
-                    // المزود ده ممكن يستخدم product_id أو uuid كمعرف للخدمة
                     item.id = String(item.id || item.product_id || item.service_id || item.uuid || item.code || generateStableId(item.name));
                     item.category = item.category || item.category_name || detectCategoryFromName(item.name);
                     
@@ -520,35 +540,11 @@ async function placeOrderWithBestProvider(srv, qty) {
     } else if (source === 'api3') {
          return await apiClient3.post('/?action=purchase', { product: srv.key || String(srv.id), quantity: parsedQty }, { headers: { 'Idempotency-Key': 'shop-order-' + Date.now() + '-' + Math.floor(Math.random() * 1000) } });
     } else if (source === 'api4') {
-         // 🆕 إرسال الطلب للمزود الرابع على مسار /orders
          return await apiClient4.post('/orders', { product_id: srvIdConverted, service_id: srvIdConverted, quantity: parsedQty }).catch(() => apiClient4.post('/order', { product_id: srvIdConverted, quantity: parsedQty }));
     } else {
          return await apiClient1.post('/orders', { service_id: srvIdConverted, quantity: parsedQty });
     }
 }
-
-const preferredCategoriesOrder = [
-    'ChatGPT', 'Netflix', 'YouTube', 'Spotify', 'Canva', 'CapCut', 'Microsoft', 
-    'Gemini', 'Claude', 'Adobe', 'Grammarly', 'Duolingo', 'Zoom', 'Gmail', 'iCloud', 
-    'ExpressVPN', 'NordVPN', 'Apple Music', 'Notion', 'iLovePDF', 'Coursera', 'Prime Video', 'Crunchyroll', 
-    'Perplexity', 'eSIM', 'ElevenLabs', 'Leonardo', 'Figma', 'QuillBot', 'Proton', 'Cursor', 'Grok', 'Replit', 
-    'JetBrains', 'Autodesk', 'Avira', 'HMA VPN', 
-    'Gamma', 'Bolt', 'Framer', 'Kling', 'Miro', 'Lovable', 'n8n', 'Railway', 'Higgsfield', 'Wispr Flow', 'Manus', 
-    'API Services', 'أخرى'
-];
-
-const categoryEmojis = {
-  'ChatGPT': '❇️', 'Claude': '🧠', 'Gemini': '✨', 'Grok': '✖️', 'Notion': '📓', 'Perplexity': '💠', 
-  'Cursor': '🖱️', 'CapCut': '✂️', 'Canva': '🖌️', 'YouTube': '▶️', 'Spotify': '🎧', 'Adobe': '🅰️', 
-  'Microsoft': '🪟', 'Figma': '🪄', 'Grammarly': '✍️', 'Duolingo': '🦉', 'Lovable': '❤️', 
-  'Apple Music': '🎵', 'Coursera': '🎓', 'ElevenLabs': '🎙️', 'Gamma': '📊', 'Kling': '🎞️', 
-  'Leonardo': '🖼️', 'Autodesk': '🏗️', 'Bolt': '⚡', 'Gmail': '📧', 'Framer': '🖼️', 
-  'Higgsfield': '🚀', 'Manus': '📝', 'n8n': '⚙️', 'NordVPN': '🛡️', 'ExpressVPN': '🛡️', 
-  'HMA VPN': '🌍', 'Proton': '🔒', 'QuillBot': '🤖', 'Railway': '🚂', 'Replit': '💻', 
-  'Wispr Flow': '🌊', 'Netflix': '🍿', 'Crunchyroll': '🍘', 'Prime Video': '🎬', 
-  'eSIM': '📱', 'iLovePDF': '📄', 'Avira': '☂️', 'Miro': '🗺️', 'JetBrains': '💻', 
-  'iCloud': '☁️', 'Zoom': '📹', 'API Services': '🔌', 'أخرى': '📦'
-};
 
 function getMainMenu() {
   let keyboard = [
@@ -1031,16 +1027,25 @@ bot.action(/^prv_(\d+)$/, async (ctx) => {
     await ctx.editMessageText(`🛠️ <b>التحكم في مزود (${prvNum}):</b>\nماذا تريد أن تفعل بخدمات هذا المزود؟`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
 });
 
-async function renderProviderServices(ctx, providerNum, actionType, page) {
+// 🆕 تحديث دالة عرض الخدمات لدعم العودة بعد إرسال رسالة نصية (مثل السعر)
+async function renderProviderServices(ctx, providerNum, actionType, page, isTextContext = false) {
     if (cachedServices.length === 0) {
-        await ctx.editMessageText('⏳ لحظات، جاري جلب الخدمات...').catch(()=>{});
+        if (!isTextContext && ctx.callbackQuery) {
+            await ctx.editMessageText('⏳ لحظات، جاري جلب الخدمات...').catch(()=>{});
+        }
         await backgroundServiceUpdate();
     }
     const providerId = `api${providerNum}`;
-    const services = cachedServices.filter(s => s.providerSource === providerId);
+    let services = cachedServices.filter(s => s.providerSource === providerId);
+
+    // 🆕 تطبيق دالة الترتيب (الأهمية ثم أبجدياً)
+    services = sortServicesByImportance(services);
 
     if (services.length === 0) {
-         return ctx.editMessageText(`❌ لا توجد خدمات حالياً في المزود (${providerNum}).`, Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', `prv_${providerNum}`)]])).catch(()=>{});
+         const emptyMsg = `❌ لا توجد خدمات حالياً في المزود (${providerNum}).`;
+         const btn = Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', `prv_${providerNum}`)]]);
+         if (isTextContext || !ctx.callbackQuery) return ctx.reply(emptyMsg, btn).catch(()=>{});
+         return ctx.editMessageText(emptyMsg, btn).catch(()=>{});
     }
 
     const itemsPerPage = 15;
@@ -1072,7 +1077,13 @@ async function renderProviderServices(ctx, providerNum, actionType, page) {
     buttons.push([Markup.button.callback('🔙 رجوع لخيارات المزود', `prv_${providerNum}`)]);
 
     const title = actionType === 'hide' ? '👁️ إخفاء/إظهار الخدمات' : '💲 تحديد أسعار ثابتة';
-    await ctx.editMessageText(`🛠️ <b>${title} (مزود ${providerNum}):</b>\nاختر الخدمة لتعديلها:\n*(القائمة تتحدث في نفس اللحظة ولا تغلق)*`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+    const finalMsg = `🛠️ <b>${title} (مزود ${providerNum}):</b>\nاختر الخدمة لتعديلها:\n*(القائمة تتحدث في نفس اللحظة ولا تغلق)*`;
+    
+    if (isTextContext || !ctx.callbackQuery) {
+        await ctx.reply(finalMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+    } else {
+        await ctx.editMessageText(finalMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+    }
 }
 
 bot.action(/^prv_list_(hide|price)_(\d+)_(\d+)$/, async (ctx) => {
@@ -1289,7 +1300,6 @@ bot.action('admin_pending_deposits', async (ctx) => {
     } catch(e) {}
 });
 
-// 🆕 تحديث فحص الأرصدة للمزود الرابع (المسار الجديد)
 bot.action('admin_check_api_balance', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1299,7 +1309,6 @@ bot.action('admin_check_api_balance', async (ctx) => {
         try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود 2: <b>$${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}</b>\n`; } catch(e) { msg += `🔹 المزود 2: خطأ ❌\n`; }
         try { const res3 = await apiClient3.get('/?action=balance'); msg += `🔹 المزود 3: <b>${parseFloat(res3.data?.balance_usdt || res3.data?.data?.balance || 0).toFixed(2)} USDT</b>\n`; } catch(e) { msg += `🔹 المزود 3: خطأ ❌\n`; }
         
-        // 🆕 رصيد المزود الرابع (المسار الجديد /me)
         try { 
             const res4 = await apiClient4.get('/me'); 
             msg += `🔹 المزود 4: <b>${parseFloat(res4.data?.data?.balance || res4.data?.balance || 0).toFixed(2)}</b>\n`; 
@@ -1311,7 +1320,6 @@ bot.action('admin_check_api_balance', async (ctx) => {
     } catch(e) {}
 });
 
-// 🆕 تحديث فحص حالة السيرفرات للمزود الرابع
 bot.action('admin_check_api_status', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1322,7 +1330,6 @@ bot.action('admin_check_api_status', async (ctx) => {
         try { const start2 = Date.now(); await apiClient2.get('/products'); msg += `🔹 المزود 2: يعمل ✅ (${Date.now() - start2}ms)\n`; } catch(e) { msg += `🔹 المزود 2: متعطل ❌\n`; }
         try { const start3 = Date.now(); await apiClient3.get('/?action=products'); msg += `🔹 المزود 3: يعمل ✅ (${Date.now() - start3}ms)\n`; } catch(e) { msg += `🔹 المزود 3: متعطل ❌\n`; }
         
-        // 🆕 حالة المزود الرابع (مسار /products الجديد)
         try { 
             const start4 = Date.now(); 
             await apiClient4.get('/products'); 
@@ -1566,11 +1573,14 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
         return await ctx.editMessageText('⚠️ يرجى تحديث الأقسام من القائمة الرئيسية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
     }
 
-    const categoryServices = cachedServices.filter(s => {
+    let categoryServices = cachedServices.filter(s => {
       if (hiddenServices && hiddenServices.includes(String(s.id))) return false;
       let cat = getServiceCategory(s);
       return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
-    }).slice(0, 90); 
+    });
+    
+    // 🆕 تطبيق الترتيب الأبجدي والأهمية على قائمة العملاء عشان الخدمات المتشابهة تتجمع
+    categoryServices = sortServicesByImportance(categoryServices).slice(0, 90); 
 
     if (categoryServices.length === 0) return await ctx.editMessageText('لا توجد خدمات حالياً في هذا القسم.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
 
@@ -2146,7 +2156,7 @@ bot.on('text', async (ctx, next) => {
     if (botStates.adminSession && botStates.adminSession[userId] && botStates.adminInput && botStates.adminInput[userId]) {
         const state = botStates.adminInput[userId];
 
-        // 🆕 التعامل مع إدخال السعر الثابت من قسم إدارة المزودين
+        // 🆕 التعامل مع إدخال السعر الثابت والعودة التلقائية للقائمة
         if (state.startsWith('WAIT_PRV_FIXED_')) {
             const parts = state.replace('WAIT_PRV_FIXED_', '').split('_');
             const srvId = parts[0];
@@ -2156,13 +2166,13 @@ bot.on('text', async (ctx, next) => {
             if (text === 'إلغاء' || text === 'رجوع') {
                 delete botStates.adminInput[userId]; saveDatabase();
                 await ctx.reply('✅ تم الإلغاء. العودة للمزود:');
-                return await renderProviderServices(ctx, prvNum, 'price', page);
+                return await renderProviderServices(ctx, prvNum, 'price', page, true);
             } else if (text === 'حذف') {
                 delete fixedPrices[srvId];
                 delete botStates.adminInput[userId]; saveDatabase();
                 logAdminAction(userId, `إلغاء السعر الثابت للمنتج ${srvId}`);
                 await ctx.reply('✅ تم مسح السعر الثابت! المنتج سيعود لاستخدام نسبة الربح.');
-                return await renderProviderServices(ctx, prvNum, 'price', page);
+                return await renderProviderServices(ctx, prvNum, 'price', page, true);
             } else {
                 const price = parseFloat(text);
                 if (isNaN(price) || price < 0) {
@@ -2172,7 +2182,9 @@ bot.on('text', async (ctx, next) => {
                 delete botStates.adminInput[userId]; saveDatabase();
                 logAdminAction(userId, `تحديد سعر ثابت للمنتج ${srvId} بـ ${price} جنيه`);
                 await ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: <b>${price} EGP</b>`, {parse_mode: 'HTML'}).catch(()=>{});
-                return await renderProviderServices(ctx, prvNum, 'price', page);
+                
+                // 🆕 هنا الدالة هترجع تبعتلك القائمة تاني كرسالة جديدة عشان تكمل شغلك بدون ما تقف
+                return await renderProviderServices(ctx, prvNum, 'price', page, true);
             }
         }
 
@@ -2422,57 +2434,6 @@ bot.on('text', async (ctx, next) => {
             saveDatabase();
             logAdminAction(userId, `تحديد نسبة ربح للمنتج ${srvId} بـ ${percent}%`);
             return await ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: <b>${percent}%</b>\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
-        }
-
-        if (state.startsWith('WAIT_SET_FIXED_')) {
-            const srvId = String(state.split('WAIT_SET_FIXED_')[1]);
-
-            if (text === 'إلغاء' || text === 'رجوع') {
-                delete botStates.adminInput[userId];
-                saveDatabase();
-                await showAdminPanel(ctx);
-                return;
-            } else if (text === 'حذف') {
-                delete fixedPrices[srvId];
-                delete botStates.adminInput[userId];
-                saveDatabase();
-                logAdminAction(userId, `إلغاء السعر الثابت للمنتج ${srvId}`);
-                await ctx.reply('✅ تم مسح السعر الثابت! المنتج سيعود لاستخدام نسبة الربح.').catch(()=>{});
-            } else {
-                const price = parseFloat(text);
-                if (isNaN(price) || price < 0) {
-                    return await ctx.reply('❌ يرجى إدخال رقم صحيح موجب أو كلمة "حذف" أو "رجوع".').catch(()=>{});
-                }
-                fixedPrices[srvId] = price;
-                delete botStates.adminInput[userId];
-                saveDatabase();
-                logAdminAction(userId, `تحديد سعر ثابت للمنتج ${srvId} بـ ${price} جنيه`);
-                await ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: <b>${price} EGP</b>`, {parse_mode: 'HTML'}).catch(()=>{});
-            }
-
-            const catIndex = botStates.lastAdminCatFixed ? botStates.lastAdminCatFixed[userId] : null;
-            if (catIndex !== undefined && catIndex !== null && botStates.adminTempCats && botStates.adminTempCats[userId]) {
-                const selectedCategory = botStates.adminTempCats[userId][catIndex];
-                if (cachedServices.length === 0) await backgroundServiceUpdate();
-                const categoryServices = cachedServices.filter(s => {
-                    let cat = getServiceCategory(s);
-                    return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
-                });
-
-                let buttons = categoryServices.map(srv => {
-                    const fp = fixedPrices[String(srv.id)];
-                    const prefix = fp ? `[${fp}ج] ` : '⏳ ';
-                    let btnText = prefix + (srv.name_ar || srv.name || srv.title);
-                    if (btnText.length > 40) btnText = btnText.substring(0, 38) + '..'; 
-                    return [Markup.button.callback(btnText, `setfixed_${srv.id}`)];
-                });
-                buttons.push([Markup.button.callback('🔙 رجوع لأقسام الأسعار', 'admin_fixed_price')]);
-
-                return await ctx.reply(`💲 خدمات قسم <b>${selectedCategory}</b>:\n\nاضغط على أي خدمة لتحديد سعر ثابت لها:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
-            } else {
-                await showAdminPanel(ctx);
-                return;
-            }
         }
 
         if (state.startsWith('WAIT_ADD_STOCK_')) {
