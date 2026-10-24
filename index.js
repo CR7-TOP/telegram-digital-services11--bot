@@ -173,12 +173,17 @@ server.listen(PORT, '0.0.0.0', () => {
     setInterval(() => { http.get(`http://localhost:${PORT}`, (res) => {}).on('error', (err) => {}); }, 4 * 60 * 1000); 
 }).on('error', (err) => {});
 
-process.on('uncaughtException', (err) => { console.error(err); });
-process.on('unhandledRejection', (reason, promise) => { console.error(reason); });
+process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err); });
+process.on('unhandledRejection', (reason, promise) => { console.error('Unhandled Rejection:', reason); });
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
+
+// 🛡️ حماية البوت من الوقوع بسبب أي أخطاء برمجية
+bot.catch((err, ctx) => {
+    console.error(`Ooops, encountered an error for ${ctx.updateType}`, err);
+});
 
 bot.use(async (ctx, next) => {
     if (ctx.chat && ctx.chat.type !== 'private') return; 
@@ -296,16 +301,16 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 إعداد المزودين الـ 3 (تم حذف المزود الثالث القديم)
+// 🌐 إعداد المزودين الـ 3
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 
-// 🛡️ تحديد الـ Timeout لـ 8000 (8 ثواني) لحماية Vercel من السقوط والـ Crash
+// 🛡️ تم تقليل الـ Timeout لـ 4500 لمنع Vercel من التهنيج وقفل البوت
 const API_KEY_4 = process.env.PROVIDER4_API_KEY || 'vbr_live_5da642c3da__Kxebdst1Oini_PHpGBY8urPLZXp5CzO2iy8tSNumQU';
 const apiClient4 = axios.create({ 
     baseURL: 'https://web-production-1c7b1.up.railway.app/api/reseller', 
     headers: { 'Authorization': 'Bearer ' + API_KEY_4, 'X-API-Key': API_KEY_4, 'Content-Type': 'application/json' }, 
-    timeout: 8000 
+    timeout: 4500 
 });
 
 function generateStableId(nameStr) {
@@ -871,7 +876,7 @@ async function showCategories(ctx) {
     let buttons = [];
     for (let i = 0; i < categories.length; i += 2) {
       const row = [];
-      // 🆕 تم تعديل الأزرار لتعمل مع نظام الصفحات الجديد
+      // 🛡️ تم تصحيح الـ Callback Data هنا لتتطابق مع الـ Regex الجديد
       row.push(Markup.button.callback((categoryEmojis[categories[i]] || '📦') + ' ' + categories[i], 'cat_' + i + '_1'));
       if (i + 1 < categories.length) row.push(Markup.button.callback((categoryEmojis[categories[i+1]] || '📦') + ' ' + categories[i+1], 'cat_' + (i + 1) + '_1'));
       buttons.push(row);
@@ -912,15 +917,6 @@ bot.action('main_menu', async (ctx) => {
       ctx.deleteMessage().catch(()=>{}); 
       await ctx.reply('القائمة الرئيسية 🚀', getMainMenu()).catch(()=>{});
     } catch(e){}
-});
-
-bot.action('admin_force_refresh', async (ctx) => {
-    ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
-    try {
-        isFetchingServices = false;
-        await backgroundServiceUpdate();
-        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين الثلاثة في ذاكرة البوت.', { parse_mode: 'HTML' }).catch(()=>{});
-    } catch (e) { await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{}); }
 });
 
 async function showAdminPanel(ctx) {
@@ -1239,6 +1235,15 @@ bot.action('admin_set_force_sub', async (ctx) => {
     await ctx.editMessageText('🔒 **إضافة قنوات الاشتراك الإجباري:**\n\nيمكنك إضافة أكثر من قناة بالدخول لهذا الإعداد وإرسالهم واحدة تلو الأخرى.\n\n✨ **أرسل رابط القناة مباشرة** (سواء كانت عامة أو خاصة البوت سيتعرف عليها).\nمثال: <code>https://t.me/AhmedStore</code>\n\n⚠️ **تنبيه:** يجب رفع البوت كـ(مشرف) في القناة أولاً.\n\n🛑 لإلغاء وحذف جميع القنوات أرسل كلمة: <code>إيقاف</code>', { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
+bot.action('admin_force_refresh', async (ctx) => {
+    ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
+    try {
+        isFetchingServices = false;
+        await backgroundServiceUpdate();
+        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين في ذاكرة البوت.', { parse_mode: 'HTML' }).catch(()=>{});
+    } catch (e) { await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{}); }
+});
+
 
 bot.action('admin_ad_stats', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
@@ -1548,8 +1553,8 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
-// 🆕 نظام الصفحات داخل الأقسام لمنع تعليق التليجرام
-bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
+// 🛡️ تم تصحيح الـ Regex هنا ليطابق الأزرار الجديدة ذات الصفحات
+bot.action(/^cat_(\d+)_(\d+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
     const userId = String(ctx.from.id); initUser(userId);
@@ -1578,7 +1583,7 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
     
     categoryServices = sortServicesByImportance(categoryServices);
 
-    const itemsPerPage = 12; // 🛡️ 12 خدمة فقط في الصفحة عشان تليجرام ميعلقش
+    const itemsPerPage = 12; 
     const totalPages = Math.ceil(categoryServices.length / itemsPerPage) || 1;
     const currentPage = Math.min(Math.max(page, 1), totalPages);
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -1605,7 +1610,6 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
         ];
     });
 
-    // 🆕 أزرار التقليب في الأقسام
     let paginationRow = [];
     if (currentPage > 1) paginationRow.push(Markup.button.callback('▶️ السابق', `cat_${catIndex}_${currentPage - 1}`));
     if (totalPages > 1) paginationRow.push(Markup.button.callback(`📄 ${currentPage}/${totalPages}`, 'noop'));
@@ -2200,7 +2204,7 @@ bot.on('text', async (ctx, next) => {
             const query = text.toLowerCase();
             if (!cachedServices || cachedServices.length === 0) cachedServices = await fetchAllServices();
             const results = cachedServices.filter(s => (s.name_ar || s.name || s.title || '').toLowerCase().includes(query));
-            if(results.length === 0) return await ctx.reply('❌ لا توجد نتائج مطابقة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]])});
+            if(results.length === 0) return await ctx.reply('❌ لا توجد نتائج مطابقة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
             
             let buttons = results.slice(0, 15).map(srv => {
                 return [Markup.button.callback((srv.name_ar || srv.name || srv.title), `pdsel_${srv.id}`)]
@@ -2372,7 +2376,7 @@ bot.on('text', async (ctx, next) => {
 
         if (state === 'WAIT_VOUCHER_CREATE') {
             const parts = text.split(/\s+/); 
-            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             const code = parts[0].toUpperCase(); const amount = parseFloat(parts[1]);
             if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ القيمة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             vouchers[code] = { amount, isUsed: false }; 
@@ -2627,6 +2631,7 @@ bot.on('text', async (ctx, next) => {
   }
 });
 
+// 🛡️ نظام حماية Vercel (Loop Breaker)
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
@@ -2665,13 +2670,21 @@ export default async function handler(req, res) {
         return res.status(200).send('SMS Processed Successfully');
     }
 
-    await bot.handleUpdate(req.body); 
+    // 🛡️ إنهاء أي عملية تتجاوز 7 ثواني لحماية البوت من التعليق
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('TIMEOUT'), 7000));
+    const updatePromise = bot.handleUpdate(req.body).then(() => 'DONE').catch((err) => {
+        console.error('Update Error:', err);
+        return 'ERROR';
+    });
+
+    await Promise.race([updatePromise, timeoutPromise]);
 
     if (pendingSaves.length > 0) {
         const saves = [...pendingSaves];
         pendingSaves = []; 
-        await Promise.all(saves);
+        await Promise.allSettled(saves);
     }
+    
     res.status(200).send('OK');
   } else {
     res.status(200).send('Bot is running on Vercel with MongoDB! 🚀');
