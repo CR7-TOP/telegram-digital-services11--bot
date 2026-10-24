@@ -53,7 +53,6 @@ let botStates = {
 
 const userRequestLocks = {};
 
-// 🛡️ دالة لتوليد كود قصير للأزرار عشان تليجرام ميعلقش
 function getShortHash(str) {
     let hash = 0;
     const s = String(str);
@@ -163,34 +162,9 @@ function saveDatabase() {
     } catch (e) {}
 }
 
-const PORT = 3000;
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.write('البوت يعمل بكفاءة وقاعدة البيانات السحابية متصلة 🚀');
-    res.end();
-});
-server.listen(PORT, '0.0.0.0', () => {
-    setInterval(() => { http.get(`http://localhost:${PORT}`, (res) => {}).on('error', (err) => {}); }, 4 * 60 * 1000); 
-}).on('error', (err) => {});
-
-process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err); });
-process.on('unhandledRejection', (reason, promise) => { console.error('Unhandled Rejection:', reason); });
-
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
-
-// 🚀🚀🚀 [نظام كاسحة الألغام لتنظيف زحمة تليجرام] 🚀🚀🚀
-bot.use(async (ctx, next) => {
-    const now = Math.floor(Date.now() / 1000);
-    if (ctx.message && ctx.message.date) {
-        if (now - ctx.message.date > 30) return; // مسح أي رسالة أقدم من 30 ثانية
-    }
-    if (ctx.callbackQuery && ctx.callbackQuery.message && ctx.callbackQuery.message.date) {
-        if (now - ctx.callbackQuery.message.date > 30) return; // مسح أي كول باك قديم
-    }
-    return await next();
-});
 
 bot.catch((err, ctx) => {
     console.error(`Ooops, encountered an error for ${ctx.updateType}`, err);
@@ -268,15 +242,6 @@ function checkAndSendDailyReport() {
     } catch(e) {}
 }
 
-setInterval(() => {
-    try {
-        if (!ADMIN_CHANNEL_ID || ADMIN_CHANNEL_ID === '') return;
-        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId }, null, 2); 
-        const buffer = Buffer.from(dbDump, 'utf-8');
-        bot.telegram.sendDocument(ADMIN_CHANNEL_ID, { source: buffer, filename: `XProStore_Backup_${new Date().toISOString().split('T')[0]}.json` }, { caption: `📦 نسخة احتياطية تلقائية لقاعدة البيانات\n📅 التاريخ: ${new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}` }).catch(()=>{});
-    } catch (e) { console.error("Backup Error:", e); }
-}, 24 * 60 * 60 * 1000);
-
 function initUser(userId) {
   try {
     const idStr = String(userId);
@@ -312,7 +277,6 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 إعداد المزودين الـ 3 الأصلين فقط (Xpro - ZFour - Cupponhub)
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
@@ -2423,14 +2387,17 @@ bot.on('text', async (ctx, next) => {
             if (state === 'WAIT_SEARCH_STOCK') prefix = 'addstock_';
 
             let buttons = results.slice(0, 15).map(srv => {
-                return [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ` (${srv.providerSource})`, prefix + srv.id)]
+                return [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ` (${srv.providerSource})`, prefix + srv.internal_id)]
             });
             buttons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
             return await ctx.reply('🔍 اختر المنتج من القائمة:', Markup.inlineKeyboard(buttons));
         }
 
         if (state.startsWith('WAIT_SET_MARKUP_')) {
-            const srvId = String(state.split('WAIT_SET_MARKUP_')[1]);
+            const srvInternalId = String(state.split('WAIT_SET_MARKUP_')[1]);
+            const srv = cachedServices.find(s => s.internal_id === srvInternalId);
+            if (!srv) return await ctx.reply('❌ الخدمة غير موجودة.');
+            const srvId = srv.id;
 
             if (text === 'حذف') {
                 delete customProductMarkups[srvId];
@@ -2449,59 +2416,11 @@ bot.on('text', async (ctx, next) => {
             return await ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: <b>${percent}%</b>\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
-        if (state.startsWith('WAIT_SET_FIXED_')) {
-            const srvId = String(state.split('WAIT_SET_FIXED_')[1]);
-
-            if (text === 'إلغاء' || text === 'رجوع') {
-                delete botStates.adminInput[userId];
-                saveDatabase();
-                await showAdminPanel(ctx);
-                return;
-            } else if (text === 'حذف') {
-                delete fixedPrices[srvId];
-                delete botStates.adminInput[userId];
-                saveDatabase();
-                logAdminAction(userId, `إلغاء السعر الثابت للمنتج ${srvId}`);
-                await ctx.reply('✅ تم مسح السعر الثابت! المنتج سيعود لاستخدام نسبة الربح.').catch(()=>{});
-            } else {
-                const price = parseFloat(text);
-                if (isNaN(price) || price < 0) {
-                    return await ctx.reply('❌ يرجى إدخال رقم صحيح موجب أو كلمة "حذف" أو "رجوع".').catch(()=>{});
-                }
-                fixedPrices[srvId] = price;
-                delete botStates.adminInput[userId];
-                saveDatabase();
-                logAdminAction(userId, `تحديد سعر ثابت للمنتج ${srvId} بـ ${price} جنيه`);
-                await ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: <b>${price} EGP</b>`, {parse_mode: 'HTML'}).catch(()=>{});
-            }
-
-            const catIndex = botStates.lastAdminCatFixed ? botStates.lastAdminCatFixed[userId] : null;
-            if (catIndex !== undefined && catIndex !== null && botStates.adminTempCats && botStates.adminTempCats[userId]) {
-                const selectedCategory = botStates.adminTempCats[userId][catIndex];
-                if (cachedServices.length === 0) await backgroundServiceUpdate();
-                const categoryServices = cachedServices.filter(s => {
-                    let cat = getServiceCategory(s);
-                    return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
-                });
-
-                let buttons = categoryServices.map(srv => {
-                    const fp = fixedPrices[String(srv.id)];
-                    const prefix = fp ? `[${fp}ج] ` : '⏳ ';
-                    let btnText = prefix + (srv.name_ar || srv.name || srv.title);
-                    if (btnText.length > 40) btnText = btnText.substring(0, 38) + '..'; 
-                    return [Markup.button.callback(btnText, `setfixed_${srv.id}`)];
-                });
-                buttons.push([Markup.button.callback('🔙 رجوع لأقسام الأسعار', 'admin_fixed_price')]);
-
-                return await ctx.reply(`💲 خدمات قسم <b>${selectedCategory}</b>:\n\nاضغط على أي خدمة لتحديد سعر ثابت لها:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
-            } else {
-                await showAdminPanel(ctx);
-                return;
-            }
-        }
-
         if (state.startsWith('WAIT_ADD_STOCK_')) {
-            const srvId = String(state.split('WAIT_ADD_STOCK_')[1]);
+            const srvInternalId = String(state.split('WAIT_ADD_STOCK_')[1]);
+            const srv = cachedServices.find(s => s.internal_id === srvInternalId);
+            if (!srv) return await ctx.reply('❌ الخدمة غير موجودة.');
+            const srvId = srv.id;
 
             if (text === 'إلغاء' || text === 'رجوع') {
                 delete botStates.adminInput[userId];
@@ -2684,23 +2603,13 @@ bot.on('text', async (ctx, next) => {
   }
 });
 
-// 🚀🚀🚀 [قلب البوت ونظام الحماية من السقوط] 🚀🚀🚀
+// 🚀🚀🚀 [نظام حماية Vercel ومنع التعليق من الجذور] 🚀🚀🚀
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
         await loadDatabase(); 
-        
-        // لو دي رسالة عادية، هنرد على Vercel بسرعة عشان البوت ما يعلقش
-        const isTelegramUpdate = req.body && req.body.update_id;
-        if (isTelegramUpdate) {
-             const processingPromise = bot.handleUpdate(req.body);
-             const timeoutPromise = new Promise(resolve => setTimeout(resolve, 3000, 'timeout'));
-             
-             await Promise.race([processingPromise, timeoutPromise]);
-             if (!res.headersSent) return res.status(200).send('OK');
-             return;
-        }
 
+        // 1. معالجة سريعة لرسائل الـ SMS
         if (req.body && req.body.secret === 'AHMED_VFCASH_100') {
             const smsText = req.body.message || '';
             if (smsText.includes('تم استلام') && smsText.includes('جنيه')) {
@@ -2728,20 +2637,32 @@ export default async function handler(req, res) {
                     }
                 }
             }
-            if (!res.headersSent) return res.status(200).send('SMS Processed Successfully');
-            return;
+            return res.status(200).send('SMS Processed Successfully');
         }
 
+        // 2. معالجة أوامر تليجرام بنظام حماية من الوقوع (Timeout Promise)
+        // Vercel بيدينا 10 ثواني، احنا هندي البوت 8 ثواني بالظبط، لو مخلصش هيفصل بأمان من غير ما يقع.
+        if (req.body && req.body.update_id) {
+            const processUpdate = bot.handleUpdate(req.body);
+            const timeout = new Promise((resolve) => setTimeout(resolve, 8000, 'timeout'));
+            
+            await Promise.race([processUpdate, timeout]);
+        }
+
+        // 3. حفظ أي بيانات متعطلة في قاعدة البيانات
         if (pendingSaves.length > 0) {
             const saves = [...pendingSaves];
             pendingSaves = []; 
             await Promise.allSettled(saves);
         }
         
+        // 4. الرد النهائي والأخير على تليجرام عشان يمسح الرسالة من الطابور
         if (!res.headersSent) res.status(200).send('OK');
+
     } catch (e) {
-        console.error('Vercel Handler General Error:', e);
-        if (!res.headersSent) res.status(200).send('OK');
+        console.error('Vercel Handler Error:', e);
+        // حتى لو حصل خطأ قاتل، هنرد على تليجرام بـ OK عشان ميعلقش
+        if (!res.headersSent) res.status(200).send('OK'); 
     }
   } else {
     res.status(200).send('Bot is running on Vercel with MongoDB! 🚀');
