@@ -163,24 +163,23 @@ function saveDatabase() {
     } catch (e) {}
 }
 
-const PORT = 3000;
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.write('البوت يعمل بكفاءة وقاعدة البيانات السحابية متصلة 🚀');
-    res.end();
-});
-server.listen(PORT, '0.0.0.0', () => {
-    setInterval(() => { http.get(`http://localhost:${PORT}`, (res) => {}).on('error', (err) => {}); }, 4 * 60 * 1000); 
-}).on('error', (err) => {});
-
-process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err); });
-process.on('unhandledRejection', (reason, promise) => { console.error('Unhandled Rejection:', reason); });
-
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 
-// 🛡️ حماية البوت من الوقوع بسبب أي أخطاء برمجية
+// 🚀🚀🚀 [نظام كاسحة الألغام] 🚀🚀🚀
+// هذا الكود يمنع البوت من التعليق بسبب زحمة رسائل تليجرام القديمة
+bot.use(async (ctx, next) => {
+    if (ctx.message && ctx.message.date) {
+        const now = Math.floor(Date.now() / 1000);
+        // تجاهل أي رسالة مر عليها أكثر من 60 ثانية لتفريغ الطابور
+        if (now - ctx.message.date > 60) {
+            return; 
+        }
+    }
+    return await next();
+});
+
 bot.catch((err, ctx) => {
     console.error(`Ooops, encountered an error for ${ctx.updateType}`, err);
 });
@@ -257,15 +256,6 @@ function checkAndSendDailyReport() {
     } catch(e) {}
 }
 
-setInterval(() => {
-    try {
-        if (!ADMIN_CHANNEL_ID || ADMIN_CHANNEL_ID === '') return;
-        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId }, null, 2); 
-        const buffer = Buffer.from(dbDump, 'utf-8');
-        bot.telegram.sendDocument(ADMIN_CHANNEL_ID, { source: buffer, filename: `XProStore_Backup_${new Date().toISOString().split('T')[0]}.json` }, { caption: `📦 نسخة احتياطية تلقائية لقاعدة البيانات\n📅 التاريخ: ${new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}` }).catch(()=>{});
-    } catch (e) { console.error("Backup Error:", e); }
-}, 24 * 60 * 60 * 1000);
-
 function initUser(userId) {
   try {
     const idStr = String(userId);
@@ -301,16 +291,14 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 إعداد المزودين הـ 3 
+// 🌐 إعداد المزودين الـ 3
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
-
-// 🛡️ تحديد الـ Timeout لـ 4000 فقط لحماية Vercel من التهنيج وقفل البوت
 const API_KEY_4 = process.env.PROVIDER4_API_KEY || 'vbr_live_5da642c3da__Kxebdst1Oini_PHpGBY8urPLZXp5CzO2iy8tSNumQU';
 const apiClient4 = axios.create({ 
     baseURL: 'https://web-production-1c7b1.up.railway.app/api/reseller', 
     headers: { 'Authorization': 'Bearer ' + API_KEY_4, 'X-API-Key': API_KEY_4, 'Content-Type': 'application/json' }, 
-    timeout: 4000 // تم التخفيض لمنع Vercel Crash
+    timeout: 4000 // 🛡️ تم التخفيض لمنع Vercel Crash
 });
 
 function generateStableId(nameStr) {
@@ -507,6 +495,7 @@ async function fetchAllServices() {
     return services;
 }
 
+// 🛡️ دالة السحب في الخلفية لعدم تعطيل البوت
 async function backgroundServiceUpdate() {
     if (isFetchingServices) return;
     isFetchingServices = true;
@@ -593,9 +582,11 @@ async function processBuyAction(ctx, userId, srvInternalId) {
          if (!cachedServices || cachedServices.length === 0) {
              if (ctx.callbackQuery) await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
              else await ctx.reply('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
-             await backgroundServiceUpdate();
+             
+             // 🛡️ سحب لا يعطل المعالجة
+             backgroundServiceUpdate();
+             return;
          }
-         if (!cachedServices) cachedServices = [];
          
          const srv = cachedServices.find(s => s.internal_id === srvInternalId || String(s.id) === String(srvInternalId));
          
@@ -849,16 +840,14 @@ async function showCategories(ctx) {
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return await ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
     if (cachedServices.length === 0) {
-        if(ctx.callbackQuery) await ctx.editMessageText('⏳ جاري ربط السيرفرات السريعة...').catch(()=>{});
-        else await ctx.reply('⏳ جاري ربط السيرفرات السريعة...').catch(()=>{});
-        await backgroundServiceUpdate();
-    } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) { backgroundServiceUpdate(); }
-
-    if (cachedServices.length === 0) {
-        const errorMsg = '⚠️ تعذر جلب الخدمات حالياً، يرجى المحاولة بعد قليل.';
-        const retryKeyboard = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
-        if(ctx.callbackQuery) return await ctx.editMessageText(errorMsg, retryKeyboard).catch(()=>{});
-        else return await ctx.reply(errorMsg, retryKeyboard).catch(()=>{});
+        // 🛡️ استدعاء غير معرقل (Non-blocking) للحفاظ على سرعة البوت وعدم الإغلاق
+        const msg = '⏳ جاري ربط السيرفرات لأول مرة... يرجى المحاولة بعد قليل.';
+        if (ctx.callbackQuery) ctx.editMessageText(msg).catch(()=>{});
+        else ctx.reply(msg).catch(()=>{});
+        backgroundServiceUpdate();
+        return;
+    } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) { 
+        backgroundServiceUpdate(); 
     }
 
     let fetchedCategories = [];
@@ -922,8 +911,8 @@ bot.action('admin_force_refresh', async (ctx) => {
     ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
     try {
         isFetchingServices = false;
-        await backgroundServiceUpdate();
-        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين الثلاثة في ذاكرة البوت.', { parse_mode: 'HTML' }).catch(()=>{});
+        backgroundServiceUpdate(); // 🛡️ سحب غير معرقل
+        await ctx.reply('✅ **تم بدء التحديث!**\nسيتم سحب الخدمات من المزودين الثلاثة في الخلفية.', { parse_mode: 'HTML' }).catch(()=>{});
     } catch (e) { await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{}); }
 });
 
@@ -1035,7 +1024,7 @@ async function renderProviderServices(ctx, providerNum, actionType, page, isText
         if (!isTextContext && ctx.callbackQuery) {
             await ctx.editMessageText('⏳ لحظات، جاري جلب الخدمات...').catch(()=>{});
         }
-        await backgroundServiceUpdate();
+        backgroundServiceUpdate();
     }
     const providerId = `api${providerNum}`;
     let services = cachedServices.filter(s => s.providerSource === providerId);
@@ -1131,7 +1120,7 @@ bot.action(/^prv_setfixed_(.+)_(\d+)_(\d+)$/, async (ctx) => {
 bot.action(/^admin_services_api_pg_(\d+)$/, async (ctx) => {
     ctx.answerCbQuery('⏳ جاري جلب الخدمات...').catch(()=>{});
     try {
-        if (!cachedServices || cachedServices.length === 0) await backgroundServiceUpdate();
+        if (!cachedServices || cachedServices.length === 0) backgroundServiceUpdate();
         const visibleServices = cachedServices.filter(s => !hiddenServices.includes(String(s.id)));
         if (visibleServices.length === 0) return await ctx.editMessageText('❌ لا توجد خدمات ظاهرة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
 
@@ -1552,7 +1541,7 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
-// 🛡️ التعديل هنا: إضافة _1 كصفحة افتراضية لو متكتبتش
+// 🛡️ التعديل الجذري في الأقسام لحل مشكلة عدم الفتح بسبب عدم تطابق الـ Regex
 bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1560,7 +1549,7 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
     if (usersDb[userId].isBanned) return;
 
     const catIndex = parseInt(ctx.match[1]);
-    const page = parseInt(ctx.match[2]) || 1; // 🛡️ لو مفيش رقم صفحة، اعتبرها الصفحة 1
+    const page = parseInt(ctx.match[2]) || 1; // لو مفيش رقم صفحة، اعتبرها الصفحة 1
     const selectedCategory = usersDb[userId].tempCategories ? usersDb[userId].tempCategories[catIndex] : null;
     
     if (!selectedCategory) { 
@@ -1568,8 +1557,10 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
     }
 
     if (cachedServices.length === 0) {
-        await ctx.editMessageText('⏳ جاري تحميل الخدمات السريعة...').catch(()=>{});
-        await backgroundServiceUpdate();
+        // لو مفيش خدمات، نبلغ العميل ونطلب في الخلفية بدون ما نقفل البوت
+        await ctx.editMessageText('⏳ جاري تحميل الخدمات السريعة... يرجى الانتظار ثواني والضغط مرة أخرى.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
+        backgroundServiceUpdate();
+        return;
     } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
         backgroundServiceUpdate(); 
     }
@@ -1757,7 +1748,7 @@ async function publishPriceDrop(ctx, userId, state, fileId) {
         return await ctx.reply('❌ يرجى تحديد قناة المبيعات أولاً من لوحة التحكم لنشر الإعلان.');
     }
 
-    if (cachedServices.length === 0) await backgroundServiceUpdate();
+    if (cachedServices.length === 0) backgroundServiceUpdate();
     const srv = cachedServices.find(s => String(s.id) === srvId);
     if (!srv) return await ctx.reply('❌ الخدمة غير موجودة.');
 
@@ -1943,7 +1934,7 @@ bot.on('text', async (ctx, next) => {
         try {
              if (cachedServices.length === 0) {
                  await ctx.reply('⏳ جاري التحديث السريع للأسعار...').catch(()=>{});
-                 await backgroundServiceUpdate(); 
+                 backgroundServiceUpdate(); 
              } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
                  backgroundServiceUpdate(); 
              }
@@ -2203,7 +2194,7 @@ bot.on('text', async (ctx, next) => {
             const query = text.toLowerCase();
             if (!cachedServices || cachedServices.length === 0) cachedServices = await fetchAllServices();
             const results = cachedServices.filter(s => (s.name_ar || s.name || s.title || '').toLowerCase().includes(query));
-            if(results.length === 0) return await ctx.reply('❌ لا توجد نتائج مطابقة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+            if(results.length === 0) return await ctx.reply('❌ لا توجد نتائج مطابقة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]])});
             
             let buttons = results.slice(0, 15).map(srv => {
                 return [Markup.button.callback((srv.name_ar || srv.name || srv.title), `pdsel_${srv.id}`)]
@@ -2511,7 +2502,7 @@ bot.on('text', async (ctx, next) => {
                 delete botStates.adminInput[userId];
                 saveDatabase();
                 logAdminAction(userId, 'مسح جميع نسب الأقسام المخصصة');
-                return await ctx.reply('✅ تم مسح جميع النسب المخصصة للأقسام!\nكل الأقسام ستتبع الآن النسبة العامة للمتجر.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+                return await ctx.reply('✅ تم مسح جميع النسب المخصصة للأقسام!\nكل الأقسام ستتبع الآن النسبة العامة للمتجر.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
 
             const lines = text.split('\n'); let updatedCount = 0; let reportMsg = '📊 **تقرير تحديث نسب الأقسام:**\n\n';
@@ -2550,7 +2541,7 @@ bot.on('text', async (ctx, next) => {
             }
 
             if (isNaN(discountVal) || discountVal <= 0 || discountVal > 100 || isNaN(hoursVal) || hoursVal <= 0) {
-                return await ctx.reply('❌ أرقام غير صحيحة. يرجى إدخال نسبة بين 1 و 100 وعدد ساعات صحيح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+                return await ctx.reply('❌ أرقام غير صحيحة. يرجى إدخال نسبة بين 1 و 100 وعدد ساعات صحيح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
             
             flashSale = { active: true, discount: discountVal, expiresAt: Date.now() + (hoursVal * 60 * 60 * 1000) }; 
@@ -2630,16 +2621,16 @@ bot.on('text', async (ctx, next) => {
   }
 });
 
-// 🛡️ التعديل الجذري هنا لفك تعليقة تليجرام وحماية السيرفر من السقوط
+// 🚀🚀🚀 [قلب البوت ونظام الحماية من السقوط] 🚀🚀🚀
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
-        // 1️⃣ نرد على تليجرام بـ OK فوراً في خلال 3.5 ثواني عشان ميكررش الرسالة ويفك الزحمة
+        // 🛡️ الموتور الأساسي: نرد على تليجرام فوراً بعد ثانيتين ونص عشان يفك الطابور وميعلقش تاني!
         setTimeout(() => {
             if (!res.headersSent) {
                 res.status(200).send('OK');
             }
-        }, 3500);
+        }, 2500);
 
         await loadDatabase(); 
 
@@ -2674,7 +2665,6 @@ export default async function handler(req, res) {
             return;
         }
 
-        // 2️⃣ معالجة أمر تليجرام بشكل طبيعي
         await bot.handleUpdate(req.body); 
 
         if (pendingSaves.length > 0) {
