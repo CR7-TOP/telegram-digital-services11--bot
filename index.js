@@ -301,16 +301,16 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 إعداد المزودين הـ 3 
+// 🌐 إعداد المزودين الـ 3
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 
-// 🛡️ تحديد الـ Timeout لـ 4000 فقط لحماية Vercel من التهنيج وقفل البوت
+// 🛡️ تم تقليل الـ Timeout لـ 4500 لمنع Vercel من التهنيج وقفل البوت
 const API_KEY_4 = process.env.PROVIDER4_API_KEY || 'vbr_live_5da642c3da__Kxebdst1Oini_PHpGBY8urPLZXp5CzO2iy8tSNumQU';
 const apiClient4 = axios.create({ 
     baseURL: 'https://web-production-1c7b1.up.railway.app/api/reseller', 
     headers: { 'Authorization': 'Bearer ' + API_KEY_4, 'X-API-Key': API_KEY_4, 'Content-Type': 'application/json' }, 
-    timeout: 4000 // تم التخفيض لمنع Vercel Crash
+    timeout: 4500 
 });
 
 function generateStableId(nameStr) {
@@ -876,6 +876,7 @@ async function showCategories(ctx) {
     let buttons = [];
     for (let i = 0; i < categories.length; i += 2) {
       const row = [];
+      // 🛡️ تم تصحيح الـ Callback Data هنا لتتطابق مع الـ Regex الجديد
       row.push(Markup.button.callback((categoryEmojis[categories[i]] || '📦') + ' ' + categories[i], 'cat_' + i + '_1'));
       if (i + 1 < categories.length) row.push(Markup.button.callback((categoryEmojis[categories[i+1]] || '📦') + ' ' + categories[i+1], 'cat_' + (i + 1) + '_1'));
       buttons.push(row);
@@ -916,15 +917,6 @@ bot.action('main_menu', async (ctx) => {
       ctx.deleteMessage().catch(()=>{}); 
       await ctx.reply('القائمة الرئيسية 🚀', getMainMenu()).catch(()=>{});
     } catch(e){}
-});
-
-bot.action('admin_force_refresh', async (ctx) => {
-    ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
-    try {
-        isFetchingServices = false;
-        await backgroundServiceUpdate();
-        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين الثلاثة في ذاكرة البوت.', { parse_mode: 'HTML' }).catch(()=>{});
-    } catch (e) { await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{}); }
 });
 
 async function showAdminPanel(ctx) {
@@ -1243,6 +1235,15 @@ bot.action('admin_set_force_sub', async (ctx) => {
     await ctx.editMessageText('🔒 **إضافة قنوات الاشتراك الإجباري:**\n\nيمكنك إضافة أكثر من قناة بالدخول لهذا الإعداد وإرسالهم واحدة تلو الأخرى.\n\n✨ **أرسل رابط القناة مباشرة** (سواء كانت عامة أو خاصة البوت سيتعرف عليها).\nمثال: <code>https://t.me/AhmedStore</code>\n\n⚠️ **تنبيه:** يجب رفع البوت كـ(مشرف) في القناة أولاً.\n\n🛑 لإلغاء وحذف جميع القنوات أرسل كلمة: <code>إيقاف</code>', { parse_mode: 'HTML', disable_web_page_preview: true, ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{});
 });
 
+bot.action('admin_force_refresh', async (ctx) => {
+    ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
+    try {
+        isFetchingServices = false;
+        await backgroundServiceUpdate();
+        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين في ذاكرة البوت.', { parse_mode: 'HTML' }).catch(()=>{});
+    } catch (e) { await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{}); }
+});
+
 
 bot.action('admin_ad_stats', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
@@ -1552,15 +1553,15 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
-// 🛡️ التعديل هنا: إضافة _1 كصفحة افتراضية لو متكتبتش
-bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
+// 🛡️ تم تصحيح الـ Regex هنا ليطابق الأزرار الجديدة ذات الصفحات
+bot.action(/^cat_(\d+)_(\d+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
     const userId = String(ctx.from.id); initUser(userId);
     if (usersDb[userId].isBanned) return;
 
     const catIndex = parseInt(ctx.match[1]);
-    const page = parseInt(ctx.match[2]) || 1; // 🛡️ لو مفيش رقم صفحة، اعتبرها الصفحة 1
+    const page = parseInt(ctx.match[2]) || 1;
     const selectedCategory = usersDb[userId].tempCategories ? usersDb[userId].tempCategories[catIndex] : null;
     
     if (!selectedCategory) { 
@@ -2511,7 +2512,7 @@ bot.on('text', async (ctx, next) => {
                 delete botStates.adminInput[userId];
                 saveDatabase();
                 logAdminAction(userId, 'مسح جميع نسب الأقسام المخصصة');
-                return await ctx.reply('✅ تم مسح جميع النسب المخصصة للأقسام!\nكل الأقسام ستتبع الآن النسبة العامة للمتجر.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+                return await ctx.reply('✅ تم مسح جميع النسب المخصصة للأقسام!\nكل الأقسام ستتبع الآن النسبة العامة للمتجر.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
 
             const lines = text.split('\n'); let updatedCount = 0; let reportMsg = '📊 **تقرير تحديث نسب الأقسام:**\n\n';
@@ -2550,7 +2551,7 @@ bot.on('text', async (ctx, next) => {
             }
 
             if (isNaN(discountVal) || discountVal <= 0 || discountVal > 100 || isNaN(hoursVal) || hoursVal <= 0) {
-                return await ctx.reply('❌ أرقام غير صحيحة. يرجى إدخال نسبة بين 1 و 100 وعدد ساعات صحيح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+                return await ctx.reply('❌ أرقام غير صحيحة. يرجى إدخال نسبة بين 1 و 100 وعدد ساعات صحيح.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             }
             
             flashSale = { active: true, discount: discountVal, expiresAt: Date.now() + (hoursVal * 60 * 60 * 1000) }; 
@@ -2630,64 +2631,61 @@ bot.on('text', async (ctx, next) => {
   }
 });
 
-// 🛡️ التعديل الجذري هنا لفك تعليقة تليجرام وحماية السيرفر من السقوط
+// 🛡️ نظام حماية Vercel (Loop Breaker)
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
-        // 1️⃣ نرد على تليجرام بـ OK فوراً في خلال 3.5 ثواني عشان ميكررش الرسالة ويفك الزحمة
-        setTimeout(() => {
-            if (!res.headersSent) {
-                res.status(200).send('OK');
-            }
-        }, 3500);
-
         await loadDatabase(); 
+    } catch (e) {
+        return res.status(500).send('DB Error'); 
+    }
 
-        if (req.body && req.body.secret === 'AHMED_VFCASH_100') {
-            const smsText = req.body.message || '';
-            if (smsText.includes('تم استلام') && smsText.includes('جنيه')) {
-                const amountMatch = smsText.match(/مبلغ\s*([\d\.]+)\s*جنيه/);
-                const phoneMatch = smsText.match(/01[0125][0-9]{8}/);
+    if (req.body && req.body.secret === 'AHMED_VFCASH_100') {
+        const smsText = req.body.message || '';
+        if (smsText.includes('تم استلام') && smsText.includes('جنيه')) {
+            const amountMatch = smsText.match(/مبلغ\s*([\d\.]+)\s*جنيه/);
+            const phoneMatch = smsText.match(/01[0125][0-9]{8}/);
 
-                if (amountMatch && phoneMatch) {
-                    const receivedAmount = parseFloat(amountMatch[1]);
-                    const senderPhone = phoneMatch[1];
-                    const pendingIndex = pendingDeposits.findIndex(p => p.senderNumber === senderPhone && parseFloat(p.amount) === receivedAmount);
+            if (amountMatch && phoneMatch) {
+                const receivedAmount = parseFloat(amountMatch[1]);
+                const senderPhone = phoneMatch[1];
+                const pendingIndex = pendingDeposits.findIndex(p => p.senderNumber === senderPhone && parseFloat(p.amount) === receivedAmount);
 
-                    if (pendingIndex !== -1) {
-                        const reqData = pendingDeposits[pendingIndex];
-                        const targetUserId = reqData.userId;
-                        
-                        if(usersDb[targetUserId]) {
-                            usersDb[targetUserId].balance += receivedAmount;
-                            usersDb[targetUserId].walletHistory.push({ type: 'شحن فودافون كاش (آلي)', amount: receivedAmount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
-                            pendingDeposits.splice(pendingIndex, 1);
-                            saveDatabase();
+                if (pendingIndex !== -1) {
+                    const reqData = pendingDeposits[pendingIndex];
+                    const targetUserId = reqData.userId;
+                    
+                    if(usersDb[targetUserId]) {
+                        usersDb[targetUserId].balance += receivedAmount;
+                        usersDb[targetUserId].walletHistory.push({ type: 'شحن فودافون كاش (آلي)', amount: receivedAmount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
+                        pendingDeposits.splice(pendingIndex, 1);
+                        saveDatabase();
 
-                            bot.telegram.sendMessage(targetUserId, `🎉 **تم تأكيد الدفع آلياً بنجاح!**\n💰 تمت إضافة: *${receivedAmount} EGP* لمحفظتك.\n✅ رصيدك الحالي: *${usersDb[targetUserId].balance.toFixed(2)} EGP*\n\nتقدر دلوقتي تشتري أي خدمة من المتجر 🚀`, { parse_mode: 'Markdown' }).catch(()=>{});
-                            notifyAdmin(`🤖 <b>تأكيد دفع آلي ناجح! (بدون تدخلك)</b>\n\n👤 المستخدم: <code>${reqData.userUid}</code>\n💰 المبلغ: <b>${receivedAmount} EGP</b>\n📱 من رقم: <code>${senderPhone}</code>\n✅ تمت إضافة الرصيد للعميل بنجاح.`);
-                        }
+                        bot.telegram.sendMessage(targetUserId, `🎉 **تم تأكيد الدفع آلياً بنجاح!**\n💰 تمت إضافة: *${receivedAmount} EGP* لمحفظتك.\n✅ رصيدك الحالي: *${usersDb[targetUserId].balance.toFixed(2)} EGP*\n\nتقدر دلوقتي تشتري أي خدمة من المتجر 🚀`, { parse_mode: 'Markdown' }).catch(()=>{});
+                        notifyAdmin(`🤖 <b>تأكيد دفع آلي ناجح! (بدون تدخلك)</b>\n\n👤 المستخدم: <code>${reqData.userUid}</code>\n💰 المبلغ: <b>${receivedAmount} EGP</b>\n📱 من رقم: <code>${senderPhone}</code>\n✅ تمت إضافة الرصيد للعميل بنجاح.`);
                     }
                 }
             }
-            if (!res.headersSent) return res.status(200).send('SMS Processed Successfully');
-            return;
         }
-
-        // 2️⃣ معالجة أمر تليجرام بشكل طبيعي
-        await bot.handleUpdate(req.body); 
-
-        if (pendingSaves.length > 0) {
-            const saves = [...pendingSaves];
-            pendingSaves = []; 
-            await Promise.allSettled(saves);
-        }
-        
-        if (!res.headersSent) res.status(200).send('OK');
-    } catch (e) {
-        console.error('Vercel Handler General Error:', e);
-        if (!res.headersSent) res.status(200).send('OK');
+        return res.status(200).send('SMS Processed Successfully');
     }
+
+    // 🛡️ إنهاء أي عملية تتجاوز 7 ثواني لحماية البوت من التعليق
+    const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('TIMEOUT'), 7000));
+    const updatePromise = bot.handleUpdate(req.body).then(() => 'DONE').catch((err) => {
+        console.error('Update Error:', err);
+        return 'ERROR';
+    });
+
+    await Promise.race([updatePromise, timeoutPromise]);
+
+    if (pendingSaves.length > 0) {
+        const saves = [...pendingSaves];
+        pendingSaves = []; 
+        await Promise.allSettled(saves);
+    }
+    
+    res.status(200).send('OK');
   } else {
     res.status(200).send('Bot is running on Vercel with MongoDB! 🚀');
   }
