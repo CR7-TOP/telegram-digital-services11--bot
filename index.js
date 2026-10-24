@@ -162,15 +162,26 @@ function saveDatabase() {
     } catch (e) {}
 }
 
+const PORT = 3000;
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.write('البوت يعمل بكفاءة وقاعدة البيانات السحابية متصلة 🚀');
+    res.end();
+});
+server.listen(PORT, '0.0.0.0', () => {
+    setInterval(() => { http.get(`http://localhost:${PORT}`, (res) => {}).on('error', (err) => {}); }, 4 * 60 * 1000); 
+}).on('error', (err) => {});
+
+process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err); });
+process.on('unhandledRejection', (reason, promise) => { console.error('Unhandled Rejection:', reason); });
+
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 
-// 🚀 فلتر الرسائل المعدل لمنع الاختناق وتخطي فروق التوقيت
 bot.use(async (ctx, next) => {
     try {
         const now = Math.floor(Date.now() / 1000);
-        // تم زيادة المدة لـ 5 دقائق (300 ثانية) لتفادي فرق توقيت سيرفر Vercel
         if (ctx.message && ctx.message.date) {
             if (now - ctx.message.date > 300) return; 
         }
@@ -195,7 +206,6 @@ bot.use(async (ctx, next) => {
 const categoryCacheTime = 300000; 
 let lastCategoriesFetchTime = 0;
 let cachedServices = [];
-let isFetchingServices = false;
 
 function clearUserStates(userId) {
     try {
@@ -233,7 +243,6 @@ function notifyAdmin(text) {
     } catch(e) {}
 }
 
-// 🚀 تم نقل الفحص اليومي خارج الميدل وير لمنع ثقل السيرفر
 function checkAndSendDailyReport() {
     try {
         const now = new Date();
@@ -259,7 +268,7 @@ function checkAndSendDailyReport() {
         }
     } catch(e) {}
 }
-setInterval(checkAndSendDailyReport, 60 * 60 * 1000); // يفحص كل ساعة بدل كل رسالة
+setInterval(checkAndSendDailyReport, 60 * 60 * 1000); 
 
 function initUser(userId) {
   try {
@@ -296,7 +305,6 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 3 مزودين فقط
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
@@ -493,14 +501,8 @@ async function fetchAllServices() {
     return services;
 }
 
+// 🚀 دالة تحديث الخدمات المباشرة (بدون قفل يعلق السيرفر)
 async function backgroundServiceUpdate() {
-    if (isFetchingServices) {
-        while(isFetchingServices) {
-            await new Promise(resolve => setTimeout(resolve, 300));
-        }
-        return;
-    }
-    isFetchingServices = true;
     try {
         const services = await fetchAllServices();
         if (services && services.length > 0) {
@@ -508,9 +510,7 @@ async function backgroundServiceUpdate() {
             lastCategoriesFetchTime = Date.now();
         }
     } catch (e) {
-        console.error(e);
-    } finally {
-        isFetchingServices = false;
+        console.error("Update Error:", e);
     }
 }
 
@@ -584,7 +584,6 @@ async function processBuyAction(ctx, userId, srvInternalId) {
          if (!cachedServices || cachedServices.length === 0) {
              if (ctx.callbackQuery) await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
              else await ctx.reply('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
-             
              await backgroundServiceUpdate();
          }
          
@@ -623,7 +622,6 @@ async function processBuyAction(ctx, userId, srvInternalId) {
     }
 }
 
-// 🚀 حماية أمر البداية من السقوط
 bot.start(async (ctx) => {
   try {
     const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
@@ -652,9 +650,7 @@ bot.start(async (ctx) => {
         }
     }
     await ctx.reply('أهلاً بك مجدداً في متجر أحمد! 🚀\n🆔 رقم الحساب الفريد الخاص بك: `' + usersDb[userId].uid + '`', { parse_mode: 'Markdown', ...getMainMenu() }).catch(()=>{});
-  } catch (err) {
-      console.log("Start command error:", err);
-  }
+  } catch (err) {}
 });
 
 bot.action('check_sub', async (ctx) => {
@@ -835,7 +831,6 @@ bot.hears(/بحث عن خدمة/, async (ctx) => {
     } catch(e){}
 });
 
-// 🚀 زر الأقسام والخدمات، يعرض فوراً دون تعليق
 async function showCategories(ctx) {
   const userId = String(ctx.from.id);
   try {
@@ -856,8 +851,9 @@ async function showCategories(ctx) {
     if (cachedServices.length === 0) {
         const errorMsg = '⚠️ تعذر جلب الخدمات حالياً، يرجى المحاولة بعد قليل.';
         const retryKeyboard = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
-        if(loadingMsg) return await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, errorMsg, retryKeyboard).catch(()=>{});
-        return await ctx.reply(errorMsg, retryKeyboard).catch(()=>{});
+        if(loadingMsg && !ctx.callbackQuery) ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(()=>{});
+        if(ctx.callbackQuery) return await ctx.editMessageText(errorMsg, retryKeyboard).catch(()=>{});
+        else return await ctx.reply(errorMsg, retryKeyboard).catch(()=>{});
     }
 
     let fetchedCategories = [];
@@ -885,7 +881,10 @@ async function showCategories(ctx) {
     if (!usersDb[userId].tempCategories) usersDb[userId].tempCategories = [];
     usersDb[userId].tempCategories = categories; saveDatabase();
 
-    if(loadingMsg) return await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, 'اختر الفئة:', keyboard).catch(()=>{});
+    if (loadingMsg && !ctx.callbackQuery) {
+        ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(()=>{});
+    }
+
     if(ctx.callbackQuery) return await ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{});
     else return await ctx.reply('اختر الفئة:', keyboard).catch(()=>{});
   } catch (error) {
@@ -1552,7 +1551,7 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
-// 🚀 الأقسام هتفتح فوراً ومستحيل تعلق تاني
+// 🚀 عرض الخدمات فوراً في الأقسام
 bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1567,9 +1566,9 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
         return await ctx.editMessageText('⚠️ يرجى تحديث الأقسام من القائمة الرئيسية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
     }
 
-    // الانتظار الإجباري عشان نحمل الخدمات قبل ما نعرض الزرار
+    // 🚀 الانتظار حتى الانتهاء من التحديث، مفيش تعليق هنا
     if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-        await ctx.editMessageText('⏳ لحظات جاري تحميل الخدمات...').catch(()=>{});
+        await ctx.editMessageText('⏳ جاري جلب الخدمات لحظات...').catch(()=>{});
         await backgroundServiceUpdate(); 
     }
 
@@ -1658,6 +1657,7 @@ bot.action(/^rate_(\d+)_(.+)$/, async (ctx) => {
     await ctx.editMessageText(`✅ **شكراً لتقييمك الرائع!**\nتقييمك للخدمة: ${'⭐'.repeat(stars)}\nرأيك يهمنا ويساعد العملاء الآخرين.`, {parse_mode: 'HTML'}).catch(()=>{});
 });
 
+// 🚀 المعالجة الفورية المباشرة للطلبات
 bot.action(/^buyact_(.+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1681,7 +1681,7 @@ bot.action('confirm_stock_add', async (ctx) => {
     const userId = String(ctx.from.id);
     const temp = botStates.tempStock[userId];
     
-    if (!temp) return await ctx.editMessageText('❌ انتهت صلاحية هذا الأمر أو تم تنفيذه مسبقاً.').catch(()=>{});
+    if (!temp) return await ctx.editMessageText('❌ انتهت صلاحية هذا الأمر أو تم تنفيذة مسبقاً.').catch(()=>{});
 
     const srvId = temp.srvId;
     const item = temp.itemText;
@@ -2687,10 +2687,10 @@ bot.on('text', async (ctx, next) => {
   }
 });
 
+// 🚀🚀🚀 [نظام حماية Vercel السليم 100%] 🚀🚀🚀
 export default async function handler(req, res) {
-  try {
-      if (req.method === 'POST') {
-        
+  if (req.method === 'POST') {
+    try {
         await loadDatabase(); 
 
         if (req.body && req.body.secret === 'AHMED_VFCASH_100') {
@@ -2720,10 +2720,11 @@ export default async function handler(req, res) {
                     }
                 }
             }
-            if (!res.headersSent) return res.status(200).send('SMS Processed Successfully');
-            return;
+            return res.status(200).send('SMS Processed Successfully');
         }
 
+        // 🛡️ التعديل الجذري: لا نستخدم أي Timeout هنا للـ Webhook
+        // البوت هياخد وقته بالكامل لمعالجة الأزرار والطلبات. 
         if (req.body && req.body.update_id) {
             await bot.handleUpdate(req.body);
         }
@@ -2734,14 +2735,14 @@ export default async function handler(req, res) {
             await Promise.allSettled(saves);
         }
         
-        if (!res.headersSent) return res.status(200).send('OK');
+        if (!res.headersSent) res.status(200).send('OK');
 
-      } else {
-        res.status(200).send('Bot is running on Vercel with MongoDB! 🚀');
-      }
-  } catch (e) {
-      console.error('Vercel Handler Critical Error:', e);
-      if (!res.headersSent) return res.status(200).send('OK'); 
+    } catch (e) {
+        console.error('Vercel Handler Error:', e);
+        if (!res.headersSent) res.status(200).send('OK'); 
+    }
+  } else {
+    res.status(200).send('Bot is running on Vercel with MongoDB! 🚀');
   }
 }
 
