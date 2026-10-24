@@ -53,7 +53,7 @@ let botStates = {
 
 const userRequestLocks = {};
 
-// 🛡️ دالة لتوليد كود قصير للأزرار عشان تليجرام ميعلقش
+// 🛡️ دالة توليد كود قصير للأزرار
 function getShortHash(str) {
     let hash = 0;
     const s = String(str);
@@ -78,7 +78,7 @@ function broadcastSale(serviceName, qty, price, userUid, paymentMethod, srvId, b
         let keyboard = {};
         if (srvId && botUsername && botUsername !== 'undefined') {
             keyboard = Markup.inlineKeyboard([
-                [Markup.button.url('🛒 شراء نفس المنتج', `https://t.me/${botUsername}?start=buy_auto`)]
+                [Markup.button.url('🛒 شراء نفس المنتج', `https://t.me/${botUsername}?start=buy_auto`)] 
             ]);
         }
 
@@ -163,24 +163,11 @@ function saveDatabase() {
     } catch (e) {}
 }
 
-const PORT = 3000;
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.write('البوت يعمل بكفاءة وقاعدة البيانات السحابية متصلة 🚀');
-    res.end();
-});
-server.listen(PORT, '0.0.0.0', () => {
-    setInterval(() => { http.get(`http://localhost:${PORT}`, (res) => {}).on('error', (err) => {}); }, 4 * 60 * 1000); 
-}).on('error', (err) => {});
-
-process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err); });
-process.on('unhandledRejection', (reason, promise) => { console.error('Unhandled Rejection:', reason); });
-
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 
-// 🚀🚀🚀 [نظام كاسحة الألغام لتنظيف زحمة تليجرام] 🚀🚀🚀
+// 🚀 نظام تفريغ الزحمة لمنع تليجرام من التعليق
 bot.use(async (ctx, next) => {
     const now = Math.floor(Date.now() / 1000);
     if (ctx.message && ctx.message.date) {
@@ -303,7 +290,7 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 إعداد المزودين الـ 3 الأصلين فقط
+// 🌐 إعداد المزودين الـ 3 الأصلين فقط (Xpro - ZFour - Cupponhub)
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
@@ -500,16 +487,14 @@ async function fetchAllServices() {
     return services;
 }
 
-// 🛡️ دالة مسؤولة عن جلب الخدمات بحماية لمنع التكدس
+// 🛡️ التعديل هنا: منع الإرجاع الفارغ وانتظار انتهاء السحب
 async function backgroundServiceUpdate() {
     if (isFetchingServices) {
-        // إذا كان يتم الجلب حالياً، انتظر حتى ينتهي بدلاً من التجميد
         while(isFetchingServices) {
             await new Promise(resolve => setTimeout(resolve, 300));
         }
         return;
     }
-    
     isFetchingServices = true;
     try {
         const services = await fetchAllServices();
@@ -592,22 +577,19 @@ async function processBuyAction(ctx, userId, srvInternalId) {
          initUser(userId); 
          if (!usersDb[userId] || usersDb[userId].isBanned) return;
          
-         let loadingMsg;
-         if (!cachedServices || cachedServices.length === 0) {
-             if (ctx.callbackQuery) loadingMsg = await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
-             else loadingMsg = await ctx.reply('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
+         // 🛡️ التعديل هنا: يجب انتظار التحميل بالكامل
+         if (!cachedServices || cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
+             if (ctx.callbackQuery) await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
+             else await ctx.reply('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
              
-             // 🛡️ يجب وضع Await هنا حتى تكتمل العملية
-             await backgroundServiceUpdate();
+             await backgroundServiceUpdate(); 
          }
          
          const srv = cachedServices.find(s => s.internal_id === srvInternalId || String(s.id) === String(srvInternalId));
          
          if(!srv) {
-             const errMsg = '❌ الخدمة غير متوفرة حالياً.';
-             if (ctx.callbackQuery) await ctx.editMessageText(errMsg).catch(()=>{});
-             else if (loadingMsg) await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, errMsg).catch(()=>{});
-             else await ctx.reply(errMsg).catch(()=>{});
+             if (ctx.callbackQuery) await ctx.editMessageText('❌ الخدمة غير متوفرة حالياً.').catch(()=>{});
+             else await ctx.reply('❌ الخدمة غير متوفرة حالياً.').catch(()=>{});
              return;
          }
 
@@ -847,7 +829,7 @@ bot.hears(/بحث عن خدمة/, async (ctx) => {
     } catch(e){}
 });
 
-// 🛡️ [دالة عرض الأقسام محمية من الإغلاق المبكر]
+// 🛡️ التعديل هنا: انتظار الجلب بالكامل حتى لو من القائمة الرئيسية
 async function showCategories(ctx) {
   const userId = String(ctx.from.id);
   try {
@@ -858,21 +840,18 @@ async function showCategories(ctx) {
     let loadingMsg;
     if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
         if(ctx.callbackQuery) {
-            loadingMsg = await ctx.editMessageText('⏳ جاري تحديث الخدمات السريعة... يرجى الانتظار.').catch(()=>{});
+            loadingMsg = await ctx.editMessageText('⏳ جاري تحديث الأقسام... يرجى الانتظار ثواني.').catch(()=>{});
         } else {
-            loadingMsg = await ctx.reply('⏳ جاري تحديث الخدمات السريعة... يرجى الانتظار.').catch(()=>{});
+            loadingMsg = await ctx.reply('⏳ جاري تحديث الأقسام... يرجى الانتظار ثواني.').catch(()=>{});
         }
-        
-        // 🛡️ نضع await هنا ليتم الانتظار ولا ينهار البوت
-        await backgroundServiceUpdate();
+        await backgroundServiceUpdate(); 
     }
 
     if (cachedServices.length === 0) {
         const errorMsg = '⚠️ تعذر جلب الخدمات حالياً، يرجى المحاولة بعد قليل.';
         const retryKeyboard = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
-        if(ctx.callbackQuery) return await ctx.editMessageText(errorMsg, retryKeyboard).catch(()=>{});
-        else if (loadingMsg) return await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, errorMsg, retryKeyboard).catch(()=>{});
-        else return await ctx.reply(errorMsg, retryKeyboard).catch(()=>{});
+        if(loadingMsg) return await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, errorMsg, retryKeyboard).catch(()=>{});
+        return await ctx.reply(errorMsg, retryKeyboard).catch(()=>{});
     }
 
     let fetchedCategories = [];
@@ -900,8 +879,8 @@ async function showCategories(ctx) {
     if (!usersDb[userId].tempCategories) usersDb[userId].tempCategories = [];
     usersDb[userId].tempCategories = categories; saveDatabase();
 
+    if(loadingMsg) return await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, 'اختر الفئة:', keyboard).catch(()=>{});
     if(ctx.callbackQuery) return await ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{});
-    else if (loadingMsg) return await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, 'اختر الفئة:', keyboard).catch(()=>{});
     else return await ctx.reply('اختر الفئة:', keyboard).catch(()=>{});
   } catch (error) {
     const retryBtn = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
@@ -937,8 +916,8 @@ bot.action('admin_force_refresh', async (ctx) => {
     ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
     try {
         isFetchingServices = false;
-        await backgroundServiceUpdate(); 
-        await ctx.reply('✅ **تم بدء التحديث!**\nتم سحب جميع الخدمات من المزودين بنجاح.', { parse_mode: 'HTML' }).catch(()=>{});
+        backgroundServiceUpdate(); 
+        await ctx.reply('✅ **تم بدء التحديث!**\nسيتم سحب الخدمات من المزودين الثلاثة في الخلفية.', { parse_mode: 'HTML' }).catch(()=>{});
     } catch (e) { await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{}); }
 });
 
@@ -1050,7 +1029,7 @@ async function renderProviderServices(ctx, providerNum, actionType, page, isText
         if (!isTextContext && ctx.callbackQuery) {
             await ctx.editMessageText('⏳ لحظات، جاري جلب الخدمات...').catch(()=>{});
         }
-        await backgroundServiceUpdate(); // 🛡️ محمي هنا
+        await backgroundServiceUpdate();
     }
     const providerId = `api${providerNum}`;
     let services = cachedServices.filter(s => s.providerSource === providerId);
@@ -1146,7 +1125,7 @@ bot.action(/^prv_setfixed_(.+)_(\d+)_(\d+)$/, async (ctx) => {
 bot.action(/^admin_services_api_pg_(\d+)$/, async (ctx) => {
     ctx.answerCbQuery('⏳ جاري جلب الخدمات...').catch(()=>{});
     try {
-        if (!cachedServices || cachedServices.length === 0) await backgroundServiceUpdate(); // 🛡️ محمي
+        if (!cachedServices || cachedServices.length === 0) await backgroundServiceUpdate();
         const visibleServices = cachedServices.filter(s => !hiddenServices.includes(String(s.id)));
         if (visibleServices.length === 0) return await ctx.editMessageText('❌ لا توجد خدمات ظاهرة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
 
@@ -1567,6 +1546,7 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
+// 🛡️ التعديل الجذري في الأقسام: انتظار تحميل الخدمات بالكامل لمنع ظهور (لا توجد خدمات)
 bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1581,18 +1561,9 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
         return await ctx.editMessageText('⚠️ يرجى تحديث الأقسام من القائمة الرئيسية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
     }
 
-    let loadingMsg;
     if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-        // 🛡️ الانتظار حتى الانتهاء من الجلب 
-        loadingMsg = await ctx.editMessageText('⏳ جاري تحميل وتحديث الخدمات... يرجى الانتظار ثواني.').catch(()=>{});
-        await backgroundServiceUpdate(); 
-    }
-
-    if (cachedServices.length === 0) {
-        const errorMsg = '⚠️ تعذر جلب الخدمات حالياً، يرجى المحاولة بعد قليل.';
-        const retryKeyboard = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
-        if(loadingMsg) return await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, errorMsg, retryKeyboard).catch(()=>{});
-        return await ctx.editMessageText(errorMsg, retryKeyboard).catch(()=>{});
+        await ctx.editMessageText('⏳ جاري جلب الخدمات لحظات...').catch(()=>{});
+        await backgroundServiceUpdate(); // 🛡️ انتظار إجباري حتى تنتهي العملية
     }
 
     let categoryServices = cachedServices.filter(s => {
@@ -1638,11 +1609,7 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
     if (paginationRow.length > 0) buttons.push(paginationRow);
     buttons.push([Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]);
 
-    if (loadingMsg) {
-        await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, `📦 خدمات قسم <b>${selectedCategory}</b>:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
-    } else {
-        await ctx.editMessageText(`📦 خدمات قسم <b>${selectedCategory}</b>:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
-    }
+    await ctx.editMessageText(`📦 خدمات قسم <b>${selectedCategory}</b>:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
   } catch(err) {
       console.error(err);
   }
@@ -1684,12 +1651,19 @@ bot.action(/^rate_(\d+)_(.+)$/, async (ctx) => {
     await ctx.editMessageText(`✅ **شكراً لتقييمك الرائع!**\nتقييمك للخدمة: ${'⭐'.repeat(stars)}\nرأيك يهمنا ويساعد العملاء الآخرين.`, {parse_mode: 'HTML'}).catch(()=>{});
 });
 
+// 🛡️ التعديل الجذري في الشراء: انتظار تحميل الخدمات بالكامل لمنع التوقف
 bot.action(/^buyact_(.+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
      const userId = String(ctx.from.id);
      initUser(userId); 
      const srvInternalId = ctx.match[1];
+     
+     if (!cachedServices || cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
+         await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
+         await backgroundServiceUpdate(); // 🛡️ انتظار إجباري
+     }
+     
      await processBuyAction(ctx, userId, srvInternalId); 
   } catch(err){
       console.error("Buy action error:", err);
@@ -1966,12 +1940,10 @@ bot.on('text', async (ctx, next) => {
         userRequestLocks[userId] = true;
 
         try {
-             if (cachedServices.length === 0) {
+             if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
                  await ctx.reply('⏳ جاري التحديث السريع للأسعار...').catch(()=>{});
                  await backgroundServiceUpdate(); 
-             } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-                 await backgroundServiceUpdate(); 
-             }
+             } 
 
              const srv = cachedServices.find(s => String(s.id) === String(srvId));
              if (!srv) {
@@ -2127,7 +2099,7 @@ bot.on('text', async (ctx, next) => {
                 notifyAdmin(adminLogMsg);
                 
                 const me = await ctx.telegram.getMe().catch(() => ({username: 'AhmedStoreBot'}));
-                broadcastSale(safeName, qty, price, usersDb[userId].uid, 'رصيد المحفظة (الربط المباشر)', String(srv.id), me.username);
+                broadcastSale(safeName, qty, price, usersDb[userId].uid, 'رصيد المحفظة (تسليم فوري)', String(srv.id), me.username);
                 
                 setTimeout(() => {
                     ctx.reply('⭐ كيف تقيم جودة هذه الخدمة؟', Markup.inlineKeyboard([ 
@@ -2448,14 +2420,17 @@ bot.on('text', async (ctx, next) => {
             if (state === 'WAIT_SEARCH_STOCK') prefix = 'addstock_';
 
             let buttons = results.slice(0, 15).map(srv => {
-                return [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ` (${srv.providerSource})`, prefix + srv.id)]
+                return [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ` (${srv.providerSource})`, prefix + srv.internal_id)]
             });
             buttons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
             return await ctx.reply('🔍 اختر المنتج من القائمة:', Markup.inlineKeyboard(buttons));
         }
 
         if (state.startsWith('WAIT_SET_MARKUP_')) {
-            const srvId = String(state.split('WAIT_SET_MARKUP_')[1]);
+            const srvInternalId = String(state.split('WAIT_SET_MARKUP_')[1]);
+            const srv = cachedServices.find(s => s.internal_id === srvInternalId);
+            if (!srv) return await ctx.reply('❌ الخدمة غير موجودة.');
+            const srvId = srv.id;
 
             if (text === 'حذف') {
                 delete customProductMarkups[srvId];
@@ -2474,59 +2449,11 @@ bot.on('text', async (ctx, next) => {
             return await ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: <b>${percent}%</b>\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
-        if (state.startsWith('WAIT_SET_FIXED_')) {
-            const srvId = String(state.split('WAIT_SET_FIXED_')[1]);
-
-            if (text === 'إلغاء' || text === 'رجوع') {
-                delete botStates.adminInput[userId];
-                saveDatabase();
-                await showAdminPanel(ctx);
-                return;
-            } else if (text === 'حذف') {
-                delete fixedPrices[srvId];
-                delete botStates.adminInput[userId];
-                saveDatabase();
-                logAdminAction(userId, `إلغاء السعر الثابت للمنتج ${srvId}`);
-                await ctx.reply('✅ تم مسح السعر الثابت! المنتج سيعود لاستخدام نسبة الربح.').catch(()=>{});
-            } else {
-                const price = parseFloat(text);
-                if (isNaN(price) || price < 0) {
-                    return await ctx.reply('❌ يرجى إدخال رقم صحيح موجب أو كلمة "حذف" أو "رجوع".').catch(()=>{});
-                }
-                fixedPrices[srvId] = price;
-                delete botStates.adminInput[userId];
-                saveDatabase();
-                logAdminAction(userId, `تحديد سعر ثابت للمنتج ${srvId} بـ ${price} جنيه`);
-                await ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: <b>${price} EGP</b>`, {parse_mode: 'HTML'}).catch(()=>{});
-            }
-
-            const catIndex = botStates.lastAdminCatFixed ? botStates.lastAdminCatFixed[userId] : null;
-            if (catIndex !== undefined && catIndex !== null && botStates.adminTempCats && botStates.adminTempCats[userId]) {
-                const selectedCategory = botStates.adminTempCats[userId][catIndex];
-                if (cachedServices.length === 0) await backgroundServiceUpdate();
-                const categoryServices = cachedServices.filter(s => {
-                    let cat = getServiceCategory(s);
-                    return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
-                });
-
-                let buttons = categoryServices.map(srv => {
-                    const fp = fixedPrices[String(srv.id)];
-                    const prefix = fp ? `[${fp}ج] ` : '⏳ ';
-                    let btnText = prefix + (srv.name_ar || srv.name || srv.title);
-                    if (btnText.length > 40) btnText = btnText.substring(0, 38) + '..'; 
-                    return [Markup.button.callback(btnText, `setfixed_${srv.id}`)];
-                });
-                buttons.push([Markup.button.callback('🔙 رجوع لأقسام الأسعار', 'admin_fixed_price')]);
-
-                return await ctx.reply(`💲 خدمات قسم <b>${selectedCategory}</b>:\n\nاضغط على أي خدمة لتحديد سعر ثابت لها:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
-            } else {
-                await showAdminPanel(ctx);
-                return;
-            }
-        }
-
         if (state.startsWith('WAIT_ADD_STOCK_')) {
-            const srvId = String(state.split('WAIT_ADD_STOCK_')[1]);
+            const srvInternalId = String(state.split('WAIT_ADD_STOCK_')[1]);
+            const srv = cachedServices.find(s => s.internal_id === srvInternalId);
+            if (!srv) return await ctx.reply('❌ الخدمة غير موجودة.');
+            const srvId = srv.id;
 
             if (text === 'إلغاء' || text === 'رجوع') {
                 delete botStates.adminInput[userId];
@@ -2709,23 +2636,10 @@ bot.on('text', async (ctx, next) => {
   }
 });
 
-// 🚀🚀🚀 [قلب البوت ونظام الحماية من السقوط] 🚀🚀🚀
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
         await loadDatabase(); 
-        
-        // لو دي رسالة عادية، هنرد على Vercel بسرعة عشان البوت ما يعلقش
-        const isTelegramUpdate = req.body && req.body.update_id;
-        if (isTelegramUpdate) {
-             const processingPromise = bot.handleUpdate(req.body);
-             // 🛡️ هندي البوت 8 ثواني بالظبط عشان يخلص شغله قبل ما Vercel يفصل
-             const timeoutPromise = new Promise(resolve => setTimeout(resolve, 8000, 'timeout'));
-             
-             await Promise.race([processingPromise, timeoutPromise]);
-             if (!res.headersSent) return res.status(200).send('OK');
-             return;
-        }
 
         if (req.body && req.body.secret === 'AHMED_VFCASH_100') {
             const smsText = req.body.message || '';
@@ -2754,8 +2668,15 @@ export default async function handler(req, res) {
                     }
                 }
             }
-            if (!res.headersSent) return res.status(200).send('SMS Processed Successfully');
-            return;
+            return res.status(200).send('SMS Processed Successfully');
+        }
+
+        // 🛡️ التعديل الجذري: تأمين Vercel لمنع التعليق
+        if (req.body && req.body.update_id) {
+            const processUpdate = bot.handleUpdate(req.body);
+            // إعطاء فرصة 8 ثواني للبوت لتنفيذ أوامره قبل إنهاء العملية بأمان
+            const timeout = new Promise((resolve) => setTimeout(resolve, 8000, 'timeout'));
+            await Promise.race([processUpdate, timeout]);
         }
 
         if (pendingSaves.length > 0) {
@@ -2765,9 +2686,10 @@ export default async function handler(req, res) {
         }
         
         if (!res.headersSent) res.status(200).send('OK');
+
     } catch (e) {
-        console.error('Vercel Handler General Error:', e);
-        if (!res.headersSent) res.status(200).send('OK');
+        console.error('Vercel Handler Error:', e);
+        if (!res.headersSent) res.status(200).send('OK'); 
     }
   } else {
     res.status(200).send('Bot is running on Vercel with MongoDB! 🚀');
