@@ -296,13 +296,16 @@ function getUserByUid(targetUid) {
   return null;
 }
 
+// 🌐 إعداد المزودين الـ 3 (تم حذف المزود الثالث القديم)
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
+
+// 🆕 إعداد المزود الجديد (بقى هو رقم 4 برمجياً عشان ميبوظش القديم) وتم زيادة وقت الانتظار لـ 15 ثانية
 const API_KEY_4 = process.env.PROVIDER4_API_KEY || 'vbr_live_5da642c3da__Kxebdst1Oini_PHpGBY8urPLZXp5CzO2iy8tSNumQU';
 const apiClient4 = axios.create({ 
     baseURL: 'https://web-production-1c7b1.up.railway.app/api/reseller', 
     headers: { 'Authorization': 'Bearer ' + API_KEY_4, 'X-API-Key': API_KEY_4, 'Content-Type': 'application/json' }, 
-    timeout: 8000 
+    timeout: 15000 // 🛡️ 15 ثانية لتفادي نوم سيرفر Railway
 });
 
 function generateStableId(nameStr) {
@@ -425,6 +428,7 @@ const categoryEmojis = {
 
 async function fetchAllServices() {
     let services = [];
+    // ❌ تم حذف المزود الثالث من مصفوفة الجلب
     const [res1Result, res2Result, res4Result] = await Promise.allSettled([
         apiClient1.get('/services?limit=1000'),
         apiClient2.get('/products'),
@@ -991,12 +995,11 @@ bot.action(/^approve_dep_|^reject_dep_/, async (ctx, next) => {
     return await next();
 });
 
-// ❌ تم إزالة المزود 3 هنا
 bot.action('admin_manage_providers', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     const buttons = [
         [Markup.button.callback('⚙️ مزود 1 (XProStore)', 'prv_1'), Markup.button.callback('⚙️ مزود 2 (ZFour)', 'prv_2')],
-        [Markup.button.callback('⚙️ مزود 4 (الجديد)', 'prv_4')],
+        [Markup.button.callback('⚙️ مزود 3 (الجديد)', 'prv_4')], 
         [Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]
     ];
     await ctx.editMessageText('⚙️ <b>إدارة خدمات المزودين:</b>\nاختر المزود الذي تريد التحكم في خدماته:', { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
@@ -1005,12 +1008,13 @@ bot.action('admin_manage_providers', async (ctx) => {
 bot.action(/^prv_(\d+)$/, async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     const prvNum = ctx.match[1];
+    let label = prvNum === '4' ? '3 (الجديد)' : prvNum;
     const buttons = [
         [Markup.button.callback('👁️ إخفاء / إظهار خدمات', `prv_list_hide_${prvNum}_1`)],
         [Markup.button.callback('💲 تحديد أسعار ثابتة', `prv_list_price_${prvNum}_1`)],
         [Markup.button.callback('🔙 رجوع للمزودين', 'admin_manage_providers')]
     ];
-    await ctx.editMessageText(`🛠️ <b>التحكم في مزود (${prvNum}):</b>\nماذا تريد أن تفعل بخدمات هذا المزود؟`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+    await ctx.editMessageText(`🛠️ <b>التحكم في مزود (${label}):</b>\nماذا تريد أن تفعل بخدمات هذا المزود؟`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
 });
 
 async function renderProviderServices(ctx, providerNum, actionType, page, isTextContext = false) {
@@ -1024,8 +1028,10 @@ async function renderProviderServices(ctx, providerNum, actionType, page, isText
     let services = cachedServices.filter(s => s.providerSource === providerId);
     services = sortServicesByImportance(services);
 
+    let label = providerNum === '4' ? '3 (الجديد)' : providerNum;
+
     if (services.length === 0) {
-         const emptyMsg = `❌ لا توجد خدمات حالياً في المزود (${providerNum}).`;
+         const emptyMsg = `❌ لا توجد خدمات حالياً في المزود (${label}).`;
          const btn = Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', `prv_${providerNum}`)]]);
          if (isTextContext || !ctx.callbackQuery) return ctx.reply(emptyMsg, btn).catch(()=>{});
          return ctx.editMessageText(emptyMsg, btn).catch(()=>{});
@@ -1060,7 +1066,7 @@ async function renderProviderServices(ctx, providerNum, actionType, page, isText
     buttons.push([Markup.button.callback('🔙 رجوع لخيارات المزود', `prv_${providerNum}`)]);
 
     const title = actionType === 'hide' ? '👁️ إخفاء/إظهار الخدمات' : '💲 تحديد أسعار ثابتة';
-    const finalMsg = `🛠️ <b>${title} (مزود ${providerNum}):</b>\nاختر الخدمة لتعديلها:\n*(القائمة تتحدث في نفس اللحظة ولا تغلق)*`;
+    const finalMsg = `🛠️ <b>${title} (مزود ${label}):</b>\nاختر الخدمة لتعديلها:\n*(القائمة تتحدث في نفس اللحظة ولا تغلق)*`;
     
     if (isTextContext || !ctx.callbackQuery) {
         await ctx.reply(finalMsg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
@@ -1130,7 +1136,7 @@ bot.action(/^admin_services_api_pg_(\d+)$/, async (ctx) => {
             const apiSource = srv.providerSource || 'api1';
             let apiLabel = 'API 1';
             if (apiSource === 'api2') apiLabel = 'API 2';
-            if (apiSource === 'api4') apiLabel = 'API 4'; // ❌ حذف مزود 3 من هنا
+            if (apiSource === 'api4') apiLabel = 'API 3 (الجديد)'; 
 
             msg += `🔹 ${actualIndex}. <b>${safeHtml(srvName)}</b>\n   📌 المعرف: <code>[${apiLabel}]</code>\n━━━━━━━━━━━━\n`;
         });
@@ -1291,27 +1297,25 @@ bot.action('admin_pending_deposits', async (ctx) => {
     } catch(e) {}
 });
 
-// ❌ تم إزالة المزود 3 من هنا
 bot.action('admin_check_api_balance', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
-        await ctx.editMessageText('⏳ جاري الاتصال بالمزودين (1, 2, 4)...').catch(()=>{});
+        await ctx.editMessageText('⏳ جاري الاتصال بالمزودين (1, 2, 3)...').catch(()=>{});
         let msg = '💰 **أرصدة المزودين:**\n\n';
         try { const res1 = await apiClient1.get('/me/wallet'); msg += `🔹 المزود 1: <b>${parseFloat(res1.data?.data?.balance || res1.data?.balance || 0).toFixed(2)} EGP</b>\n`; } catch(e) { msg += `🔹 المزود 1: خطأ ❌\n`; }
         try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود 2: <b>$${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}</b>\n`; } catch(e) { msg += `🔹 المزود 2: خطأ ❌\n`; }
         
         try { 
             const res4 = await apiClient4.get('/me'); 
-            msg += `🔹 المزود 4: <b>${parseFloat(res4.data?.data?.balance || res4.data?.balance || 0).toFixed(2)}</b>\n`; 
+            msg += `🔹 المزود 3 (الجديد): <b>${parseFloat(res4.data?.data?.balance || res4.data?.balance || 0).toFixed(2)}</b>\n`; 
         } catch(e) { 
-            msg += `🔹 المزود 4: خطأ ❌\n`; 
+            msg += `🔹 المزود 3 (الجديد): خطأ ❌\n`; 
         }
         
         await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
 });
 
-// ❌ تم إزالة المزود 3 من هنا
 bot.action('admin_check_api_status', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1323,10 +1327,10 @@ bot.action('admin_check_api_status', async (ctx) => {
         
         try { 
             const start4 = Date.now(); 
-            await apiClient4.get('/products'); 
-            msg += `🔹 المزود 4: يعمل ✅ (${Date.now() - start4}ms)\n`; 
+            await apiClient4.get('/me'); 
+            msg += `🔹 المزود 3 (الجديد): يعمل ✅ (${Date.now() - start4}ms)\n`; 
         } catch(e) { 
-            msg += `🔹 المزود 4: متعطل ❌ (${e.response?.status || e.message})\n`; 
+            msg += `🔹 المزود 3 (الجديد): متعطل ❌ (${e.response?.status || e.message})\n`; 
         }
         
         await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
@@ -2474,7 +2478,7 @@ bot.on('text', async (ctx, next) => {
                 delete localInventory[srvId]; 
                 saveDatabase();
                 logAdminAction(userId, `تفريغ مخزن المنتج ${srvId}`);
-                return await ctx.reply('✅ تم تفريغ المخزن المحلي لهذا المنتج بنجاح، وسيتم السحب الآن من البوت الأم تلقائياً!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+                return await ctx.reply('✅ تم تفريغ المخزن المحلي لهذا المنتج بنجاح، وسيتم السحب الآن من البوت الأم تلقائياً!', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
             }
 
             const item = text;
