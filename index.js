@@ -53,6 +53,7 @@ let botStates = {
 
 const userRequestLocks = {};
 
+// 🛡️ دالة توليد كود قصير للأزرار لتخطي حد الـ 64 حرف في تليجرام
 function getShortHash(str) {
     let hash = 0;
     const s = String(str);
@@ -295,13 +296,16 @@ function getUserByUid(targetUid) {
   return null;
 }
 
+// 🌐 إعداد المزودين الـ 3 (تم حذف المزود الثالث القديم)
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
+
+// 🛡️ تحديد الـ Timeout لـ 8000 (8 ثواني) لحماية Vercel من السقوط والـ Crash
 const API_KEY_4 = process.env.PROVIDER4_API_KEY || 'vbr_live_5da642c3da__Kxebdst1Oini_PHpGBY8urPLZXp5CzO2iy8tSNumQU';
 const apiClient4 = axios.create({ 
     baseURL: 'https://web-production-1c7b1.up.railway.app/api/reseller', 
     headers: { 'Authorization': 'Bearer ' + API_KEY_4, 'X-API-Key': API_KEY_4, 'Content-Type': 'application/json' }, 
-    timeout: 15000 
+    timeout: 8000 
 });
 
 function generateStableId(nameStr) {
@@ -867,8 +871,9 @@ async function showCategories(ctx) {
     let buttons = [];
     for (let i = 0; i < categories.length; i += 2) {
       const row = [];
-      row.push(Markup.button.callback((categoryEmojis[categories[i]] || '📦') + ' ' + categories[i], 'cat_' + i));
-      if (i + 1 < categories.length) row.push(Markup.button.callback((categoryEmojis[categories[i+1]] || '📦') + ' ' + categories[i+1], 'cat_' + (i + 1)));
+      // 🆕 تم تعديل الأزرار لتعمل مع نظام الصفحات الجديد
+      row.push(Markup.button.callback((categoryEmojis[categories[i]] || '📦') + ' ' + categories[i], 'cat_' + i + '_1'));
+      if (i + 1 < categories.length) row.push(Markup.button.callback((categoryEmojis[categories[i+1]] || '📦') + ' ' + categories[i+1], 'cat_' + (i + 1) + '_1'));
       buttons.push(row);
     }
     buttons.push([Markup.button.callback('🏠 القائمة الرئيسية', 'main_menu')]);
@@ -1382,34 +1387,6 @@ async function renderUsersPage(ctx, page) {
 bot.action('admin_view_users_pg_1', async (ctx) => { ctx.answerCbQuery().catch(()=>{}); await renderUsersPage(ctx, 1); });
 bot.action(/^admin_view_users_pg_(\d+)$/, async (ctx) => { ctx.answerCbQuery().catch(()=>{}); const page = parseInt(ctx.match[1]); await renderUsersPage(ctx, page); });
 
-bot.action('admin_set_global_markup', async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    if (!botStates.adminInput) botStates.adminInput = {};
-    botStates.adminInput[ctx.from.id] = 'WAIT_GLOBAL_MARKUP'; saveDatabase();
-    await ctx.editMessageText('📊 **تعديل النسبة العامة:**\n\nأرسل الآن نسبة الربح الجديدة بالأرقام فقط (مثال: 15):', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
-});
-
-bot.action('admin_set_custom_markup', async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    if (!botStates.adminInput) botStates.adminInput = {};
-    botStates.adminInput[ctx.from.id] = 'WAIT_CUSTOM_MARKUP'; saveDatabase();
-    await ctx.editMessageText('🎯 **تعديل نسبة قسم معين:**\n\nأرسل اسم القسم والنسبة هكذا:\n<code>اسم_القسم النسبة</code>\n\n🗑️ لمسح جميع نسب الأقسام والعودة للنسبة العامة، اكتب: <code>حذف الكل</code>', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
-});
-
-bot.action('admin_flash_sale', async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    if (!botStates.adminInput) botStates.adminInput = {};
-    botStates.adminInput[ctx.from.id] = 'WAIT_FLASH_SALE'; saveDatabase();
-    await ctx.editMessageText('⚡ **إعداد خصم مؤقت (Flash Sale):**\n\nأرسل نسبة الخصم وعدد الساعات هكذا (بينهم مسافة):\n<code>النسبة الساعات</code>\n(مثال: <code>20 1</code> لخصم 20% لمدة ساعة واحدة)\n\n❌ لإلغاء الخصم الحالي، أرسل: <code>0 0</code>', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
-});
-
-bot.action('admin_charge_by_id', async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    if (!botStates.adminInput) botStates.adminInput = {};
-    botStates.adminInput[ctx.from.id] = 'WAIT_CHARGE_USER'; saveDatabase();
-    await ctx.editMessageText('💰 **شحن رصيد لعميل:**\n\nأرسل الآيدي والمبلغ هكذا (بينهم مسافة):\n<code>الآيدي المبلغ</code>\n(مثال: <code>123456789 50</code>)', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
-});
-
 bot.action('admin_create_promo', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     if (!botStates.adminInput) botStates.adminInput = {};
@@ -1571,24 +1548,26 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
-bot.action(/^cat_(\d+)$/, async (ctx) => {
+// 🆕 نظام الصفحات داخل الأقسام لمنع تعليق التليجرام
+bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
     const userId = String(ctx.from.id); initUser(userId);
     if (usersDb[userId].isBanned) return;
 
     const catIndex = parseInt(ctx.match[1]);
+    const page = parseInt(ctx.match[2]) || 1;
     const selectedCategory = usersDb[userId].tempCategories ? usersDb[userId].tempCategories[catIndex] : null;
     
+    if (!selectedCategory) { 
+        return await ctx.editMessageText('⚠️ يرجى تحديث الأقسام من القائمة الرئيسية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
+    }
+
     if (cachedServices.length === 0) {
         await ctx.editMessageText('⏳ جاري تحميل الخدمات السريعة...').catch(()=>{});
         await backgroundServiceUpdate();
     } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
         backgroundServiceUpdate(); 
-    }
-
-    if (!selectedCategory || cachedServices.length === 0) { 
-        return await ctx.editMessageText('⚠️ يرجى تحديث الأقسام من القائمة الرئيسية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
     }
 
     let categoryServices = cachedServices.filter(s => {
@@ -1597,11 +1576,17 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
       return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
     });
     
-    categoryServices = sortServicesByImportance(categoryServices).slice(0, 90); 
+    categoryServices = sortServicesByImportance(categoryServices);
 
-    if (categoryServices.length === 0) return await ctx.editMessageText('لا توجد خدمات حالياً في هذا القسم.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
+    const itemsPerPage = 12; // 🛡️ 12 خدمة فقط في الصفحة عشان تليجرام ميعلقش
+    const totalPages = Math.ceil(categoryServices.length / itemsPerPage) || 1;
+    const currentPage = Math.min(Math.max(page, 1), totalPages);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const pageItems = categoryServices.slice(startIndex, startIndex + itemsPerPage);
 
-    let buttons = categoryServices.map(srv => {
+    if (pageItems.length === 0) return await ctx.editMessageText('لا توجد خدمات حالياً في هذا القسم.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
+
+    let buttons = pageItems.map(srv => {
         let srvName = srv.name_ar || srv.name || srv.title || 'خدمة';
         let emoji = detectServiceEmoji(srvName);
         let cleanName = srvName;
@@ -1619,6 +1604,14 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
             Markup.button.callback(`🛒 ${emoji}${cleanName}${ratingStr} -${price} EGP`, `buyact_${srv.internal_id}`)
         ];
     });
+
+    // 🆕 أزرار التقليب في الأقسام
+    let paginationRow = [];
+    if (currentPage > 1) paginationRow.push(Markup.button.callback('▶️ السابق', `cat_${catIndex}_${currentPage - 1}`));
+    if (totalPages > 1) paginationRow.push(Markup.button.callback(`📄 ${currentPage}/${totalPages}`, 'noop'));
+    if (currentPage < totalPages) paginationRow.push(Markup.button.callback('التالي ◀️', `cat_${catIndex}_${currentPage + 1}`));
+
+    if (paginationRow.length > 0) buttons.push(paginationRow);
     buttons.push([Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]);
 
     await ctx.editMessageText(`📦 خدمات قسم <b>${selectedCategory}</b>:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
@@ -2207,7 +2200,7 @@ bot.on('text', async (ctx, next) => {
             const query = text.toLowerCase();
             if (!cachedServices || cachedServices.length === 0) cachedServices = await fetchAllServices();
             const results = cachedServices.filter(s => (s.name_ar || s.name || s.title || '').toLowerCase().includes(query));
-            if(results.length === 0) return await ctx.reply('❌ لا توجد نتائج مطابقة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
+            if(results.length === 0) return await ctx.reply('❌ لا توجد نتائج مطابقة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]])});
             
             let buttons = results.slice(0, 15).map(srv => {
                 return [Markup.button.callback((srv.name_ar || srv.name || srv.title), `pdsel_${srv.id}`)]
@@ -2379,7 +2372,7 @@ bot.on('text', async (ctx, next) => {
 
         if (state === 'WAIT_VOUCHER_CREATE') {
             const parts = text.split(/\s+/); 
-            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
             const code = parts[0].toUpperCase(); const amount = parseFloat(parts[1]);
             if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ القيمة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             vouchers[code] = { amount, isUsed: false }; 
@@ -2632,15 +2625,6 @@ bot.on('text', async (ctx, next) => {
   } catch(e) {
       console.error("Text Handler Error:", e.message);
   }
-});
-
-bot.action('admin_force_refresh', async (ctx) => {
-    ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
-    try {
-        isFetchingServices = false;
-        await backgroundServiceUpdate();
-        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين الثلاثة في ذاكرة البوت.', { parse_mode: 'HTML' }).catch(()=>{});
-    } catch (e) { await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{}); }
 });
 
 export default async function handler(req, res) {
