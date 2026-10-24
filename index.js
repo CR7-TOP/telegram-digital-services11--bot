@@ -292,12 +292,12 @@ const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/ap
 const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
 const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/reseller/api', headers: { 'X-API-Key': API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
 
-// 🆕 إعداد المزود الرابع الجديد مع تمديد الـ Timeout لـ 8 ثواني لتفادي مشكلة الـ Railway Sleep
-const API_KEY_4 = process.env.PROVIDER4_API_KEY || 'vbr_live_764da0f949_E0rTqAIA-WS2pUbhSnEtcXyZRmowYgkO4v6KzEiPorE';
+// 🆕 إعداد المزود الرابع الجديد (تم تحديث المسار بناءً على الـ API Docs الخاصة به)
+const API_KEY_4 = process.env.PROVIDER4_API_KEY || 'vbr_live_5da642c3da__Kxebdst1Oini_PHpGBY8urPLZXp5CzO2iy8tSNumQU';
 const apiClient4 = axios.create({ 
-    baseURL: 'https://web-production-1c7b1.up.railway.app/api', 
+    baseURL: 'https://web-production-1c7b1.up.railway.app/api/reseller', 
     headers: { 'Authorization': 'Bearer ' + API_KEY_4, 'X-API-Key': API_KEY_4, 'Content-Type': 'application/json' }, 
-    timeout: 8000 // 🛡️ زيادة الوقت للسماح للسيرفر بالاستيقاظ
+    timeout: 8000 
 });
 
 function generateStableId(nameStr) {
@@ -394,13 +394,14 @@ function detectServiceEmoji(name) {
     return '🔹'; 
 }
 
+// 🆕 دمج المزود الرابع في السحب بمسار /products الصحيح
 async function fetchAllServices() {
     let services = [];
     const [res1Result, res2Result, res3Result, res4Result] = await Promise.allSettled([
         apiClient1.get('/services?limit=1000'),
         apiClient2.get('/products'),
         apiClient3.get('/?action=products'),
-        apiClient4.get('/services').catch(() => apiClient4.get('/products')) 
+        apiClient4.get('/products') // المسار الصحيح للمزود الرابع
     ]);
 
     if (res1Result.status === 'fulfilled') {
@@ -462,6 +463,7 @@ async function fetchAllServices() {
         } catch(e) {}
     }
 
+    // 🆕 معالجة المزود الرابع بالمسار الصحيح
     if (res4Result.status === 'fulfilled') {
         try {
             let s4 = res4Result.value.data?.data || res4Result.value.data?.products || res4Result.value.data?.services || res4Result.value.data;
@@ -472,6 +474,7 @@ async function fetchAllServices() {
                 s4.forEach(item => { 
                     item.providerSource = 'api4'; 
                     item.name = item.name || item.title || item.name_ar || "خدمة بدون اسم";
+                    // المزود ده ممكن يستخدم product_id أو uuid كمعرف للخدمة
                     item.id = String(item.id || item.product_id || item.service_id || item.uuid || item.code || generateStableId(item.name));
                     item.category = item.category || item.category_name || detectCategoryFromName(item.name);
                     
@@ -517,7 +520,8 @@ async function placeOrderWithBestProvider(srv, qty) {
     } else if (source === 'api3') {
          return await apiClient3.post('/?action=purchase', { product: srv.key || String(srv.id), quantity: parsedQty }, { headers: { 'Idempotency-Key': 'shop-order-' + Date.now() + '-' + Math.floor(Math.random() * 1000) } });
     } else if (source === 'api4') {
-         return await apiClient4.post('/order', { service_id: srvIdConverted, product_id: srvIdConverted, quantity: parsedQty }).catch(() => apiClient4.post('/orders', { service_id: srvIdConverted, quantity: parsedQty }));
+         // 🆕 إرسال الطلب للمزود الرابع على مسار /orders
+         return await apiClient4.post('/orders', { product_id: srvIdConverted, service_id: srvIdConverted, quantity: parsedQty }).catch(() => apiClient4.post('/order', { product_id: srvIdConverted, quantity: parsedQty }));
     } else {
          return await apiClient1.post('/orders', { service_id: srvIdConverted, quantity: parsedQty });
     }
@@ -1124,7 +1128,7 @@ bot.action(/^admin_services_api_pg_(\d+)$/, async (ctx) => {
             let apiLabel = 'API 1';
             if (apiSource === 'api2') apiLabel = 'API 2';
             if (apiSource === 'api3') apiLabel = 'API 3';
-            if (apiSource === 'api4') apiLabel = 'API 4';
+            if (apiSource === 'api4') apiLabel = 'API 4'; 
 
             msg += `🔹 ${actualIndex}. <b>${safeHtml(srvName)}</b>\n   📌 المعرف: <code>[${apiLabel}]</code>\n━━━━━━━━━━━━\n`;
         });
@@ -1263,33 +1267,6 @@ bot.action('admin_profit_report', async (ctx) => {
     } catch (e) {}
 });
 
-bot.action('admin_search_markup', async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    if (!botStates.adminInput) botStates.adminInput = {};
-    botStates.adminInput[ctx.from.id] = 'WAIT_SEARCH_MARKUP'; saveDatabase();
-    await ctx.editMessageText('🔍 أرسل اسم المنتج الذي تريد تحديد **نسبة ربح مخصصة** له:').catch(()=>{});
-});
-bot.action('admin_search_stock', async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    if (!botStates.adminInput) botStates.adminInput = {};
-    botStates.adminInput[ctx.from.id] = 'WAIT_SEARCH_STOCK'; saveDatabase();
-    await ctx.editMessageText('📦 أرسل اسم المنتج الذي تريد إدارة مخزونه المحلي:').catch(()=>{});
-});
-
-bot.action(/^setmarkup_(.+)$/, async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    if (!botStates.adminInput) botStates.adminInput = {};
-    botStates.adminInput[ctx.from.id] = 'WAIT_SET_MARKUP_' + ctx.match[1]; saveDatabase();
-    await ctx.editMessageText('📈 أرسل النسبة المئوية للربح لهذا المنتج فقط (مثال: اكتب 50 لربح 50%).\n\n🗑️ لإلغاء النسبة المخصصة وجعل المنتج يتبع النسبة العامة، اكتب كلمة: <code>حذف</code>', {parse_mode: 'HTML'}).catch(()=>{});
-});
-
-bot.action(/^addstock_(.+)$/, async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    if (!botStates.adminInput) botStates.adminInput = {};
-    botStates.adminInput[ctx.from.id] = 'WAIT_ADD_STOCK_' + ctx.match[1]; saveDatabase();
-    await ctx.editMessageText('📦 **إدارة المخزن المحلي لهذا المنتج:**\n\n➕ **للإضافة:** أرسل العنصر كرسالة (تقدر تبعت أكتر من عنصر ورا بعض).\n👀 **للعرض:** أرسل كلمة <code>عرض</code> لمعرفة محتويات المخزن.\n🗑️ **للحذف:** أرسل كلمة <code>حذف الكل</code> لتفريغ مخزن هذا المنتج بالكامل.\n🔙 **للخروج:** أرسل كلمة <code>رجوع</code>', {parse_mode: 'HTML'}).catch(()=>{});
-});
-
 bot.action('admin_pending_deposits', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1312,7 +1289,7 @@ bot.action('admin_pending_deposits', async (ctx) => {
     } catch(e) {}
 });
 
-// 🆕 تحديث فحص الأرصدة ليضيف المزود الرابع
+// 🆕 تحديث فحص الأرصدة للمزود الرابع (المسار الجديد)
 bot.action('admin_check_api_balance', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1321,14 +1298,20 @@ bot.action('admin_check_api_balance', async (ctx) => {
         try { const res1 = await apiClient1.get('/me/wallet'); msg += `🔹 المزود 1: <b>${parseFloat(res1.data?.data?.balance || res1.data?.balance || 0).toFixed(2)} EGP</b>\n`; } catch(e) { msg += `🔹 المزود 1: خطأ ❌\n`; }
         try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود 2: <b>$${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}</b>\n`; } catch(e) { msg += `🔹 المزود 2: خطأ ❌\n`; }
         try { const res3 = await apiClient3.get('/?action=balance'); msg += `🔹 المزود 3: <b>${parseFloat(res3.data?.balance_usdt || res3.data?.data?.balance || 0).toFixed(2)} USDT</b>\n`; } catch(e) { msg += `🔹 المزود 3: خطأ ❌\n`; }
-        // 🆕 رصيد المزود الرابع
-        try { const res4 = await apiClient4.get('/balance').catch(()=> apiClient4.get('/me/wallet')); msg += `🔹 المزود 4: <b>${parseFloat(res4.data?.data?.balance || res4.data?.balance || 0).toFixed(2)}</b>\n`; } catch(e) { msg += `🔹 المزود 4: خطأ ❌\n`; }
+        
+        // 🆕 رصيد المزود الرابع (المسار الجديد /me)
+        try { 
+            const res4 = await apiClient4.get('/me'); 
+            msg += `🔹 المزود 4: <b>${parseFloat(res4.data?.data?.balance || res4.data?.balance || 0).toFixed(2)}</b>\n`; 
+        } catch(e) { 
+            msg += `🔹 المزود 4: خطأ ❌\n`; 
+        }
         
         await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
 });
 
-// 🆕 تحديث فحص حالة السيرفرات مع إظهار تفاصيل الأخطاء
+// 🆕 تحديث فحص حالة السيرفرات للمزود الرابع
 bot.action('admin_check_api_status', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1338,8 +1321,15 @@ bot.action('admin_check_api_status', async (ctx) => {
         try { const start1 = Date.now(); await apiClient1.get('/services?limit=1'); msg += `🔹 المزود 1: يعمل ✅ (${Date.now() - start1}ms)\n`; } catch(e) { msg += `🔹 المزود 1: متعطل ❌\n`; }
         try { const start2 = Date.now(); await apiClient2.get('/products'); msg += `🔹 المزود 2: يعمل ✅ (${Date.now() - start2}ms)\n`; } catch(e) { msg += `🔹 المزود 2: متعطل ❌\n`; }
         try { const start3 = Date.now(); await apiClient3.get('/?action=products'); msg += `🔹 المزود 3: يعمل ✅ (${Date.now() - start3}ms)\n`; } catch(e) { msg += `🔹 المزود 3: متعطل ❌\n`; }
-        // 🆕 حالة المزود الرابع (مع كتابة سبب العطل)
-        try { const start4 = Date.now(); await apiClient4.get('/services').catch(()=>apiClient4.get('/products')); msg += `🔹 المزود 4: يعمل ✅ (${Date.now() - start4}ms)\n`; } catch(e) { msg += `🔹 المزود 4: متعطل ❌ (${e.response?.status || e.message})\n`; }
+        
+        // 🆕 حالة المزود الرابع (مسار /products الجديد)
+        try { 
+            const start4 = Date.now(); 
+            await apiClient4.get('/products'); 
+            msg += `🔹 المزود 4: يعمل ✅ (${Date.now() - start4}ms)\n`; 
+        } catch(e) { 
+            msg += `🔹 المزود 4: متعطل ❌ (${e.response?.status || e.message})\n`; 
+        }
         
         await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
@@ -1394,34 +1384,6 @@ async function renderUsersPage(ctx, page) {
 
 bot.action('admin_view_users_pg_1', async (ctx) => { ctx.answerCbQuery().catch(()=>{}); await renderUsersPage(ctx, 1); });
 bot.action(/^admin_view_users_pg_(\d+)$/, async (ctx) => { ctx.answerCbQuery().catch(()=>{}); const page = parseInt(ctx.match[1]); await renderUsersPage(ctx, page); });
-
-bot.action('admin_set_global_markup', async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    if (!botStates.adminInput) botStates.adminInput = {};
-    botStates.adminInput[ctx.from.id] = 'WAIT_GLOBAL_MARKUP'; saveDatabase();
-    await ctx.editMessageText('📊 **تعديل النسبة العامة:**\n\nأرسل الآن نسبة الربح الجديدة بالأرقام فقط (مثال: 15):', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
-});
-
-bot.action('admin_set_custom_markup', async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    if (!botStates.adminInput) botStates.adminInput = {};
-    botStates.adminInput[ctx.from.id] = 'WAIT_CUSTOM_MARKUP'; saveDatabase();
-    await ctx.editMessageText('🎯 **تعديل نسبة قسم معين:**\n\nأرسل اسم القسم والنسبة هكذا:\n<code>اسم_القسم النسبة</code>\n\n🗑️ لمسح جميع نسب الأقسام والعودة للنسبة العامة، اكتب: <code>حذف الكل</code>', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
-});
-
-bot.action('admin_flash_sale', async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    if (!botStates.adminInput) botStates.adminInput = {};
-    botStates.adminInput[ctx.from.id] = 'WAIT_FLASH_SALE'; saveDatabase();
-    await ctx.editMessageText('⚡ **إعداد خصم مؤقت (Flash Sale):**\n\nأرسل نسبة الخصم وعدد الساعات هكذا (بينهم مسافة):\n<code>النسبة الساعات</code>\n(مثال: <code>20 1</code> لخصم 20% لمدة ساعة واحدة)\n\n❌ لإلغاء الخصم الحالي، أرسل: <code>0 0</code>', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
-});
-
-bot.action('admin_charge_by_id', async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    if (!botStates.adminInput) botStates.adminInput = {};
-    botStates.adminInput[ctx.from.id] = 'WAIT_CHARGE_USER'; saveDatabase();
-    await ctx.editMessageText('💰 **شحن رصيد لعميل:**\n\nأرسل الآيدي والمبلغ هكذا (بينهم مسافة):\n<code>الآيدي المبلغ</code>\n(مثال: <code>123456789 50</code>)', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
-});
 
 bot.action('admin_create_promo', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
@@ -1985,7 +1947,6 @@ bot.on('text', async (ctx, next) => {
                ).catch(()=>{});
              }
              
-             // 🛡️ فحص المخزن المحلي: إذا توفر يسلم فوراً، وإذا كان فارغاً يحول الطلب للبوت الأم تلقائياً
              const hasLocalStock = localInventory && localInventory[String(srv.id)] && Array.isArray(localInventory[String(srv.id)]) && localInventory[String(srv.id)].length >= qty;
 
              let processingMsg = await ctx.reply('⏳ <b>جاري المعالجة...</b>', {parse_mode: 'HTML'}).catch(()=>{});
@@ -2070,9 +2031,8 @@ bot.on('text', async (ctx, next) => {
                                 rawDetails = extractUsefulData(orderData);
                             }
                         } else {
-                            // 🆕 التعامل مع المزود الرابع لو احتاج يجلب الطلب
                             const clientApi = source === 'api2' ? apiClient2 : (source === 'api4' ? apiClient4 : apiClient1);
-                            const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : `/orders/${orderId}`;
+                            const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : (source === 'api4' ? `/orders/${orderId}` : `/orders/${orderId}`);
                             const getOrderRes = await clientApi.get(fetchOrderPath);
                             const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
                             rawDetails = extractUsefulData(orderData);
@@ -2462,6 +2422,57 @@ bot.on('text', async (ctx, next) => {
             saveDatabase();
             logAdminAction(userId, `تحديد نسبة ربح للمنتج ${srvId} بـ ${percent}%`);
             return await ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: <b>${percent}%</b>\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+        }
+
+        if (state.startsWith('WAIT_SET_FIXED_')) {
+            const srvId = String(state.split('WAIT_SET_FIXED_')[1]);
+
+            if (text === 'إلغاء' || text === 'رجوع') {
+                delete botStates.adminInput[userId];
+                saveDatabase();
+                await showAdminPanel(ctx);
+                return;
+            } else if (text === 'حذف') {
+                delete fixedPrices[srvId];
+                delete botStates.adminInput[userId];
+                saveDatabase();
+                logAdminAction(userId, `إلغاء السعر الثابت للمنتج ${srvId}`);
+                await ctx.reply('✅ تم مسح السعر الثابت! المنتج سيعود لاستخدام نسبة الربح.').catch(()=>{});
+            } else {
+                const price = parseFloat(text);
+                if (isNaN(price) || price < 0) {
+                    return await ctx.reply('❌ يرجى إدخال رقم صحيح موجب أو كلمة "حذف" أو "رجوع".').catch(()=>{});
+                }
+                fixedPrices[srvId] = price;
+                delete botStates.adminInput[userId];
+                saveDatabase();
+                logAdminAction(userId, `تحديد سعر ثابت للمنتج ${srvId} بـ ${price} جنيه`);
+                await ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: <b>${price} EGP</b>`, {parse_mode: 'HTML'}).catch(()=>{});
+            }
+
+            const catIndex = botStates.lastAdminCatFixed ? botStates.lastAdminCatFixed[userId] : null;
+            if (catIndex !== undefined && catIndex !== null && botStates.adminTempCats && botStates.adminTempCats[userId]) {
+                const selectedCategory = botStates.adminTempCats[userId][catIndex];
+                if (cachedServices.length === 0) await backgroundServiceUpdate();
+                const categoryServices = cachedServices.filter(s => {
+                    let cat = getServiceCategory(s);
+                    return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
+                });
+
+                let buttons = categoryServices.map(srv => {
+                    const fp = fixedPrices[String(srv.id)];
+                    const prefix = fp ? `[${fp}ج] ` : '⏳ ';
+                    let btnText = prefix + (srv.name_ar || srv.name || srv.title);
+                    if (btnText.length > 40) btnText = btnText.substring(0, 38) + '..'; 
+                    return [Markup.button.callback(btnText, `setfixed_${srv.id}`)];
+                });
+                buttons.push([Markup.button.callback('🔙 رجوع لأقسام الأسعار', 'admin_fixed_price')]);
+
+                return await ctx.reply(`💲 خدمات قسم <b>${selectedCategory}</b>:\n\nاضغط على أي خدمة لتحديد سعر ثابت لها:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+            } else {
+                await showAdminPanel(ctx);
+                return;
+            }
         }
 
         if (state.startsWith('WAIT_ADD_STOCK_')) {
