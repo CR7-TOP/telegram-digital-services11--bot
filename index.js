@@ -78,7 +78,7 @@ function broadcastSale(serviceName, qty, price, userUid, paymentMethod, srvId, b
         let keyboard = {};
         if (srvId && botUsername && botUsername !== 'undefined') {
             keyboard = Markup.inlineKeyboard([
-                [Markup.button.url('🛒 شراء نفس المنتج', `https://t.me/${botUsername}?start=buy_auto`)] // تم إخفاء الـ srvId هنا لمنع الخطأ
+                [Markup.button.url('🛒 شراء نفس المنتج', `https://t.me/${botUsername}?start=buy_auto`)] 
             ]);
         }
 
@@ -298,9 +298,6 @@ function getUserByUid(targetUid) {
 
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
-const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
-const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/reseller/api', headers: { 'X-API-Key': API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
-
 const API_KEY_4 = process.env.PROVIDER4_API_KEY || 'vbr_live_5da642c3da__Kxebdst1Oini_PHpGBY8urPLZXp5CzO2iy8tSNumQU';
 const apiClient4 = axios.create({ 
     baseURL: 'https://web-production-1c7b1.up.railway.app/api/reseller', 
@@ -428,10 +425,9 @@ const categoryEmojis = {
 
 async function fetchAllServices() {
     let services = [];
-    const [res1Result, res2Result, res3Result, res4Result] = await Promise.allSettled([
+    const [res1Result, res2Result, res4Result] = await Promise.allSettled([
         apiClient1.get('/services?limit=1000'),
         apiClient2.get('/products'),
-        apiClient3.get('/?action=products'),
         apiClient4.get('/products') 
     ]);
 
@@ -469,30 +465,6 @@ async function fetchAllServices() {
                     item.price_amount = egpPrice; 
                 });
                 services.push(...s2);
-            }
-        } catch(e) {}
-    }
-
-    if (res3Result.status === 'fulfilled') {
-        try {
-            let s3 = res3Result.value.data?.products || res3Result.value.data?.data || res3Result.value.data?.services || res3Result.value.data;
-            if (!Array.isArray(s3) && typeof s3 === 'object') {
-                for (let key in s3) { if (Array.isArray(s3[key])) { s3 = s3[key]; break; } }
-            }
-            if (Array.isArray(s3)) {
-                s3.forEach(item => { 
-                    item.providerSource = 'api3'; 
-                    item.name = item.name || item.name_ar || item.title || "خدمة بدون اسم";
-                    let uniqueId = item.key || item.id || item.product_id || generateStableId(item.name);
-                    item.id = String(uniqueId);
-                    item.internal_id = '3' + getShortHash(item.id);
-                    item.category = detectCategoryFromName(item.name) !== 'أخرى' ? detectCategoryFromName(item.name) : (item.category || item.category_name || 'أخرى');
-                    let rawPriceUSD = parseFloat(item.price_usdt_from || item.price || item.rate || item.price_amount || 0);
-                    let egpPrice = (rawPriceUSD * USD_TO_EGP_RATE).toFixed(2);
-                    item.price = egpPrice;
-                    item.price_amount = egpPrice;
-                });
-                services.push(...s3);
             }
         } catch(e) {}
     }
@@ -550,8 +522,6 @@ async function placeOrderWithBestProvider(srv, qty) {
 
     if (source === 'api2') {
          return await apiClient2.post('/order', { service_id: srvIdConverted, product_id: srvIdConverted, productId: srvIdConverted, quantity: parsedQty });
-    } else if (source === 'api3') {
-         return await apiClient3.post('/?action=purchase', { product: srv.key || String(srv.id), quantity: parsedQty }, { headers: { 'Idempotency-Key': 'shop-order-' + Date.now() + '-' + Math.floor(Math.random() * 1000) } });
     } else if (source === 'api4') {
          return await apiClient4.post('/orders', { product_id: srvIdConverted, service_id: srvIdConverted, quantity: parsedQty }).catch(() => apiClient4.post('/order', { product_id: srvIdConverted, quantity: parsedQty }));
     } else {
@@ -1021,11 +991,12 @@ bot.action(/^approve_dep_|^reject_dep_/, async (ctx, next) => {
     return await next();
 });
 
+// ❌ تم إزالة المزود 3 هنا
 bot.action('admin_manage_providers', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     const buttons = [
         [Markup.button.callback('⚙️ مزود 1 (XProStore)', 'prv_1'), Markup.button.callback('⚙️ مزود 2 (ZFour)', 'prv_2')],
-        [Markup.button.callback('⚙️ مزود 3 (CupponHub)', 'prv_3'), Markup.button.callback('⚙️ مزود 4 (الجديد)', 'prv_4')],
+        [Markup.button.callback('⚙️ مزود 4 (الجديد)', 'prv_4')],
         [Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]
     ];
     await ctx.editMessageText('⚙️ <b>إدارة خدمات المزودين:</b>\nاختر المزود الذي تريد التحكم في خدماته:', { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
@@ -1159,8 +1130,7 @@ bot.action(/^admin_services_api_pg_(\d+)$/, async (ctx) => {
             const apiSource = srv.providerSource || 'api1';
             let apiLabel = 'API 1';
             if (apiSource === 'api2') apiLabel = 'API 2';
-            if (apiSource === 'api3') apiLabel = 'API 3';
-            if (apiSource === 'api4') apiLabel = 'API 4';
+            if (apiSource === 'api4') apiLabel = 'API 4'; // ❌ حذف مزود 3 من هنا
 
             msg += `🔹 ${actualIndex}. <b>${safeHtml(srvName)}</b>\n   📌 المعرف: <code>[${apiLabel}]</code>\n━━━━━━━━━━━━\n`;
         });
@@ -1259,7 +1229,7 @@ bot.action('admin_force_refresh', async (ctx) => {
     try {
         isFetchingServices = false;
         await backgroundServiceUpdate();
-        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين الأربعة في ذاكرة البوت.', { parse_mode: 'HTML' }).catch(()=>{});
+        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين في ذاكرة البوت.', { parse_mode: 'HTML' }).catch(()=>{});
     } catch (e) { await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{}); }
 });
 
@@ -1321,20 +1291,27 @@ bot.action('admin_pending_deposits', async (ctx) => {
     } catch(e) {}
 });
 
+// ❌ تم إزالة المزود 3 من هنا
 bot.action('admin_check_api_balance', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
-        await ctx.editMessageText('⏳ جاري الاتصال بالمزودين (1, 2, 3, 4)...').catch(()=>{});
+        await ctx.editMessageText('⏳ جاري الاتصال بالمزودين (1, 2, 4)...').catch(()=>{});
         let msg = '💰 **أرصدة المزودين:**\n\n';
         try { const res1 = await apiClient1.get('/me/wallet'); msg += `🔹 المزود 1: <b>${parseFloat(res1.data?.data?.balance || res1.data?.balance || 0).toFixed(2)} EGP</b>\n`; } catch(e) { msg += `🔹 المزود 1: خطأ ❌\n`; }
         try { const res2 = await apiClient2.get('/balance'); msg += `🔹 المزود 2: <b>$${parseFloat(res2.data?.data?.balance || res2.data?.balance || 0).toFixed(2)}</b>\n`; } catch(e) { msg += `🔹 المزود 2: خطأ ❌\n`; }
-        try { const res3 = await apiClient3.get('/?action=balance'); msg += `🔹 المزود 3: <b>${parseFloat(res3.data?.balance_usdt || res3.data?.data?.balance || 0).toFixed(2)} USDT</b>\n`; } catch(e) { msg += `🔹 المزود 3: خطأ ❌\n`; }
-        try { const res4 = await apiClient4.get('/me'); msg += `🔹 المزود 4: <b>${parseFloat(res4.data?.data?.balance || res4.data?.balance || 0).toFixed(2)}</b>\n`; } catch(e) { msg += `🔹 المزود 4: خطأ ❌\n`; }
+        
+        try { 
+            const res4 = await apiClient4.get('/me'); 
+            msg += `🔹 المزود 4: <b>${parseFloat(res4.data?.data?.balance || res4.data?.balance || 0).toFixed(2)}</b>\n`; 
+        } catch(e) { 
+            msg += `🔹 المزود 4: خطأ ❌\n`; 
+        }
         
         await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
 });
 
+// ❌ تم إزالة المزود 3 من هنا
 bot.action('admin_check_api_status', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1343,8 +1320,14 @@ bot.action('admin_check_api_status', async (ctx) => {
         
         try { const start1 = Date.now(); await apiClient1.get('/services?limit=1'); msg += `🔹 المزود 1: يعمل ✅ (${Date.now() - start1}ms)\n`; } catch(e) { msg += `🔹 المزود 1: متعطل ❌\n`; }
         try { const start2 = Date.now(); await apiClient2.get('/products'); msg += `🔹 المزود 2: يعمل ✅ (${Date.now() - start2}ms)\n`; } catch(e) { msg += `🔹 المزود 2: متعطل ❌\n`; }
-        try { const start3 = Date.now(); await apiClient3.get('/?action=products'); msg += `🔹 المزود 3: يعمل ✅ (${Date.now() - start3}ms)\n`; } catch(e) { msg += `🔹 المزود 3: متعطل ❌\n`; }
-        try { const start4 = Date.now(); await apiClient4.get('/products'); msg += `🔹 المزود 4: يعمل ✅ (${Date.now() - start4}ms)\n`; } catch(e) { msg += `🔹 المزود 4: متعطل ❌ (${e.response?.status || e.message})\n`; }
+        
+        try { 
+            const start4 = Date.now(); 
+            await apiClient4.get('/products'); 
+            msg += `🔹 المزود 4: يعمل ✅ (${Date.now() - start4}ms)\n`; 
+        } catch(e) { 
+            msg += `🔹 المزود 4: متعطل ❌ (${e.response?.status || e.message})\n`; 
+        }
         
         await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
     } catch(e) {}
@@ -1399,6 +1382,34 @@ async function renderUsersPage(ctx, page) {
 
 bot.action('admin_view_users_pg_1', async (ctx) => { ctx.answerCbQuery().catch(()=>{}); await renderUsersPage(ctx, 1); });
 bot.action(/^admin_view_users_pg_(\d+)$/, async (ctx) => { ctx.answerCbQuery().catch(()=>{}); const page = parseInt(ctx.match[1]); await renderUsersPage(ctx, page); });
+
+bot.action('admin_set_global_markup', async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    if (!botStates.adminInput) botStates.adminInput = {};
+    botStates.adminInput[ctx.from.id] = 'WAIT_GLOBAL_MARKUP'; saveDatabase();
+    await ctx.editMessageText('📊 **تعديل النسبة العامة:**\n\nأرسل الآن نسبة الربح الجديدة بالأرقام فقط (مثال: 15):', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+});
+
+bot.action('admin_set_custom_markup', async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    if (!botStates.adminInput) botStates.adminInput = {};
+    botStates.adminInput[ctx.from.id] = 'WAIT_CUSTOM_MARKUP'; saveDatabase();
+    await ctx.editMessageText('🎯 **تعديل نسبة قسم معين:**\n\nأرسل اسم القسم والنسبة هكذا:\n<code>اسم_القسم النسبة</code>\n\n🗑️ لمسح جميع نسب الأقسام والعودة للنسبة العامة، اكتب: <code>حذف الكل</code>', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+});
+
+bot.action('admin_flash_sale', async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    if (!botStates.adminInput) botStates.adminInput = {};
+    botStates.adminInput[ctx.from.id] = 'WAIT_FLASH_SALE'; saveDatabase();
+    await ctx.editMessageText('⚡ **إعداد خصم مؤقت (Flash Sale):**\n\nأرسل نسبة الخصم وعدد الساعات هكذا (بينهم مسافة):\n<code>النسبة الساعات</code>\n(مثال: <code>20 1</code> لخصم 20% لمدة ساعة واحدة)\n\n❌ لإلغاء الخصم الحالي، أرسل: <code>0 0</code>', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+});
+
+bot.action('admin_charge_by_id', async (ctx) => {
+    ctx.answerCbQuery().catch(()=>{});
+    if (!botStates.adminInput) botStates.adminInput = {};
+    botStates.adminInput[ctx.from.id] = 'WAIT_CHARGE_USER'; saveDatabase();
+    await ctx.editMessageText('💰 **شحن رصيد لعميل:**\n\nأرسل الآيدي والمبلغ هكذا (بينهم مسافة):\n<code>الآيدي المبلغ</code>\n(مثال: <code>123456789 50</code>)', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) }).catch(()=>{});
+});
 
 bot.action('admin_create_promo', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
@@ -1561,7 +1572,6 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
-// ✅ حل مشكلة قائمة الخدمات اللي كانت بتقف
 bot.action(/^cat_(\d+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1588,7 +1598,6 @@ bot.action(/^cat_(\d+)$/, async (ctx) => {
       return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
     });
     
-    // الترتيب والتجميع
     categoryServices = sortServicesByImportance(categoryServices).slice(0, 90); 
 
     if (categoryServices.length === 0) return await ctx.editMessageText('لا توجد خدمات حالياً في هذا القسم.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
@@ -2039,30 +2048,16 @@ bot.on('text', async (ctx, next) => {
                 let orderId = orderResponse.data?.order?.order_id || orderResponse.data?.order_id || orderResponse.data?.order?.id || orderResponse.data?.id || Math.floor(10000 + Math.random() * 90000);
                 let rawDetails = null;
 
-                if (srv.providerSource === 'api3' && orderResponse.data?.order?.items && Array.isArray(orderResponse.data.order.items) && orderResponse.data.order.items.length > 0) {
-                    rawDetails = orderResponse.data.order.items.join('\n\n');
-                }
-
                 if (!rawDetails || rawDetails.trim() === '') {
                     await new Promise(resolve => setTimeout(resolve, 1500));
 
                     try {
                         const source = srv.providerSource || 'api1';
-                        if (source === 'api3') {
-                            const getOrderRes = await apiClient3.get(`/?action=order&order_id=${orderId}`);
-                            const orderData = getOrderRes.data?.order || getOrderRes.data;
-                            if (orderData && orderData.items && Array.isArray(orderData.items) && orderData.items.length > 0) {
-                                rawDetails = orderData.items.join('\n\n');
-                            } else {
-                                rawDetails = extractUsefulData(orderData);
-                            }
-                        } else {
-                            const clientApi = source === 'api2' ? apiClient2 : (source === 'api4' ? apiClient4 : apiClient1);
-                            const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : (source === 'api4' ? `/orders/${orderId}` : `/orders/${orderId}`);
-                            const getOrderRes = await clientApi.get(fetchOrderPath);
-                            const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
-                            rawDetails = extractUsefulData(orderData);
-                        }
+                        const clientApi = source === 'api2' ? apiClient2 : (source === 'api4' ? apiClient4 : apiClient1);
+                        const fetchOrderPath = source === 'api2' ? `/order/${orderId}` : (source === 'api4' ? `/orders/${orderId}` : `/orders/${orderId}`);
+                        const getOrderRes = await clientApi.get(fetchOrderPath);
+                        const orderData = getOrderRes.data?.data || getOrderRes.data?.order || getOrderRes.data;
+                        rawDetails = extractUsefulData(orderData);
                     } catch(e) {
                         console.log('تأخير في المزود لجلب الطلب: ' + orderId);
                     }
@@ -2172,7 +2167,6 @@ bot.on('text', async (ctx, next) => {
     if (botStates.adminSession && botStates.adminSession[userId] && botStates.adminInput && botStates.adminInput[userId]) {
         const state = botStates.adminInput[userId];
 
-        // 🆕 حل رجوع القائمة تلقائياً بعد إرسال السعر أو الحذف
         if (state.startsWith('WAIT_PRV_FIXED_')) {
             const parts = state.replace('WAIT_PRV_FIXED_', '').split('_');
             const srvId = parts[0];
@@ -2199,7 +2193,6 @@ bot.on('text', async (ctx, next) => {
                 logAdminAction(userId, `تحديد سعر ثابت للمنتج ${srvId} بـ ${price} جنيه`);
                 await ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: <b>${price} EGP</b>`, {parse_mode: 'HTML'}).catch(()=>{});
                 
-                // هنا البوت هيبعت القائمة في رسالة جديدة بعد التأكيد عشان تكمل تعديل بكل سهولة
                 return await renderProviderServices(ctx, prvNum, 'price', page, true);
             }
         }
