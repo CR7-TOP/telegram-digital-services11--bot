@@ -179,14 +179,18 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 
-// 🚀🚀🚀 التعديل الجذري: تنظيف الرسائل النصية القديمة فقط بدون لمس الأزرار (عشان الزرار ميعلقش)
+// 🚀 نظام تفريغ الزحمة المُعدل
+// هذا الكود يتجاهل الرسائل النصية القديمة فقط لتفريغ الطابور
+// لكنه يسمح بمعالجة جميع ضغطات الأزرار (Callback Queries) فوراً
 bot.use(async (ctx, next) => {
     const now = Math.floor(Date.now() / 1000);
-    // مسح الرسائل النصية المتأخرة فقط لفك الزحمة
+    
     if (ctx.message && ctx.message.date) {
         if (now - ctx.message.date > 45) return; 
     }
-    // السماح بكل ضغطات الأزرار (Callback) عشان تفتح معاك طلقة مهما اتأخرت في الاختيار!
+    
+    // إزالة قيد الوقت على الأزرار لضمان استجابتها دائماً
+    
     return await next();
 });
 
@@ -301,7 +305,6 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 إعداد المزودين الـ 3 الأصلين فقط (1، 2، و CupponHub 3)
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
 const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
@@ -499,12 +502,7 @@ async function fetchAllServices() {
 }
 
 async function backgroundServiceUpdate() {
-    if (isFetchingServices) {
-        while(isFetchingServices) {
-            await new Promise(resolve => setTimeout(resolve, 300));
-        }
-        return;
-    }
+    if (isFetchingServices) return;
     isFetchingServices = true;
     try {
         const services = await fetchAllServices();
@@ -586,12 +584,11 @@ async function processBuyAction(ctx, userId, srvInternalId) {
     try {
          initUser(userId); 
          if (!usersDb[userId] || usersDb[userId].isBanned) return;
-         
-         if (!cachedServices || cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
+         if (!cachedServices || cachedServices.length === 0) {
              if (ctx.callbackQuery) await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
              else await ctx.reply('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
              
-             await backgroundServiceUpdate(); 
+             await backgroundServiceUpdate();
          }
          
          const srv = cachedServices.find(s => s.internal_id === srvInternalId || String(s.id) === String(srvInternalId));
@@ -845,12 +842,11 @@ async function showCategories(ctx) {
     if (usersDb[userId].isBanned) return await ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return await ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
-    let loadingMsg;
     if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
         if(ctx.callbackQuery) {
-            loadingMsg = await ctx.editMessageText('⏳ جاري تحديث الأقسام... يرجى الانتظار ثواني.').catch(()=>{});
+            await ctx.editMessageText('⏳ جاري تحديث الأقسام... يرجى الانتظار ثواني.').catch(()=>{});
         } else {
-            loadingMsg = await ctx.reply('⏳ جاري تحديث الأقسام... يرجى الانتظار ثواني.').catch(()=>{});
+            await ctx.reply('⏳ جاري تحديث الأقسام... يرجى الانتظار ثواني.').catch(()=>{});
         }
         await backgroundServiceUpdate(); 
     }
@@ -858,8 +854,8 @@ async function showCategories(ctx) {
     if (cachedServices.length === 0) {
         const errorMsg = '⚠️ تعذر جلب الخدمات حالياً، يرجى المحاولة بعد قليل.';
         const retryKeyboard = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
-        if(loadingMsg) return await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, errorMsg, retryKeyboard).catch(()=>{});
-        return await ctx.reply(errorMsg, retryKeyboard).catch(()=>{});
+        if(ctx.callbackQuery) return await ctx.editMessageText(errorMsg, retryKeyboard).catch(()=>{});
+        else return await ctx.reply(errorMsg, retryKeyboard).catch(()=>{});
     }
 
     let fetchedCategories = [];
@@ -887,7 +883,6 @@ async function showCategories(ctx) {
     if (!usersDb[userId].tempCategories) usersDb[userId].tempCategories = [];
     usersDb[userId].tempCategories = categories; saveDatabase();
 
-    if(loadingMsg) return await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, 'اختر الفئة:', keyboard).catch(()=>{});
     if(ctx.callbackQuery) return await ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{});
     else return await ctx.reply('اختر الفئة:', keyboard).catch(()=>{});
   } catch (error) {
@@ -1554,7 +1549,7 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
-// 🚀 المعالجة الفورية المباشرة للأقسام
+// 🚀 المعالجة الفورية المباشرة للأقسام بدون تعليق
 bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1569,7 +1564,7 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
         return await ctx.editMessageText('⚠️ يرجى تحديث الأقسام من القائمة الرئيسية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
     }
 
-    // 🚀 الانتظار الصريح والمباشر لجلب الخدمات قبل عرض أي شيء
+    // 🚀 الانتظار الصريح لجلب الخدمات لمرة واحدة
     if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
         await ctx.editMessageText('⏳ جاري جلب الخدمات السريعة، لحظات...').catch(()=>{});
         await backgroundServiceUpdate(); 
@@ -1660,7 +1655,6 @@ bot.action(/^rate_(\d+)_(.+)$/, async (ctx) => {
     await ctx.editMessageText(`✅ **شكراً لتقييمك الرائع!**\nتقييمك للخدمة: ${'⭐'.repeat(stars)}\nرأيك يهمنا ويساعد العملاء الآخرين.`, {parse_mode: 'HTML'}).catch(()=>{});
 });
 
-// 🚀 المعالجة الفورية المباشرة للطلبات
 bot.action(/^buyact_(.+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1668,7 +1662,6 @@ bot.action(/^buyact_(.+)$/, async (ctx) => {
      initUser(userId); 
      const srvInternalId = ctx.match[1];
      
-     // 🚀 الانتظار الصريح والمباشر لجلب الخدمات إذا كانت المخبأة فارغة
      if (!cachedServices || cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
          await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
          await backgroundServiceUpdate(); 
@@ -2391,7 +2384,7 @@ bot.on('text', async (ctx, next) => {
 
         if (state === 'WAIT_VOUCHER_CREATE') {
             const parts = text.split(/\s+/); 
-            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
             const code = parts[0].toUpperCase(); const amount = parseFloat(parts[1]);
             if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ القيمة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             vouchers[code] = { amount, isUsed: false }; 
@@ -2430,17 +2423,14 @@ bot.on('text', async (ctx, next) => {
             if (state === 'WAIT_SEARCH_STOCK') prefix = 'addstock_';
 
             let buttons = results.slice(0, 15).map(srv => {
-                return [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ` (${srv.providerSource})`, prefix + srv.internal_id)]
+                return [Markup.button.callback((srv.name_ar || srv.name || srv.title) + ` (${srv.providerSource})`, prefix + srv.id)]
             });
             buttons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
             return await ctx.reply('🔍 اختر المنتج من القائمة:', Markup.inlineKeyboard(buttons));
         }
 
         if (state.startsWith('WAIT_SET_MARKUP_')) {
-            const srvInternalId = String(state.split('WAIT_SET_MARKUP_')[1]);
-            const srv = cachedServices.find(s => s.internal_id === srvInternalId);
-            if (!srv) return await ctx.reply('❌ الخدمة غير موجودة.');
-            const srvId = srv.id;
+            const srvId = String(state.split('WAIT_SET_MARKUP_')[1]);
 
             if (text === 'حذف') {
                 delete customProductMarkups[srvId];
@@ -2459,11 +2449,59 @@ bot.on('text', async (ctx, next) => {
             return await ctx.reply(`✅ تم تحديد نسبة الربح للمنتج بنجاح: <b>${percent}%</b>\n(سيرتفع السعر تلقائياً إذا ارتفع سعره في المصدر)`, {parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
         }
 
+        if (state.startsWith('WAIT_SET_FIXED_')) {
+            const srvId = String(state.split('WAIT_SET_FIXED_')[1]);
+
+            if (text === 'إلغاء' || text === 'رجوع') {
+                delete botStates.adminInput[userId];
+                saveDatabase();
+                await showAdminPanel(ctx);
+                return;
+            } else if (text === 'حذف') {
+                delete fixedPrices[srvId];
+                delete botStates.adminInput[userId];
+                saveDatabase();
+                logAdminAction(userId, `إلغاء السعر الثابت للمنتج ${srvId}`);
+                await ctx.reply('✅ تم مسح السعر الثابت! المنتج سيعود لاستخدام نسبة الربح.').catch(()=>{});
+            } else {
+                const price = parseFloat(text);
+                if (isNaN(price) || price < 0) {
+                    return await ctx.reply('❌ يرجى إدخال رقم صحيح موجب أو كلمة "حذف" أو "رجوع".').catch(()=>{});
+                }
+                fixedPrices[srvId] = price;
+                delete botStates.adminInput[userId];
+                saveDatabase();
+                logAdminAction(userId, `تحديد سعر ثابت للمنتج ${srvId} بـ ${price} جنيه`);
+                await ctx.reply(`✅ تم تحديد السعر الثابت للمنتج بنجاح: <b>${price} EGP</b>`, {parse_mode: 'HTML'}).catch(()=>{});
+            }
+
+            const catIndex = botStates.lastAdminCatFixed ? botStates.lastAdminCatFixed[userId] : null;
+            if (catIndex !== undefined && catIndex !== null && botStates.adminTempCats && botStates.adminTempCats[userId]) {
+                const selectedCategory = botStates.adminTempCats[userId][catIndex];
+                if (cachedServices.length === 0) await backgroundServiceUpdate();
+                const categoryServices = cachedServices.filter(s => {
+                    let cat = getServiceCategory(s);
+                    return cat === selectedCategory || cat.toLowerCase().includes(selectedCategory.toLowerCase()) || selectedCategory.toLowerCase().includes(cat.toLowerCase());
+                });
+
+                let buttons = categoryServices.map(srv => {
+                    const fp = fixedPrices[String(srv.id)];
+                    const prefix = fp ? `[${fp}ج] ` : '⏳ ';
+                    let btnText = prefix + (srv.name_ar || srv.name || srv.title);
+                    if (btnText.length > 40) btnText = btnText.substring(0, 38) + '..'; 
+                    return [Markup.button.callback(btnText, `setfixed_${srv.id}`)];
+                });
+                buttons.push([Markup.button.callback('🔙 رجوع لأقسام الأسعار', 'admin_fixed_price')]);
+
+                return await ctx.reply(`💲 خدمات قسم <b>${selectedCategory}</b>:\n\nاضغط على أي خدمة لتحديد سعر ثابت لها:`, { parse_mode: 'HTML', ...Markup.inlineKeyboard(buttons) }).catch(()=>{});
+            } else {
+                await showAdminPanel(ctx);
+                return;
+            }
+        }
+
         if (state.startsWith('WAIT_ADD_STOCK_')) {
-            const srvInternalId = String(state.split('WAIT_ADD_STOCK_')[1]);
-            const srv = cachedServices.find(s => s.internal_id === srvInternalId);
-            if (!srv) return await ctx.reply('❌ الخدمة غير موجودة.');
-            const srvId = srv.id;
+            const srvId = String(state.split('WAIT_ADD_STOCK_')[1]);
 
             if (text === 'إلغاء' || text === 'رجوع') {
                 delete botStates.adminInput[userId];
@@ -2646,7 +2684,7 @@ bot.on('text', async (ctx, next) => {
   }
 });
 
-// 🚀🚀🚀 [قلب البوت ونظام الحماية من السقوط] 🚀🚀🚀
+// 🚀🚀🚀 [نظام حماية Vercel من الإغلاق] 🚀🚀🚀
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     try {
@@ -2682,10 +2720,11 @@ export default async function handler(req, res) {
             return res.status(200).send('SMS Processed Successfully');
         }
 
-        // 🛡️ التعديل الجذري: نرد على تليجرام عشان ميعلقش، بس ننتظر إنتهاء البوت بأمان تام
+        // 🛡️ التعديل الجذري: منع Vercel من إغلاق الاتصال قبل انتهاء البوت من الرد
         if (req.body && req.body.update_id) {
+            // ننتظر البوت حتى ينهي عمله بالكامل أو يمر 9 ثواني كحد أقصى (قبل ما Vercel يقفل بـ 1 ثانية)
             const processUpdate = bot.handleUpdate(req.body);
-            const timeout = new Promise((resolve) => setTimeout(resolve, 8500, 'timeout'));
+            const timeout = new Promise((resolve) => setTimeout(resolve, 9000, 'timeout'));
             await Promise.race([processUpdate, timeout]);
         }
 
