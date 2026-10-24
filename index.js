@@ -53,6 +53,7 @@ let botStates = {
 
 const userRequestLocks = {};
 
+// 🛡️ دالة توليد كود قصير للأزرار
 function getShortHash(str) {
     let hash = 0;
     const s = String(str);
@@ -179,6 +180,20 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 
+// 🚀 نظام تفريغ الزحمة الآمن 
+bot.use(async (ctx, next) => {
+    const now = Math.floor(Date.now() / 1000);
+    // مسح الرسائل المتأخرة اللي بتعمل زحمة
+    if (ctx.message && ctx.message.date) {
+        if (now - ctx.message.date > 45) return; 
+    }
+    // مسح الضغطات المتأخرة جدا
+    if (ctx.callbackQuery && ctx.callbackQuery.message && ctx.callbackQuery.message.date) {
+        if (now - ctx.callbackQuery.message.date > 45) return; 
+    }
+    return await next();
+});
+
 bot.catch((err, ctx) => {
     console.error(`Ooops, encountered an error for ${ctx.updateType}`, err);
 });
@@ -290,11 +305,11 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 إعداد المزودين الـ 3 الأصلين فقط
-const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
-const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 4500 });
+// 🌐 إعداد المزودين الـ 3 (تم تخفيض الـ Timeout لـ 3500ms لتفادي إغلاق Vercel القسري)
+const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: 3500 });
+const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: 3500 });
 const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
-const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/reseller/api', headers: { 'X-API-Key': API_KEY_3, 'Content-Type': 'application/json' }, timeout: 4500 });
+const apiClient3 = axios.create({ baseURL: 'https://cupponhub.shop/reseller/api', headers: { 'X-API-Key': API_KEY_3, 'Content-Type': 'application/json' }, timeout: 3500 });
 
 function generateStableId(nameStr) {
     let hash = 0;
@@ -487,9 +502,14 @@ async function fetchAllServices() {
     return services;
 }
 
-// 🛡️ التعديل هنا: منع الانتظار العالق لتسريع العرض الفوري
+// 🛡️ دالة التحديث اللي بتستنى السيرفرات تخلص قبل العرض
 async function backgroundServiceUpdate() {
-    if (isFetchingServices) return;
+    if (isFetchingServices) {
+        while(isFetchingServices) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        return;
+    }
     isFetchingServices = true;
     try {
         const services = await fetchAllServices();
@@ -572,13 +592,11 @@ async function processBuyAction(ctx, userId, srvInternalId) {
          initUser(userId); 
          if (!usersDb[userId] || usersDb[userId].isBanned) return;
          
-         // 🛡️ معالجة فورية للمنع من التوقف
          if (!cachedServices || cachedServices.length === 0) {
-             const msg = '⏳ جاري تجهيز الخوادم... من فضلك انتظر 5 ثواني واضغط مجدداً.';
-             if (ctx.callbackQuery) await ctx.editMessageText(msg).catch(()=>{});
-             else await ctx.reply(msg).catch(()=>{});
-             backgroundServiceUpdate(); // لا ننتظر حتى ينتهي
-             return;
+             if (ctx.callbackQuery) await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
+             else await ctx.reply('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
+             
+             await backgroundServiceUpdate(); 
          }
          
          const srv = cachedServices.find(s => s.internal_id === srvInternalId || String(s.id) === String(srvInternalId));
@@ -825,7 +843,7 @@ bot.hears(/بحث عن خدمة/, async (ctx) => {
     } catch(e){}
 });
 
-// 🛡️ التعديل الجذري هنا لفك التعليق وعدم الإغلاق
+// 🛡️ دالة عرض الأقسام محمية من الإغلاق المبكر 
 async function showCategories(ctx) {
   const userId = String(ctx.from.id);
   try {
@@ -833,13 +851,27 @@ async function showCategories(ctx) {
     if (usersDb[userId].isBanned) return await ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return await ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
+    let loadingMsg;
     if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-        const msg = '⏳ جاري تحميل البيانات من المزودين... من فضلك انتظر 5 ثواني واضغط مجدداً.';
-        if(ctx.callbackQuery) await ctx.editMessageText(msg).catch(()=>{});
-        else await ctx.reply(msg).catch(()=>{});
+        if(ctx.callbackQuery) {
+            loadingMsg = await ctx.editMessageText('⏳ جاري تحديث الأقسام... لحظات.').catch(()=>{});
+        } else {
+            loadingMsg = await ctx.reply('⏳ جاري تحديث الأقسام... لحظات.').catch(()=>{});
+        }
+        // 🚀 يجب أن ننتظر حتى ينتهي السحب تماما قبل إكمال الكود
+        await backgroundServiceUpdate(); 
+    }
+
+    if (cachedServices.length === 0) {
+        const errorMsg = '⚠️ تعذر جلب الخدمات حالياً، يرجى المحاولة بعد قليل.';
+        const retryKeyboard = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
         
-        backgroundServiceUpdate(); // لا ننتظر هنا أبداً ليتمكن السيرفر من الانتهاء بسرعة
-        return;
+        if (loadingMsg && !ctx.callbackQuery) {
+            ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(()=>{});
+        }
+
+        if(ctx.callbackQuery) return await ctx.editMessageText(errorMsg, retryKeyboard).catch(()=>{});
+        else return await ctx.reply(errorMsg, retryKeyboard).catch(()=>{});
     }
 
     let fetchedCategories = [];
@@ -866,6 +898,10 @@ async function showCategories(ctx) {
 
     if (!usersDb[userId].tempCategories) usersDb[userId].tempCategories = [];
     usersDb[userId].tempCategories = categories; saveDatabase();
+
+    if (loadingMsg && !ctx.callbackQuery) {
+        ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(()=>{});
+    }
 
     if(ctx.callbackQuery) return await ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{});
     else return await ctx.reply('اختر الفئة:', keyboard).catch(()=>{});
@@ -903,8 +939,8 @@ bot.action('admin_force_refresh', async (ctx) => {
     ctx.answerCbQuery('⏳ جاري سحب أحدث الخدمات بالقوة من المزودين...').catch(()=>{});
     try {
         isFetchingServices = false;
-        backgroundServiceUpdate(); 
-        await ctx.reply('✅ **تم بدء التحديث!**\nسيتم سحب الخدمات من المزودين الثلاثة في الخلفية.', { parse_mode: 'HTML' }).catch(()=>{});
+        await backgroundServiceUpdate(); 
+        await ctx.reply('✅ **تم بنجاح!**\nتم سحب وتحديث جميع الخدمات من المزودين الثلاثة.', { parse_mode: 'HTML' }).catch(()=>{});
     } catch (e) { await ctx.reply('❌ حدث خطأ أثناء التحديث اليدوي. حاول مجدداً.').catch(()=>{}); }
 });
 
@@ -1112,11 +1148,7 @@ bot.action(/^prv_setfixed_(.+)_(\d+)_(\d+)$/, async (ctx) => {
 bot.action(/^admin_services_api_pg_(\d+)$/, async (ctx) => {
     ctx.answerCbQuery('⏳ جاري جلب الخدمات...').catch(()=>{});
     try {
-        if (!cachedServices || cachedServices.length === 0) {
-            await ctx.editMessageText('⏳ جاري التحميل... اضغط مرة أخرى بعد قليل.').catch(()=>{});
-            backgroundServiceUpdate();
-            return;
-        }
+        if (!cachedServices || cachedServices.length === 0) await backgroundServiceUpdate();
         const visibleServices = cachedServices.filter(s => !hiddenServices.includes(String(s.id)));
         if (visibleServices.length === 0) return await ctx.editMessageText('❌ لا توجد خدمات ظاهرة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])).catch(()=>{});
 
@@ -1537,6 +1569,7 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
+// 🚀 تم إزالة كود الانتظار الوهمي: البوت سيجلب الخدمات مباشرة لضمان الفتح
 bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1552,13 +1585,8 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
     }
 
     if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-        // 🚀 تنبيه فوري والسحب في الخلفية لمنع التعليق
-        const msg = '⏳ جاري تحميل البيانات من المزودين... من فضلك انتظر 5 ثواني واضغط مجدداً.';
-        if(ctx.callbackQuery) await ctx.editMessageText(msg).catch(()=>{});
-        else await ctx.reply(msg).catch(()=>{});
-        
-        backgroundServiceUpdate(); 
-        return;
+        await ctx.editMessageText('⏳ جاري جلب الخدمات السريعة، لحظات...').catch(()=>{});
+        await backgroundServiceUpdate(); // يجب الانتظار هنا لضمان وجود الخدمات
     }
 
     let categoryServices = cachedServices.filter(s => {
@@ -1750,7 +1778,7 @@ async function publishPriceDrop(ctx, userId, state, fileId) {
         return await ctx.reply('❌ يرجى تحديد قناة المبيعات أولاً من لوحة التحكم لنشر الإعلان.');
     }
 
-    if (cachedServices.length === 0) backgroundServiceUpdate();
+    if (cachedServices.length === 0) await backgroundServiceUpdate();
     const srv = cachedServices.find(s => String(s.id) === srvId);
     if (!srv) return await ctx.reply('❌ الخدمة غير موجودة.');
 
@@ -2375,7 +2403,7 @@ bot.on('text', async (ctx, next) => {
 
         if (state === 'WAIT_VOUCHER_CREATE') {
             const parts = text.split(/\s+/); 
-            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
             const code = parts[0].toUpperCase(); const amount = parseFloat(parts[1]);
             if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ القيمة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             vouchers[code] = { amount, isUsed: false }; 
