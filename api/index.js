@@ -318,7 +318,7 @@ function getUserByUid(targetUid) {
 // =======================================================
 // 🌐 نظام مزودي الخدمات (APIs) 
 // =======================================================
-const API_TIMEOUT = 15000; // تم زيادة التايم أوت ليتحمل تأخير المزودين
+const API_TIMEOUT = 15000; 
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: API_TIMEOUT });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: API_TIMEOUT });
 const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
@@ -428,7 +428,6 @@ function detectServiceEmoji(name) {
     return '📦 ';
 }
 
-// 🚀 الدالة التي كانت مفقودة وتسبب الانهيار تم إضافتها هنا
 function getServiceCategory(srv) {
     if (srv.category && srv.category !== 'أخرى') return srv.category;
     if (srv.category_name && srv.category_name !== 'أخرى') return srv.category_name;
@@ -2533,7 +2532,7 @@ bot.on('text', async (ctx, next) => {
                 delete customProductMarkups[srvId];
                 delete botStates.adminInput[userId];
                 saveDatabase();
-                return await ctx.reply('✅ تم مسح النسبة المخصصة! المنتج سيعود لاستخدام النسبة العامة للمتجر.', {parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+                return await ctx.reply('✅ تم مسح النسبة المخصصة! المنتج سيعود لاستخدام النسبة العامة للم المتجر.', {parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
             }
 
             const percent = parseFloat(text);
