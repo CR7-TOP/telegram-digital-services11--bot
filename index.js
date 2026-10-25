@@ -15,10 +15,15 @@ let publicSalesChannels = process.env.PUBLIC_SALES_CHANNEL ? [process.env.PUBLIC
 let forceSubscribeChannels = []; 
 
 // ==========================================
-// 🛡️ إعدادات الاتصال بقاعدة بيانات MongoDB 
+// 🛡️ إعدادات الاتصال المحمية بقاعدة بيانات MongoDB 
+// (تمت إضافة حماية ضد التعليق Timeout)
 // ==========================================
 const MONGODB_URI = "mongodb+srv://ahmwogod24920s_db_user:LwAbx06XOKBWel9j@cluster0.sjxm2ga.mongodb.net/xprostore?retryWrites=true&w=majority&appName=Cluster0";
-const client = new MongoClient(MONGODB_URI);
+const client = new MongoClient(MONGODB_URI, { 
+    serverSelectionTimeoutMS: 4000, // مستحيل يعلق أكتر من 4 ثواني
+    connectTimeoutMS: 4000,
+    socketTimeoutMS: 4000
+});
 let dbCollection = null;
 let pendingSaves = []; 
 let isDbConnected = false;
@@ -50,8 +55,6 @@ let ratings = {};
 let botStates = {
     deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "", buyQty: {}, ordersPage: {}, tempStock: {}, adminTempCats: {}, lastAdminCat: {}, lastAdminCatFixed: {}, transfer: {}
 };
-
-const userRequestLocks = {};
 
 function getShortHash(str) {
     let hash = 0;
@@ -90,20 +93,17 @@ function broadcastSale(serviceName, qty, price, userUid, paymentMethod, srvId, b
 async function connectDB() {
     if (!isDbConnected) {
         try {
-            if (!client.topology || !client.topology.isConnected()) {
-                await client.connect();
-            }
+            await client.connect();
             const database = client.db("xprostore");
             dbCollection = database.collection("botData");
             isDbConnected = true;
             console.log("✅ متصل بقاعدة بيانات MongoDB السحابية بنجاح!");
         } catch (e) {
-            console.error("DB Connection Error:", e);
+            console.error("DB Connection Error:", e.message);
         }
     }
 }
 
-// 🚀 التعديل الجذري هنا: تحميل الخدمات من الذاكرة السحابية فوراً لمنع كلمة "لا توجد خدمات"
 const categoryCacheTime = 300000; 
 let lastCategoriesFetchTime = 0;
 let cachedServices = [];
@@ -113,7 +113,7 @@ async function loadDatabase() {
     await connectDB();
     if (!dbCollection) return;
     
-    // سحب الخدمات المخزنة من الداتا بيز عشان البوت ميقفش لو Vercel عمل ريستارت
+    // سحب الخدمات من الكاش لسرعة العرض
     if (cachedServices.length === 0) {
         try {
             const svcData = await dbCollection.findOne({ _id: "services_cache" });
@@ -126,46 +126,48 @@ async function loadDatabase() {
 
     if (Object.keys(usersDb).length > 0) return; 
 
-    const data = await dbCollection.findOne({ _id: "main_data" });
-    if (data) {
-        usersDb = data.usersDb || {};
-        globalMarkupPercent = data.globalMarkupPercent !== undefined ? data.globalMarkupPercent : 15;
-        customMarkups = data.customMarkups || {};
-        pendingDeposits = data.pendingDeposits || [];
-        promoCodes = data.promoCodes || {};
-        flashSale = data.flashSale || { active: false, discount: 0, expiresAt: 0 };
-        vouchers = data.vouchers || {};
-        adminAuditLogs = data.adminAuditLogs || [];
-        maintenanceMode = data.maintenanceMode || false;
-        customProductMarkups = data.customProductMarkups || {};
-        localInventory = data.localInventory || {};
-        adCampaigns = data.adCampaigns || {}; 
-        hiddenServices = data.hiddenServices || [];
-        fixedPrices = data.fixedPrices || {};
-        if (data.vodafoneCashNumber) vodafoneCashNumber = data.vodafoneCashNumber;
-        if (data.instapayAccount) instapayAccount = data.instapayAccount;
-        
-        abandonedCarts = data.abandonedCarts || {}; 
-        usedReceipts = data.usedReceipts || [];
-        stockAlerts = data.stockAlerts || {};
-        ratings = data.ratings || {}; 
-        if (data.dropGroupId !== undefined) dropGroupId = data.dropGroupId;
-        
-        if (data.publicSalesChannels !== undefined) {
-            publicSalesChannels = Array.isArray(data.publicSalesChannels) ? data.publicSalesChannels : [data.publicSalesChannel];
+    try {
+        const data = await dbCollection.findOne({ _id: "main_data" });
+        if (data) {
+            usersDb = data.usersDb || {};
+            globalMarkupPercent = data.globalMarkupPercent !== undefined ? data.globalMarkupPercent : 15;
+            customMarkups = data.customMarkups || {};
+            pendingDeposits = data.pendingDeposits || [];
+            promoCodes = data.promoCodes || {};
+            flashSale = data.flashSale || { active: false, discount: 0, expiresAt: 0 };
+            vouchers = data.vouchers || {};
+            adminAuditLogs = data.adminAuditLogs || [];
+            maintenanceMode = data.maintenanceMode || false;
+            customProductMarkups = data.customProductMarkups || {};
+            localInventory = data.localInventory || {};
+            adCampaigns = data.adCampaigns || {}; 
+            hiddenServices = data.hiddenServices || [];
+            fixedPrices = data.fixedPrices || {};
+            if (data.vodafoneCashNumber) vodafoneCashNumber = data.vodafoneCashNumber;
+            if (data.instapayAccount) instapayAccount = data.instapayAccount;
+            
+            abandonedCarts = data.abandonedCarts || {}; 
+            usedReceipts = data.usedReceipts || [];
+            stockAlerts = data.stockAlerts || {};
+            ratings = data.ratings || {}; 
+            if (data.dropGroupId !== undefined) dropGroupId = data.dropGroupId;
+            
+            if (data.publicSalesChannels !== undefined) {
+                publicSalesChannels = Array.isArray(data.publicSalesChannels) ? data.publicSalesChannels : [data.publicSalesChannel];
+            }
+            if (data.forceSubscribeChannels !== undefined) {
+                forceSubscribeChannels = Array.isArray(data.forceSubscribeChannels) ? data.forceSubscribeChannels : [data.forceSubscribeChannel];
+            }
+            
+            const loadedStates = data.botStates || {};
+            botStates = {
+                deposit: loadedStates.deposit || {}, broadcast: loadedStates.broadcast || {}, promo: loadedStates.promo || {}, search: loadedStates.search || {},
+                adminInput: loadedStates.adminInput || {}, adminLogin: loadedStates.adminLogin || {}, adminSession: loadedStates.adminSession || {}, lastReportDate: loadedStates.lastReportDate || "",
+                buyQty: loadedStates.buyQty || {}, ordersPage: loadedStates.ordersPage || {}, tempStock: loadedStates.tempStock || {}, adminTempCats: loadedStates.adminTempCats || {},
+                lastAdminCat: loadedStates.lastAdminCat || {}, lastAdminCatFixed: loadedStates.lastAdminCatFixed || {}, transfer: loadedStates.transfer || {}
+            };
         }
-        if (data.forceSubscribeChannels !== undefined) {
-            forceSubscribeChannels = Array.isArray(data.forceSubscribeChannels) ? data.forceSubscribeChannels : [data.forceSubscribeChannel];
-        }
-        
-        const loadedStates = data.botStates || {};
-        botStates = {
-            deposit: loadedStates.deposit || {}, broadcast: loadedStates.broadcast || {}, promo: loadedStates.promo || {}, search: loadedStates.search || {},
-            adminInput: loadedStates.adminInput || {}, adminLogin: loadedStates.adminLogin || {}, adminSession: loadedStates.adminSession || {}, lastReportDate: loadedStates.lastReportDate || "",
-            buyQty: loadedStates.buyQty || {}, ordersPage: loadedStates.ordersPage || {}, tempStock: loadedStates.tempStock || {}, adminTempCats: loadedStates.adminTempCats || {},
-            lastAdminCat: loadedStates.lastAdminCat || {}, lastAdminCatFixed: loadedStates.lastAdminCatFixed || {}, transfer: loadedStates.transfer || {}
-        };
-    }
+    } catch(e) {}
 }
 
 function saveDatabase() {
@@ -186,9 +188,7 @@ const server = http.createServer((req, res) => {
     res.write('البوت يعمل بكفاءة وقاعدة البيانات السحابية متصلة 🚀');
     res.end();
 });
-server.listen(PORT, '0.0.0.0', () => {
-    setInterval(() => { http.get(`http://localhost:${PORT}`, (res) => {}).on('error', (err) => {}); }, 4 * 60 * 1000); 
-}).on('error', (err) => {});
+server.listen(PORT, '0.0.0.0', () => {});
 
 process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err); });
 process.on('unhandledRejection', (reason, promise) => { console.error('Unhandled Rejection:', reason); });
@@ -197,26 +197,14 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 
-// 🚀🚀🚀 التعديل الجذري لحل مشكلة الزرار الميت 🚀🚀🚀
-bot.use(async (ctx, next) => {
-    const now = Math.floor(Date.now() / 1000);
-    // فلتر لفك الزحمة للرسائل النصية الجديدة فقط
-    if (ctx.message && ctx.message.text && ctx.message.date) {
-        if (now - ctx.message.date > 45) return; 
-    }
-    // ⚠️ لا يوجد أي فلتر للأزرار (Callback) عشان لو العميل داس على زرار بعد ساعة يشتغل معاه طلقة!
-    return await next();
-});
-
 bot.catch((err, ctx) => {
-    console.error(`Ooops, encountered an error for ${ctx.updateType}`, err);
+    console.error(`Ooops, encountered an error for ${ctx.updateType}`, err.message);
 });
 
 bot.use(async (ctx, next) => {
     if (ctx.chat && ctx.chat.type !== 'private') return; 
     return await next();
 });
-
 
 function clearUserStates(userId) {
     try {
@@ -316,7 +304,7 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 3 مزودين سريعين فقط
+// 🌐 3 مزودين فقط مع Timeout صارم يمنع التعليق
 const API_TIMEOUT = 3500; 
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: API_TIMEOUT });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: API_TIMEOUT });
@@ -514,31 +502,26 @@ async function fetchAllServices() {
     return services;
 }
 
-// 🚀 دالة جلب الخدمات المحمية (تقوم بالتخزين في DB لمنع الضياع)
+let fetchPromise = null;
 async function backgroundServiceUpdate() {
-    if (isFetchingServices) {
-        while (isFetchingServices) await new Promise(r => setTimeout(r, 200));
-        return;
-    }
-    isFetchingServices = true;
-    try {
-        const services = await fetchAllServices();
-        if (services && services.length > 0) {
-            cachedServices = services;
-            lastCategoriesFetchTime = Date.now();
-            
-            // تخزين الخدمات في قاعدة البيانات فوراً للحماية من إيقاف السيرفر
-            dbCollection.updateOne(
-                { _id: "services_cache" }, 
-                { $set: { services: cachedServices, lastFetch: lastCategoriesFetchTime } }, 
-                { upsert: true }
-            ).catch(()=>{});
+    if (fetchPromise) return fetchPromise; 
+    fetchPromise = (async () => {
+        try {
+            const services = await fetchAllServices();
+            if (services && services.length > 0) {
+                cachedServices = services;
+                lastCategoriesFetchTime = Date.now();
+                if (dbCollection) {
+                    dbCollection.updateOne({ _id: "services_cache" }, { $set: { services: cachedServices, lastFetch: lastCategoriesFetchTime } }, { upsert: true }).catch(()=>{});
+                }
+            }
+        } catch (e) {
+            console.error("Fetch Error:", e.message);
+        } finally {
+            fetchPromise = null;
         }
-    } catch (e) {
-        console.error("Update Error:", e);
-    } finally {
-        isFetchingServices = false;
-    }
+    })();
+    return fetchPromise;
 }
 
 async function placeOrderWithBestProvider(srv, qty) {
@@ -608,11 +591,11 @@ async function processBuyAction(ctx, userId, srvInternalId) {
          initUser(userId); 
          if (!usersDb[userId] || usersDb[userId].isBanned) return;
          
+         // 🚀 عرض فوري لو الداتا موجودة في الكاش
          if (!cachedServices || cachedServices.length === 0) {
              let loadingMsg;
-             if (ctx.callbackQuery) loadingMsg = await ctx.editMessageText('⏳ لحظات جاري ربط السيرفر وتجهيز الخدمة...').catch(()=>{});
-             else loadingMsg = await ctx.reply('⏳ لحظات جاري ربط السيرفر وتجهيز الخدمة...').catch(()=>{});
-             
+             if (ctx.callbackQuery) loadingMsg = await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
+             else loadingMsg = await ctx.reply('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
              await backgroundServiceUpdate();
          }
          
@@ -860,7 +843,7 @@ bot.hears(/بحث عن خدمة/, async (ctx) => {
     } catch(e){}
 });
 
-// 🚀 دالة عرض الأقسام الصاروخية المحمية
+// 🚀 عرض الأقسام من الذاكرة السحابية فوراً لمنع التعليق
 async function showCategories(ctx) {
   const userId = String(ctx.from.id);
   try {
@@ -869,12 +852,13 @@ async function showCategories(ctx) {
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return await ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
     let loadingMsg;
-    // 🛡️ الانتظار الإجباري للسحب لضمان وجود البيانات في الذاكرة وعدم عرض (لا يوجد خدمات)
-    if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-        if(ctx.callbackQuery) loadingMsg = await ctx.editMessageText('⏳ جاري ربط السيرفرات وسحب الخدمات...').catch(()=>{});
-        else loadingMsg = await ctx.reply('⏳ جاري ربط السيرفرات وسحب الخدمات...').catch(()=>{});
+    if (cachedServices.length === 0) {
+        if(ctx.callbackQuery) loadingMsg = await ctx.editMessageText('⏳ جاري ربط السيرفرات السريعة...').catch(()=>{});
+        else loadingMsg = await ctx.reply('⏳ جاري ربط السيرفرات السريعة...').catch(()=>{});
         
         await backgroundServiceUpdate(); 
+    } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
+        backgroundServiceUpdate(); // يعمل في الخلفية بهدوء من غير ما يعطل الزرار
     }
 
     if (cachedServices.length === 0) {
@@ -998,7 +982,7 @@ async function showAdminPanel(ctx) {
         [Markup.button.callback('🎁 إرسال كود دروب', 'admin_send_drop'), Markup.button.callback('⚙️ جروب الدروب', 'admin_set_drop_group')],
         [Markup.button.callback('🔄 تحديث وسحب الخدمات يدوياً', 'admin_force_refresh')],
         [Markup.button.callback('📱 تغيير رقم الكاش', 'admin_change_wallet'), Markup.button.callback('🏦 تغيير حساب انستاباي', 'admin_change_instapay')],
-        [Markup.button.callback('📢 إضافة قناة مبيعات', 'admin_set_sales_channel'), Markup.button.callback('🔒 إضافة قناة اشتراك الإجباري', 'admin_set_force_sub')],
+        [Markup.button.callback('📢 إضافة قناة مبيعات', 'admin_set_sales_channel'), Markup.button.callback('🔒 إضافة قناة اشتراك إجباري', 'admin_set_force_sub')],
         [Markup.button.callback('💳 طلبات الشحن (' + (pendingDeposits ? pendingDeposits.length : 0) + ')', 'admin_pending_deposits')],
         [Markup.button.callback('💰 فحص رصيد المزود', 'admin_check_api_balance'), Markup.button.callback('🟢 فحص حالة المزود (API)', 'admin_check_api_status')],
         [Markup.button.callback('🎯 نسبة ربح لمنتج', 'admin_search_markup'), Markup.button.callback('📦 مخزن المنتجات المحلي', 'admin_search_stock')],
@@ -1577,7 +1561,7 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
-// 🚀 عرض الأقسام فوراً دون أي إغلاق للزراير 🚀
+// 🚀 الأقسام هتفتح فوراً مهما دست عليها متأخر ومش هتقولك "لا يوجد خدمات"
 bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1592,7 +1576,7 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
         return await ctx.editMessageText('⚠️ يرجى تحديث الأقسام من القائمة الرئيسية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
     }
 
-    // الانتظار الإجباري عشان نحمل الخدمات قبل ما نعرض الزرار
+    // الانتظار عشان نحمل الخدمات لو مش موجودة
     if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
         await ctx.editMessageText('⏳ لحظات جاري تحميل الخدمات...').catch(()=>{});
         await backgroundServiceUpdate(); 
@@ -1683,7 +1667,6 @@ bot.action(/^rate_(\d+)_(.+)$/, async (ctx) => {
     await ctx.editMessageText(`✅ **شكراً لتقييمك الرائع!**\nتقييمك للخدمة: ${'⭐'.repeat(stars)}\nرأيك يهمنا ويساعد العملاء الآخرين.`, {parse_mode: 'HTML'}).catch(()=>{});
 });
 
-// 🚀 دالة الشراء بدون تعطيل السيرفر
 bot.action(/^buyact_(.+)$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -2541,7 +2524,7 @@ bot.on('text', async (ctx, next) => {
 
             if (text === 'عرض') {
                 if (!localInventory[srvId] || localInventory[srvId].length === 0) {
-                    return await ctx.reply('📦 المخزن فارغ تماماً لهذا المنتج (يتم السحب حالياً من المزود السحابي).', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+                    return await ctx.reply('📦 المخزن فارغ تماماً لهذا المنتج (يتم السحب حالياً من المزود السحابي).', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
                 }
                 let stockList = localInventory[srvId].map((item, idx) => `📦 **عنصر ${idx + 1}:**\n${item}`).join('\n\n');
                 if (stockList.length > 3800) stockList = stockList.substring(0, 3800) + '\n\n... (يوجد المزيد لكن تم إخفاؤه لعدم تجاوز حد الرسائل)';
@@ -2713,8 +2696,22 @@ bot.on('text', async (ctx, next) => {
   }
 });
 
+// 🚀🚀🚀 [الحل القاضي لحماية Vercel] 🚀🚀🚀
 export default async function handler(req, res) {
   if (req.method === 'POST') {
+    let responded = false;
+    
+    // دالة لحماية Vercel بتأكيد الرد دائماً
+    const safeRes = () => {
+        if (!responded && !res.headersSent) {
+            responded = true;
+            res.status(200).send('OK');
+        }
+    };
+
+    // Vercel يقطع الاتصال لو مر 10 ثواني، احنا هنرد بعد 8 ثواني غصب عنه عشان تليجرام ميزهقناش
+    const timeoutId = setTimeout(safeRes, 8000);
+
     try {
         await loadDatabase(); 
 
@@ -2745,28 +2742,30 @@ export default async function handler(req, res) {
                     }
                 }
             }
-            return res.status(200).send('SMS Processed Successfully');
+            safeRes();
+            return;
         }
 
-        // 🚀 معالجة تليجرام بأمان بدون الـ Promise.race اللي كان بيوقع البوت
+        // معالجة أوامر البوت بأمان
         if (req.body && req.body.update_id) {
             await bot.handleUpdate(req.body);
         }
 
+    } catch (e) {
+        console.error('Vercel Handler Critical Error:', e);
+    } finally {
+        clearTimeout(timeoutId);
+        
+        // حفظ قواعد البيانات المعلقة قبل إغلاق الطلب
         if (pendingSaves.length > 0) {
-            const saves = [...pendingSaves];
-            pendingSaves = []; 
-            await Promise.allSettled(saves);
+            try { await Promise.allSettled(pendingSaves); } catch(e) {}
+            pendingSaves = [];
         }
         
-        if (!res.headersSent) res.status(200).send('OK');
-
-    } catch (e) {
-        console.error('Vercel Handler Error:', e);
-        if (!res.headersSent) res.status(200).send('OK'); 
+        safeRes();
     }
   } else {
-    res.status(200).send('Bot is running on Vercel with MongoDB! 🚀');
+    res.status(200).send('Bot is running flawlessly on Vercel with MongoDB! 🚀');
   }
 }
 
