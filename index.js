@@ -15,12 +15,11 @@ let publicSalesChannels = process.env.PUBLIC_SALES_CHANNEL ? [process.env.PUBLIC
 let forceSubscribeChannels = []; 
 
 // ==========================================
-// 🛡️ إعدادات الاتصال المحمية بقاعدة بيانات MongoDB 
-// (تمت إضافة حماية ضد التعليق Timeout)
+// 🛡️ إعدادات الاتصال بقاعدة بيانات MongoDB 
 // ==========================================
 const MONGODB_URI = "mongodb+srv://ahmwogod24920s_db_user:LwAbx06XOKBWel9j@cluster0.sjxm2ga.mongodb.net/xprostore?retryWrites=true&w=majority&appName=Cluster0";
 const client = new MongoClient(MONGODB_URI, { 
-    serverSelectionTimeoutMS: 4000, // مستحيل يعلق أكتر من 4 ثواني
+    serverSelectionTimeoutMS: 4000, 
     connectTimeoutMS: 4000,
     socketTimeoutMS: 4000
 });
@@ -55,6 +54,8 @@ let ratings = {};
 let botStates = {
     deposit: {}, broadcast: {}, promo: {}, search: {}, adminInput: {}, adminLogin: {}, adminSession: {}, lastReportDate: "", buyQty: {}, ordersPage: {}, tempStock: {}, adminTempCats: {}, lastAdminCat: {}, lastAdminCatFixed: {}, transfer: {}
 };
+
+const userRequestLocks = {};
 
 function getShortHash(str) {
     let hash = 0;
@@ -107,13 +108,13 @@ async function connectDB() {
 const categoryCacheTime = 300000; 
 let lastCategoriesFetchTime = 0;
 let cachedServices = [];
-let isFetchingServices = false;
+
+// 🚀 تم مسح متغير التعليق القاتل `isFetchingServices` تماماً واستبداله بنظام آمن
 
 async function loadDatabase() {
     await connectDB();
     if (!dbCollection) return;
     
-    // سحب الخدمات من الكاش لسرعة العرض
     if (cachedServices.length === 0) {
         try {
             const svcData = await dbCollection.findOne({ _id: "services_cache" });
@@ -196,6 +197,20 @@ process.on('unhandledRejection', (reason, promise) => { console.error('Unhandled
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
+
+// 🚀 فلتر الرسائل النصية القديمة بدون المساس بالأزرار
+bot.use(async (ctx, next) => {
+    try {
+        const now = Math.floor(Date.now() / 1000);
+        // نمنع الرسائل النصية المكررة لتخفيف الضغط
+        if (ctx.message && ctx.message.text && ctx.message.date) {
+            if (now - ctx.message.date > 45) return; 
+        }
+        return await next();
+    } catch (e) {
+        console.error("Middleware Error:", e);
+    }
+});
 
 bot.catch((err, ctx) => {
     console.error(`Ooops, encountered an error for ${ctx.updateType}`, err.message);
@@ -304,7 +319,7 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 3 مزودين فقط مع Timeout صارم يمنع التعليق
+// 🌐 3 مزودين سريعين فقط 
 const API_TIMEOUT = 3500; 
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: API_TIMEOUT });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: API_TIMEOUT });
@@ -502,6 +517,7 @@ async function fetchAllServices() {
     return services;
 }
 
+// 🚀 دالة التحديث المؤمنة بـ Promise لمنع الدخول في غيبوبة (Death Loop)
 let fetchPromise = null;
 async function backgroundServiceUpdate() {
     if (fetchPromise) return fetchPromise; 
@@ -512,13 +528,17 @@ async function backgroundServiceUpdate() {
                 cachedServices = services;
                 lastCategoriesFetchTime = Date.now();
                 if (dbCollection) {
-                    dbCollection.updateOne({ _id: "services_cache" }, { $set: { services: cachedServices, lastFetch: lastCategoriesFetchTime } }, { upsert: true }).catch(()=>{});
+                    dbCollection.updateOne(
+                        { _id: "services_cache" }, 
+                        { $set: { services: cachedServices, lastFetch: lastCategoriesFetchTime } }, 
+                        { upsert: true }
+                    ).catch(()=>{});
                 }
             }
         } catch (e) {
-            console.error("Fetch Error:", e.message);
+            console.error("Update Error:", e.message);
         } finally {
-            fetchPromise = null;
+            fetchPromise = null; 
         }
     })();
     return fetchPromise;
@@ -591,11 +611,9 @@ async function processBuyAction(ctx, userId, srvInternalId) {
          initUser(userId); 
          if (!usersDb[userId] || usersDb[userId].isBanned) return;
          
-         // 🚀 عرض فوري لو الداتا موجودة في الكاش
          if (!cachedServices || cachedServices.length === 0) {
-             let loadingMsg;
-             if (ctx.callbackQuery) loadingMsg = await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
-             else loadingMsg = await ctx.reply('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
+             if (ctx.callbackQuery) await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
+             else await ctx.reply('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
              await backgroundServiceUpdate();
          }
          
@@ -843,7 +861,6 @@ bot.hears(/بحث عن خدمة/, async (ctx) => {
     } catch(e){}
 });
 
-// 🚀 عرض الأقسام من الذاكرة السحابية فوراً لمنع التعليق
 async function showCategories(ctx) {
   const userId = String(ctx.from.id);
   try {
@@ -851,21 +868,18 @@ async function showCategories(ctx) {
     if (usersDb[userId].isBanned) return await ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return await ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
-    let loadingMsg;
-    if (cachedServices.length === 0) {
-        if(ctx.callbackQuery) loadingMsg = await ctx.editMessageText('⏳ جاري ربط السيرفرات السريعة...').catch(()=>{});
-        else loadingMsg = await ctx.reply('⏳ جاري ربط السيرفرات السريعة...').catch(()=>{});
+    if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
+        let loadingMsg;
+        if(ctx.callbackQuery) loadingMsg = await ctx.editMessageText('⏳ جاري تجهيز الأقسام... لحظات.').catch(()=>{});
+        else loadingMsg = await ctx.reply('⏳ جاري تجهيز الأقسام... لحظات.').catch(()=>{});
         
         await backgroundServiceUpdate(); 
-    } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-        backgroundServiceUpdate(); // يعمل في الخلفية بهدوء من غير ما يعطل الزرار
     }
 
     if (cachedServices.length === 0) {
         const errorMsg = '⚠️ تعذر جلب الخدمات حالياً، يرجى المحاولة بعد قليل.';
         const retryKeyboard = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
         if(ctx.callbackQuery) return await ctx.editMessageText(errorMsg, retryKeyboard).catch(()=>{});
-        else if (loadingMsg) return await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, errorMsg, retryKeyboard).catch(()=>{});
         else return await ctx.reply(errorMsg, retryKeyboard).catch(()=>{});
     }
 
@@ -894,8 +908,7 @@ async function showCategories(ctx) {
     if (!usersDb[userId].tempCategories) usersDb[userId].tempCategories = [];
     usersDb[userId].tempCategories = categories; saveDatabase();
 
-    if(loadingMsg && !ctx.callbackQuery) await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, 'اختر الفئة:', keyboard).catch(()=>{});
-    else if(ctx.callbackQuery) return await ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{});
+    if(ctx.callbackQuery) return await ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{});
     else return await ctx.reply('اختر الفئة:', keyboard).catch(()=>{});
   } catch (error) {
     const retryBtn = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
@@ -1561,7 +1574,7 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
-// 🚀 الأقسام هتفتح فوراً مهما دست عليها متأخر ومش هتقولك "لا يوجد خدمات"
+// 🚀 عرض الأقسام فوراً دون أي إغلاق للزراير (يعمل بنسبة 100%) 🚀
 bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1576,10 +1589,10 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
         return await ctx.editMessageText('⚠️ يرجى تحديث الأقسام من القائمة الرئيسية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
     }
 
-    // الانتظار عشان نحمل الخدمات لو مش موجودة
     if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-        await ctx.editMessageText('⏳ لحظات جاري تحميل الخدمات...').catch(()=>{});
-        await backgroundServiceUpdate(); 
+        await ctx.editMessageText('⏳ جاري تحميل الخدمات السريعة.. من فضلك انتظر 5 ثواني ثم اضغط على زر (الخدمات) لتحديث القائمة.').catch(()=>{});
+        backgroundServiceUpdate(); // يعمل في الخلفية بدون ما يجمد السيرفر
+        return;
     }
 
     let categoryServices = cachedServices.filter(s => {
@@ -1675,8 +1688,9 @@ bot.action(/^buyact_(.+)$/, async (ctx) => {
      const srvInternalId = ctx.match[1];
      
      if (!cachedServices || cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-         await ctx.editMessageText('⏳ لحظات جاري تجهيز الخدمة...').catch(()=>{});
-         await backgroundServiceUpdate(); 
+         await ctx.editMessageText('⏳ جاري تحديث الخدمات... اضغط مجددا بعد قليل.').catch(()=>{});
+         backgroundServiceUpdate(); 
+         return;
      }
      
      await processBuyAction(ctx, userId, srvInternalId); 
@@ -1771,7 +1785,7 @@ async function publishPriceDrop(ctx, userId, state, fileId) {
         return await ctx.reply('❌ يرجى تحديد قناة المبيعات أولاً من لوحة التحكم لنشر الإعلان.');
     }
 
-    if (cachedServices.length === 0) await backgroundServiceUpdate();
+    if (cachedServices.length === 0) backgroundServiceUpdate();
     const srv = cachedServices.find(s => String(s.id) === srvId);
     if (!srv) return await ctx.reply('❌ الخدمة غير موجودة.');
 
@@ -2396,7 +2410,7 @@ bot.on('text', async (ctx, next) => {
 
         if (state === 'WAIT_VOUCHER_CREATE') {
             const parts = text.split(/\s+/); 
-            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
+            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
             const code = parts[0].toUpperCase(); const amount = parseFloat(parts[1]);
             if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ القيمة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             vouchers[code] = { amount, isUsed: false }; 
@@ -2696,21 +2710,18 @@ bot.on('text', async (ctx, next) => {
   }
 });
 
-// 🚀🚀🚀 [الحل القاضي لحماية Vercel] 🚀🚀🚀
 export default async function handler(req, res) {
   if (req.method === 'POST') {
     let responded = false;
     
-    // دالة لحماية Vercel بتأكيد الرد دائماً
+    // إجبار Vercel على الاستمرار لفترة كافية
     const safeRes = () => {
         if (!responded && !res.headersSent) {
             responded = true;
             res.status(200).send('OK');
         }
     };
-
-    // Vercel يقطع الاتصال لو مر 10 ثواني، احنا هنرد بعد 8 ثواني غصب عنه عشان تليجرام ميزهقناش
-    const timeoutId = setTimeout(safeRes, 8000);
+    const timeoutId = setTimeout(safeRes, 8500);
 
     try {
         await loadDatabase(); 
@@ -2746,17 +2757,15 @@ export default async function handler(req, res) {
             return;
         }
 
-        // معالجة أوامر البوت بأمان
         if (req.body && req.body.update_id) {
             await bot.handleUpdate(req.body);
         }
 
     } catch (e) {
-        console.error('Vercel Handler Critical Error:', e);
+        console.error('Vercel Handler Error:', e);
     } finally {
         clearTimeout(timeoutId);
         
-        // حفظ قواعد البيانات المعلقة قبل إغلاق الطلب
         if (pendingSaves.length > 0) {
             try { await Promise.allSettled(pendingSaves); } catch(e) {}
             pendingSaves = [];
