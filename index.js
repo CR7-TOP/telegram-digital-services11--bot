@@ -1,7 +1,6 @@
 import { Telegraf, Markup } from 'telegraf';
 import axios from 'axios';
 import dotenv from 'dotenv';
-import http from 'http';
 import { MongoClient } from 'mongodb'; 
 
 dotenv.config();
@@ -188,19 +187,6 @@ function saveDatabase() {
         }).catch(e => console.error('DB Save Error:', e.message));
         pendingSaves.push(savePromise); 
     } catch (e) { console.error('Local save error:', e.message); }
-}
-
-// 🌐 عزل السيرفر المحلي عن Vercel لمنع التعارض
-if (!process.env.VERCEL) {
-    const PORT = process.env.PORT || 3000;
-    const server = http.createServer((req, res) => {
-        res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-        res.write('البوت يعمل بكفاءة وقاعدة البيانات السحابية متصلة 🚀');
-        res.end();
-    });
-    server.listen(PORT, '0.0.0.0', () => {
-        console.log(`Local web server is running on port ${PORT}`);
-    });
 }
 
 process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err); });
@@ -927,7 +913,7 @@ async function showCategories(ctx) {
   try {
     initUser(userId); clearUserStates(userId);
     if (usersDb[userId].isBanned) return await ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
-    if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return await ctx.reply('🛠 **الم المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
+    if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return await ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
     let loadingMsg;
     if (cachedServices.length === 0) {
@@ -2794,22 +2780,6 @@ bot.on('text', async (ctx, next) => {
       console.error("Text Handler Error:", e.message);
   }
 });
-
-
-// ==========================================
-// 🚀 تشغيل البوت محلياً (Polling) إذا لم يكن على Vercel
-// ==========================================
-if (!process.env.VERCEL) {
-    bot.launch().then(() => {
-        console.log('🤖 البوت يعمل الآن في وضع Polling (محلي)');
-    }).catch(err => {
-        console.error('Failed to launch bot locally:', err);
-    });
-
-    process.once('SIGINT', () => bot.stop('SIGINT'));
-    process.once('SIGTERM', () => bot.stop('SIGTERM'));
-}
-
 
 // ==========================================
 // 🚀 نظام تشغيل Vercel الآمن تماماً
