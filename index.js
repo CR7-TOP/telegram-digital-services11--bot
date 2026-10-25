@@ -15,15 +15,10 @@ let publicSalesChannels = process.env.PUBLIC_SALES_CHANNEL ? [process.env.PUBLIC
 let forceSubscribeChannels = []; 
 
 // ==========================================
-// 🛡️ إعدادات الاتصال بقاعدة بيانات MongoDB 
-// (تم تسريع المهلة لـ 3 ثواني لمنع التجميد)
+// 🛡️ إعدادات الاتصال المحمية (Caching)
 // ==========================================
 const MONGODB_URI = "mongodb+srv://ahmwogod24920s_db_user:LwAbx06XOKBWel9j@cluster0.sjxm2ga.mongodb.net/xprostore?retryWrites=true&w=majority&appName=Cluster0";
-const client = new MongoClient(MONGODB_URI, { 
-    serverSelectionTimeoutMS: 3000, 
-    connectTimeoutMS: 3000,
-    socketTimeoutMS: 3000
-});
+let cachedClient = null;
 let dbCollection = null;
 let pendingSaves = []; 
 let isDbConnected = false;
@@ -93,16 +88,21 @@ function broadcastSale(serviceName, qty, price, userUid, paymentMethod, srvId, b
 }
 
 async function connectDB() {
-    if (!isDbConnected) {
-        try {
-            await client.connect();
-            const database = client.db("xprostore");
-            dbCollection = database.collection("botData");
-            isDbConnected = true;
-            console.log("✅ متصل بقاعدة بيانات MongoDB السحابية بنجاح!");
-        } catch (e) {
-            console.error("DB Connection Error:", e.message);
+    if (isDbConnected) return;
+    try {
+        if (!cachedClient) {
+            cachedClient = new MongoClient(MONGODB_URI, { 
+                serverSelectionTimeoutMS: 4000, 
+                connectTimeoutMS: 4000,
+                socketTimeoutMS: 4000
+            });
+            await cachedClient.connect();
         }
+        const database = cachedClient.db("xprostore");
+        dbCollection = database.collection("botData");
+        isDbConnected = true;
+    } catch (e) {
+        console.error("DB Connection Error:", e.message);
     }
 }
 
@@ -114,7 +114,7 @@ async function loadDatabase() {
     await connectDB();
     if (!dbCollection) return;
     
-    // سحب الخدمات من الكاش لسرعة العرض
+    // سحب الخدمات من الكاش لسرعة العرض الفورية
     if (cachedServices.length === 0) {
         try {
             const svcData = await dbCollection.findOne({ _id: "services_cache" });
@@ -198,7 +198,20 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 
-// 🚀 تم حذف فلتر الوقت القاتل اللي كان بيخلي البوت ميردش
+// 🚀 فلتر تخفيف الضغط (تم توسيعه جداً لـ 3 دقائق لمنع قتل أوامرك بسبب فرق التوقيت)
+bot.use(async (ctx, next) => {
+    try {
+        const now = Math.floor(Date.now() / 1000);
+        // نتجاهل فقط الرسائل القديمة جداً المتأخرة
+        if (ctx.message && ctx.message.text && ctx.message.date) {
+            if (now - ctx.message.date > 180) return; 
+        }
+        return await next();
+    } catch (e) {
+        console.error("Middleware Error:", e);
+    }
+});
+
 bot.catch((err, ctx) => {
     console.error(`Ooops, encountered an error for ${ctx.updateType}`, err.message);
 });
@@ -306,8 +319,8 @@ function getUserByUid(targetUid) {
   return null;
 }
 
-// 🌐 3 مزودين سريعين بمهلة قصيرة عشان ميعطلوش البوت (3 ثواني فقط)
-const API_TIMEOUT = 3000; 
+// 🌐 3 مزودين سريعين فقط 
+const API_TIMEOUT = 3500; 
 const apiClient1 = axios.create({ baseURL: 'https://xprostore.store/api/v1', headers: { 'Authorization': 'Bearer ' + process.env.PROVIDER_API_KEY, 'Content-Type': 'application/json' }, timeout: API_TIMEOUT });
 const apiClient2 = axios.create({ baseURL: 'https://zfourstore.up.railway.app/api/v1', headers: { 'X-API-Key': process.env.PROVIDER2_API_KEY, 'Content-Type': 'application/json' }, timeout: API_TIMEOUT });
 const API_KEY_3 = 'ch_live_uOAaG2beDDH3TrfeERZB_wpekZnzmZmtuOHhromDw4w';
@@ -504,29 +517,31 @@ async function fetchAllServices() {
     return services;
 }
 
-// 🚀 دالة السحب الآمنة (بتحدث الداتا بدون ما توقف أو تعطل البوت)
-let isFetching = false;
+// 🚀 دالة السحب الذكية باستخدام Promise (بدون أي Loop يعلق)
+let fetchPromise = null;
 async function backgroundServiceUpdate() {
-    if (isFetching) return; 
-    isFetching = true;
-    try {
-        const services = await fetchAllServices();
-        if (services && services.length > 0) {
-            cachedServices = services;
-            lastCategoriesFetchTime = Date.now();
-            if (dbCollection) {
-                dbCollection.updateOne(
-                    { _id: "services_cache" }, 
-                    { $set: { services: cachedServices, lastFetch: lastCategoriesFetchTime } }, 
-                    { upsert: true }
-                ).catch(()=>{});
+    if (fetchPromise) return fetchPromise; 
+    fetchPromise = (async () => {
+        try {
+            const services = await fetchAllServices();
+            if (services && services.length > 0) {
+                cachedServices = services;
+                lastCategoriesFetchTime = Date.now();
+                if (dbCollection) {
+                    dbCollection.updateOne(
+                        { _id: "services_cache" }, 
+                        { $set: { services: cachedServices, lastFetch: lastCategoriesFetchTime } }, 
+                        { upsert: true }
+                    ).catch(()=>{});
+                }
             }
+        } catch (e) {
+            console.error("Update Error:", e.message);
+        } finally {
+            fetchPromise = null; 
         }
-    } catch (e) {
-        console.error("Update Error:", e.message);
-    } finally {
-        isFetching = false; 
-    }
+    })();
+    return fetchPromise;
 }
 
 async function placeOrderWithBestProvider(srv, qty) {
@@ -605,7 +620,7 @@ async function processBuyAction(ctx, userId, srvInternalId) {
          const srv = cachedServices.find(s => s.internal_id === srvInternalId || String(s.id) === String(srvInternalId));
          
          if(!srv) {
-             if (ctx.callbackQuery) await ctx.editMessageText('❌ الخدمة غير متوفرة حالياً.').catch(()=>{});
+             if (ctx.callbackQuery) await ctx.editMessageText('❌ الخدمة غير متوفرة حالياً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للأقسام', 'main_categories')]])).catch(()=>{});
              else await ctx.reply('❌ الخدمة غير متوفرة حالياً.').catch(()=>{});
              return;
          }
@@ -650,6 +665,10 @@ bot.start(async (ctx) => {
     }
     if (payload) {
         if (payload.startsWith('buy_')) {
+            if (cachedServices.length === 0) {
+                 await ctx.reply('⏳ جاري تجهيز الخدمة...').catch(()=>{});
+                 await backgroundServiceUpdate();
+            }
             await processBuyAction(ctx, userId, payload.split('buy_')[1]); 
             return; 
         }
@@ -846,7 +865,7 @@ bot.hears(/بحث عن خدمة/, async (ctx) => {
     } catch(e){}
 });
 
-// 🚀 الأقسام هتفتح فوراً لأنها بتاخد الداتا من الكاش السريع
+// 🚀 الأقسام هتفتح فوراً طلقة (لا يوجد مسح ولا تغيير للأزرار نهائياً)
 async function showCategories(ctx) {
   const userId = String(ctx.from.id);
   try {
@@ -854,18 +873,21 @@ async function showCategories(ctx) {
     if (usersDb[userId].isBanned) return await ctx.reply('❌ عذراً، تم حظرك من استخدام هذا البوت.').catch(()=>{});
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return await ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
-    if (cachedServices.length === 0) {
-        if(ctx.callbackQuery) await ctx.editMessageText('⏳ جاري تحميل الخدمات لأول مرة... يرجى الانتظار ثواني.').catch(()=>{});
-        else await ctx.reply('⏳ جاري تحميل الخدمات لأول مرة... يرجى الانتظار ثواني.').catch(()=>{});
+    let loadingMsg;
+    if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
+        if(ctx.callbackQuery) {
+            loadingMsg = await ctx.editMessageText('⏳ جاري تحديث الأقسام... لحظات.').catch(()=>{});
+        } else {
+            loadingMsg = await ctx.reply('⏳ جاري تحديث الأقسام... لحظات.').catch(()=>{});
+        }
         await backgroundServiceUpdate(); 
-    } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-        backgroundServiceUpdate(); // شغال في الخلفية بدون ما يعطلك
     }
 
     if (cachedServices.length === 0) {
         const errorMsg = '⚠️ تعذر جلب الخدمات حالياً، يرجى المحاولة بعد قليل.';
         const retryKeyboard = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
         if(ctx.callbackQuery) return await ctx.editMessageText(errorMsg, retryKeyboard).catch(()=>{});
+        else if (loadingMsg) return await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, errorMsg, retryKeyboard).catch(()=>{});
         else return await ctx.reply(errorMsg, retryKeyboard).catch(()=>{});
     }
 
@@ -893,6 +915,10 @@ async function showCategories(ctx) {
 
     if (!usersDb[userId].tempCategories) usersDb[userId].tempCategories = [];
     usersDb[userId].tempCategories = categories; saveDatabase();
+
+    if (loadingMsg && !ctx.callbackQuery) {
+        ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id).catch(()=>{});
+    }
 
     if(ctx.callbackQuery) return await ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{});
     else return await ctx.reply('اختر الفئة:', keyboard).catch(()=>{});
@@ -1560,7 +1586,7 @@ bot.action(/^ord_det_(\d+)$/, async (ctx) => {
 
 bot.action('noop', (ctx) => ctx.answerCbQuery().catch(()=>{}));
 
-// 🚀 الأقسام هتفتح فوراً طلقة مهما كان الوقت
+// 🚀 الأقسام هتفتح فوراً مهما كان من ضغطة واحدة (تم تدمير كود الـ Loop)
 bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
   ctx.answerCbQuery().catch(()=>{}); 
   try {
@@ -1575,8 +1601,9 @@ bot.action(/^cat_(\d+)(?:_(\d+))?$/, async (ctx) => {
         return await ctx.editMessageText('⚠️ يرجى تحديث الأقسام من القائمة الرئيسية.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'main_categories')]])).catch(()=>{});
     }
 
+    // 🚀 البوت مش بيجبرك تستنى هنا، لو معندهوش الخدمات هيجيبها فوراً بدون تعليق 
     if (cachedServices.length === 0 || Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
-        await ctx.editMessageText('⏳ جاري تحميل الخدمات.. لحظات.').catch(()=>{});
+        await ctx.editMessageText('⏳ جاري عرض الخدمات...').catch(()=>{});
         await backgroundServiceUpdate(); 
     }
 
@@ -2394,7 +2421,7 @@ bot.on('text', async (ctx, next) => {
 
         if (state === 'WAIT_VOUCHER_CREATE') {
             const parts = text.split(/\s+/); 
-            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]])});
+            if (parts.length < 2) return await ctx.reply('❌ صيغة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             const code = parts[0].toUpperCase(); const amount = parseFloat(parts[1]);
             if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ القيمة غير صحيحة.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]));
             vouchers[code] = { amount, isUsed: false }; 
@@ -2694,8 +2721,21 @@ bot.on('text', async (ctx, next) => {
   }
 });
 
+// 🚀🚀🚀 [قلب البوت ونظام الحماية الأقوى من السقوط] 🚀🚀🚀
 export default async function handler(req, res) {
   if (req.method === 'POST') {
+    let responded = false;
+    
+    const safeRes = () => {
+        if (!responded && !res.headersSent) {
+            responded = true;
+            res.status(200).send('OK');
+        }
+    };
+
+    // حماية Vercel: بنرد بعد 8 ثواني بالظبط عشان السيرفر ميقفلش بغباء وتليجرام ميكررش الرسايل
+    const timeoutId = setTimeout(safeRes, 8000);
+
     try {
         await loadDatabase(); 
 
@@ -2726,22 +2766,24 @@ export default async function handler(req, res) {
                     }
                 }
             }
-            return res.status(200).send('SMS Processed Successfully');
+            safeRes();
+            return;
         }
 
+        // 🚀 معالجة تليجرام بأمان بدون أي وعود قاتلة
         if (req.body && req.body.update_id) {
             await bot.handleUpdate(req.body);
         }
 
-        if (pendingSaves.length > 0) {
-            const saves = [...pendingSaves];
-            pendingSaves = []; 
-            await Promise.allSettled(saves);
-        }
     } catch (e) {
         console.error('Vercel Handler Error:', e);
     } finally {
-        if (!res.headersSent) res.status(200).send('OK'); 
+        clearTimeout(timeoutId);
+        if (pendingSaves.length > 0) {
+            try { await Promise.allSettled(pendingSaves); } catch(e) {}
+            pendingSaves = [];
+        }
+        safeRes();
     }
   } else {
     res.status(200).send('Bot is running flawlessly on Vercel with MongoDB! 🚀');
