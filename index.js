@@ -3066,13 +3066,17 @@ bot.on('text', async (ctx, next) => {
             let finalEgpAmount = inputAmount; // الافتراضي للمحلي
             let usdAmountDisplay = null;
 
-            // إذا كان الدفع عبر العملات الرقمية نقوم بحساب العملة بالجنيه بناءً على سعر الدولار للأدمن
+                    // إذا كان الدفع عبر العملات الرقمية نقوم بحساب العملة بالجنيه بناءً على سعر الدولار للأدمن
             if (state.method === 'bybit' || state.method === 'usdt') {
                 usdAmountDisplay = inputAmount;
                 finalEgpAmount = inputAmount * usdToEgpRate;
             }
 
+            // 🌟 الحل هنا: تقريب الرقم ليحتوي على كسرين كحد أقصى (مثال: 156.80 بدلاً من الرقم الطويل)
+            finalEgpAmount = parseFloat(finalEgpAmount.toFixed(2));
+
             state.amount = finalEgpAmount; // حفظ القيمة بالجنيه المصري دائماً في المحفظة
+
             state.step = 'WAIT_RECEIPT'; 
             saveDatabase();
             
