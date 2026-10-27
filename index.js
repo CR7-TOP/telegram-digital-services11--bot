@@ -2917,7 +2917,6 @@ bot.on('text', async (ctx, next) => {
         }
     }
 
-
     return await next();
   } catch(e) { console.error("Text Handler Error:", e.message); }
 });
