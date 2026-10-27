@@ -40,7 +40,12 @@ let hiddenServices = [];
 let fixedPrices = {}; 
 let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
 let instapayAccount = 'غير محدد'; 
-
+let fixedPrices = {}; 
+let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
+let instapayAccount = 'غير محدد'; 
+let bybitId = 'رقم_حسابك_هنا';
+let usdtAddress = 'عنوان_المحفظة_هنا';
+let usdToEgpRate = 50; 
 let abandonedCarts = {}; 
 let usedReceipts = []; 
 let stockAlerts = {}; 
@@ -2867,17 +2872,51 @@ bot.on('text', async (ctx, next) => {
         return await ctx.reply('🔍 نتائج البحث:', Markup.inlineKeyboard(buttons)).catch(()=>{});
     }
 
+        // 🆕 نظام الحسابات والتأكيد المطور لجميع الطرق
     if (botStates.deposit && botStates.deposit[userId]) {
         const state = botStates.deposit[userId];
         if (state.step === 'WAIT_AMOUNT') {
-            const amount = parseFloat(text);
-            if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ أدخل مبلغاً صحيحاً وموجباً:').catch(()=>{});
-            state.amount = amount; state.step = 'WAIT_RECEIPT'; saveDatabase();
+            const inputAmount = parseFloat(text);
+            if (isNaN(inputAmount) || inputAmount <= 0) return await ctx.reply('❌ أدخل مبلغاً صحيحاً وموجباً (أرقام فقط):').catch(()=>{});
             
-            let paymentInfo = state.method === 'instapay' ? `🟣 انستاباي (InstaPay):\n🔗 <code>${instapayAccount}</code>` : `🔴 فودافون كاش:\n📱 <code>${vodafoneCashNumber}</code>`;
-            return await ctx.reply(`💳 <b>الخطوة الأخيرة:</b>\n\nقم بتحويل مبلغ (<b>${amount} EGP</b>) على هذا الحساب:\n${paymentInfo}\n\n📸 <b>الآن: قم بإرسال صورة (سكرين شوت) تؤكد إتمامك للتحويل لكي يتم مراجعتها وإضافة الرصيد.</b>`, { parse_mode: 'HTML' }).catch(()=>{});
+            let finalEgpAmount = inputAmount; // الافتراضي للمحلي
+            let usdAmountDisplay = null;
+
+            // إذا كان الدفع عبر العملات الرقمية نقوم بحساب العملة بالجنيه بناءً على سعر الدولار للأدمن
+            if (state.method === 'bybit' || state.method === 'usdt') {
+                usdAmountDisplay = inputAmount;
+                finalEgpAmount = inputAmount * usdToEgpRate; // تأكد أن متغير usdToEgpRate معرف في أعلى الكود
+            }
+
+            // 🌟 السطر المضاف لتقريب الكسر لـ رقمين فقط
+            finalEgpAmount = parseFloat(finalEgpAmount.toFixed(2));
+
+            state.amount = finalEgpAmount; // حفظ القيمة بالجنيه المصري دائماً في المحفظة
+            state.step = 'WAIT_RECEIPT'; 
+            saveDatabase();
+            
+            let paymentInfo = '';
+            if (state.method === 'instapay') {
+                paymentInfo = `🟣 انستاباي (InstaPay):\n🔗 <code>${instapayAccount}</code>`;
+            } else if (state.method === 'bybit') {
+                paymentInfo = `🟡 Bybit ID:\n🆔 <code>${bybitId}</code>`; // تأكد أن bybitId معرف
+            } else if (state.method === 'usdt') {
+                paymentInfo = `🟢 USDT (BEP20):\n🔗 <code>${usdtAddress}</code>`; // تأكد أن usdtAddress معرف
+            } else {
+                paymentInfo = `🔴 فودافون كاش:\n📱 <code>${vodafoneCashNumber}</code>`;
+            }
+            
+            let amountDetailsMsg = '';
+            if (usdAmountDisplay) {
+                amountDetailsMsg = `💵 <b>المبلغ بالدولار:</b> ${usdAmountDisplay} USD\n💱 <b>يعادل بالجنيه:</b> ${finalEgpAmount} EGP\n\nقم بتحويل الدولارات على البيانات التالية:\n`;
+            } else {
+                amountDetailsMsg = `قم بتحويل مبلغ (<b>${finalEgpAmount} EGP</b>) على هذا الحساب:\n`;
+            }
+
+            return await ctx.reply(`💳 <b>الخطوة الأخيرة:</b>\n\n${amountDetailsMsg}${paymentInfo}\n\n📸 <b>الآن: قم بإرسال صورة (سكرين شوت) تؤكد إتمامك للتحويل لكي يتم مراجعتها وإضافة الرصيد.</b>`, { parse_mode: 'HTML' }).catch(()=>{});
         }
     }
+
 
     return await next();
   } catch(e) { console.error("Text Handler Error:", e.message); }
