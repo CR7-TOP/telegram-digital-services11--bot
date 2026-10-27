@@ -41,11 +41,6 @@ let fixedPrices = {};
 let vodafoneCashNumber = process.env.VODAFONE_NUMBER || '01228098689'; 
 let instapayAccount = 'غير محدد'; 
 
-// 🆕 متغيرات الدفع الرقمي الجديدة (تمت إضافتها هنا)
-let bybitId = 'رقم_حسابك_هنا';
-let usdtAddress = 'عنوان_المحفظة_هنا';
-let usdToEgpRate = 50; // سعر صرف الدولار للجنيه
-
 let abandonedCarts = {}; 
 let usedReceipts = []; 
 let stockAlerts = {}; 
@@ -63,17 +58,19 @@ let botStates = {
 
 const userRequestLocks = {};
 
-// 🛡️ دالة تعقيم المدخلات لمنع NoSQL Injection والرموز الخبيثة
+// 🛡️ دالة تعقيم المدخلات لمنع NoSQL Injection والرموز الخبيثة (الطلب 5)
 function sanitizeInput(text) {
     if (typeof text !== 'string') return '';
     return text.replace(/[${\}]/g, '').replace(/<[^>]*>?/gm, '').trim();
 }
 
+// 🛡️ دالة التحقق من الأدمن 
 function isAdmin(userId) {
     const idStr = String(userId);
     return (usersDb[idStr] && String(usersDb[idStr].uid) === '1001') || (botStates && botStates.adminSession && botStates.adminSession[idStr]);
 }
 
+// دالة النشر في قنوات إثباتات الثقة
 function broadcastSale(serviceName, qty, price, userUid, paymentMethod, srvId, botUsername) {
     if (!publicSalesChannels || publicSalesChannels.length === 0) return;
     try {
@@ -133,9 +130,6 @@ async function loadDatabase() {
         fixedPrices = data.fixedPrices || {};
         if (data.vodafoneCashNumber) vodafoneCashNumber = data.vodafoneCashNumber;
         if (data.instapayAccount) instapayAccount = data.instapayAccount;
-        if (data.bybitId) bybitId = data.bybitId;
-        if (data.usdtAddress) usdtAddress = data.usdtAddress;
-        if (data.usdToEgpRate) usdToEgpRate = data.usdToEgpRate;
         
         abandonedCarts = data.abandonedCarts || {}; 
         usedReceipts = data.usedReceipts || [];
@@ -183,7 +177,7 @@ async function loadDatabase() {
 
 function saveDatabase() {
     try {
-        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, bybitId, usdtAddress, usdToEgpRate, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId, customOrders, resellers }; 
+        const data = { usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, maintenanceMode, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId, customOrders, resellers }; 
         const savePromise = connectDB().then(() => {
             if (dbCollection) {
                 return dbCollection.updateOne({ _id: "main_data" }, { $set: data }, { upsert: true });
@@ -215,6 +209,9 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'admin';
 
+// ==========================================
+// 🛡️ حماية البوت من الرد في الجروبات والقنوات
+// ==========================================
 bot.use(async (ctx, next) => {
     if (ctx.chat && ctx.chat.type !== 'private') {
         return; 
@@ -265,7 +262,7 @@ function notifyAdmin(text) {
     } catch(e) {}
 }
 
-// فحص دورة النقاط (الطلب 4)
+// 🆕 دالة فحص وتحديث وتصفير دورة النقاط (الطلب 4)
 function checkPointsCycle(userId) {
     const idStr = String(userId);
     if (!usersDb[idStr]) return;
@@ -277,7 +274,7 @@ function checkPointsCycle(userId) {
     }
 }
 
-// حساب النقاط (الطلب 4)
+// 🆕 حساب النقاط التلقائية عند الشراء (الطلب 4)
 function calculatePoints(price) {
     const p = parseFloat(price);
     if (p < 50) return 5;
@@ -288,7 +285,7 @@ function calculatePoints(price) {
     return 100;
 }
 
-// دالة حساب الترقية والموزعين (الطلب 2 و 3)
+// 🆕 دالة حساب الترقية التلقائية والخصم بناءً على الشحن والموزعين (الطلب 2 و 3)
 function getUserDiscount(user) {
     if (!user) return { discount: 0, level: '👤 حساب عادي' };
     const uidStr = String(user.uid);
@@ -305,7 +302,7 @@ function getUserDiscount(user) {
     return { discount: 0, level: '👤 حساب عادي' };
 }
 
-// فحص الترقية وإشعار العميل (الطلب 3)
+// 🆕 دالة فحص وتطبيق ترقية الـ VIP التلقائية بعد الشحن وإشعار العميل (الطلب 3)
 function checkVipUpgrade(userId, tgId) {
     let user = usersDb[userId];
     if (!user) return;
@@ -351,7 +348,7 @@ function checkAndSendDailyReport() {
 setInterval(() => {
     try {
         if (!ADMIN_CHANNEL_ID || ADMIN_CHANNEL_ID === '') return;
-        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, bybitId, usdtAddress, usdToEgpRate, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId, customOrders, resellers }, null, 2); 
+        const dbDump = JSON.stringify({ usersDb, globalMarkupPercent, customMarkups, pendingDeposits, promoCodes, flashSale, vouchers, adminAuditLogs, customProductMarkups, localInventory, botStates, adCampaigns, hiddenServices, fixedPrices, vodafoneCashNumber, instapayAccount, abandonedCarts, usedReceipts, stockAlerts, publicSalesChannels, forceSubscribeChannels, ratings, dropGroupId, customOrders, resellers }, null, 2); 
         const buffer = Buffer.from(dbDump, 'utf-8');
         bot.telegram.sendDocument(ADMIN_CHANNEL_ID, { source: buffer, filename: `XProStore_Backup_${new Date().toISOString().split('T')[0]}.json` }, { caption: `📦 نسخة احتياطية تلقائية لقاعدة البيانات\n📅 التاريخ: ${new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}` }).catch(()=>{});
     } catch (e) { console.error("Backup Error:", e); }
@@ -641,7 +638,7 @@ const categoryEmojis = {
   'iCloud': '☁️', 'Zoom': '📹', 'API Services': '🔌', 'أخرى': '📦'
 };
 
-// 🆕 القائمة الرئيسية محدثة بالأنظمة الجديدة (الطلبات الخاصة ونقاط الكاش باك)
+// 🆕 القائمة الرئيسية محدثة بالأنظمة الجديدة (الطلبات 1 و 4)
 function getMainMenu() {
   let keyboard = [
     ['🛍 الخدمات', '🔍 بحث عن خدمة'],
@@ -830,18 +827,17 @@ bot.action('check_sub', async (ctx) => {
     }
 });
 
-// 🆕 تعديل التسعير للخصم من السعر النهائي مباشرة للموزع أو الـ VIP
+// 🆕 تعديل التسعير (الطلب 2 و 3)
 function calculateRetailPrice(service, user, quantity = 1) {
   try {
     const srvIdStr = String(service.id);
-    const { discount } = getUserDiscount(user); // جلب نسبة الخصم
+    const { discount } = getUserDiscount(user);
     
     if (fixedPrices && fixedPrices[srvIdStr] !== undefined) {
         let fp = parseFloat(fixedPrices[srvIdStr]);
         if (flashSale && flashSale.active && Date.now() < flashSale.expiresAt) {
             fp = fp - (fp * (flashSale.discount / 100));
         }
-        // تطبيق خصم الموزع أو VIP على السعر الثابت
         if (discount > 0) fp = fp - (fp * (discount / 100));
         return (fp * quantity).toFixed(2);
     }
@@ -855,7 +851,6 @@ function calculateRetailPrice(service, user, quantity = 1) {
 
     let finalPrice = originalPrice * (1 + (markup / 100));
     
-    // تطبيق خصم الموزع أو الـ VIP مباشرة من السعر النهائي
     if (discount > 0) {
         finalPrice = finalPrice - (finalPrice * (discount / 100));
     }
@@ -878,13 +873,11 @@ async function showProfile(ctx) {
     const user = usersDb[userId];
     if (user.isBanned) return await ctx.reply('❌ تم حظرك.').catch(()=>{});
     
-    // 🆕 تحديث عرض المستوى بحسب النظام الجديد
     const { level } = getUserDiscount(user);
     
     await ctx.reply('👤 **حسابي الشخصي:**\n\n🆔 رقم الحساب: `' + user.uid + '`\n🔰 الرتبة: ' + level + '\n💳 الرصيد الحالي: *' + parseFloat(user.balance).toFixed(2) + ' EGP*\n🛍 إجمالي المشتريات: ' + user.totalSpent.toFixed(2) + ' EGP\n💸 إجمالي الشحن: ' + parseFloat(user.totalRecharged || 0).toFixed(2) + ' EGP', { parse_mode: 'Markdown' }).catch(()=>{});
 }
 
-// 🆕 نظام الشحن المحدث باختيار طريقة الدفع
 async function showDepositFlow(ctx) {
     const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
     if (usersDb[userId].isBanned) return;
@@ -894,13 +887,12 @@ async function showDepositFlow(ctx) {
     await ctx.reply('💳 **اختر طريقة الشحن المناسبة لك:**', {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
-            [Markup.button.callback('🔴 فودافون كاش', 'dep_method_vfcash'), Markup.button.callback('🟣 انستاباي', 'dep_method_instapay')],
-            [Markup.button.callback('🟡 منصة Bybit', 'dep_method_bybit'), Markup.button.callback('🟢 محفظة USDT', 'dep_method_usdt')]
+            [Markup.button.callback('🔴 شحن بالمحفظة (فودافون كاش)', 'dep_method_vfcash')],
+            [Markup.button.callback('🟣 انستاباي (InstaPay)', 'dep_method_instapay')]
         ])
     }).catch(()=>{});
 }
 
-// 🆕 التعامل مع زر اختيار طريقة الدفع
 bot.action(/^dep_method_(.+)$/, async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     const method = ctx.match[1]; 
@@ -910,14 +902,8 @@ bot.action(/^dep_method_(.+)$/, async (ctx) => {
     botStates.deposit[userId] = { step: 'WAIT_AMOUNT', method: method };
     saveDatabase();
 
-    let methodText = '';
-    let currencyText = 'بالجنيه المصري (مثال: 100)';
-    if (method === 'vfcash') methodText = 'فودافون كاش';
-    else if (method === 'instapay') methodText = 'انستاباي (InstaPay)';
-    else if (method === 'bybit') { methodText = 'منصة Bybit'; currencyText = 'بالدولار (USDT) (مثال: 5)'; }
-    else if (method === 'usdt') { methodText = 'محفظة USDT'; currencyText = 'بالدولار (USDT) (مثال: 10)'; }
-
-    await ctx.editMessageText(`💳 **شحن الحساب عبر (${methodText})**\n\nمن فضلك أكتب **المبلغ** اللي هتحوله ${currencyText}:`, {parse_mode: 'Markdown'}).catch(()=>{});
+    let methodText = method === 'vfcash' ? 'فودافون كاش' : 'انستاباي';
+    await ctx.editMessageText(`💳 **شحن الحساب عبر (${methodText})**\n\nمن فضلك أكتب **المبلغ** اللي هتحوله بالجنيه المصري (مثال: 100):`, {parse_mode: 'Markdown'}).catch(()=>{});
 });
 
 async function showOrdersMain(ctx) {
@@ -973,13 +959,13 @@ function getOrdersPage(userId, page) {
     return { text, keyboard: Markup.inlineKeyboard(buttons) };
 }
 
-// 🆕 نظام النقاط والكاش باك المستدعى من الأزرار
+// 🆕 نظام النقاط (الطلب 4)
 bot.hears(/نقاط الكاش باك/, async (ctx) => {
     try {
         const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
         if (usersDb[userId].isBanned) return;
         
-        checkPointsCycle(userId); // التأكد من دورة الـ 30 يوم
+        checkPointsCycle(userId); 
         const pts = usersDb[userId].points || 0;
 
         const msg = `🎁 **نظام نقاط الولاء والكاش باك!**\n\n` +
@@ -1011,7 +997,7 @@ bot.action('redeem_points', async (ctx) => {
     await ctx.editMessageText(`💵 سحب النقاط لرصيد:\n\nلديك حالياً <b>${pts}</b> نقطة.\nالحد الأدنى للسحب هو 1500 نقطة (= 50 جنيه).\n\n✍️ <b>اكتب عدد النقاط التي ترغب بسحبها الآن في رسالة:</b>`, {parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('❌ إلغاء', 'cancel_action')]])}).catch(()=>{});
 });
 
-// 🆕 نظام الطلبات الخاصة 
+// 🆕 نظام الطلبات الخاصة (الطلب 1)
 bot.hears(/طلب خدمة خاصة/, async (ctx) => {
     try {
         const userId = String(ctx.from.id); initUser(userId); clearUserStates(userId);
@@ -1091,11 +1077,8 @@ async function showCategories(ctx) {
     if (maintenanceMode && String(usersDb[userId].uid) !== '1001') return await ctx.reply('🛠 **المتجر في حالة صيانة حالياً**\nنعمل على تحديث الخدمات، عودوا قريباً جداً!', { parse_mode: 'Markdown' }).catch(()=>{});
 
     if (cachedServices.length === 0) {
-        if(ctx.callbackQuery) {
-            await ctx.editMessageText('⏳ جاري ربط السيرفرات السريعة...').catch(()=>{});
-        } else {
-            await ctx.reply('⏳ جاري ربط السيرفرات السريعة...').catch(()=>{});
-        }
+        if(ctx.callbackQuery) await ctx.editMessageText('⏳ جاري ربط السيرفرات السريعة...').catch(()=>{});
+        else await ctx.reply('⏳ جاري ربط السيرفرات السريعة...').catch(()=>{});
         await backgroundServiceUpdate();
     } else if (Date.now() - lastCategoriesFetchTime > categoryCacheTime) {
         backgroundServiceUpdate();
@@ -1116,14 +1099,8 @@ async function showCategories(ctx) {
     });
 
     let categories = [];
-    preferredCategoriesOrder.forEach(cat => {
-        if (fetchedCategories.includes(cat)) categories.push(cat);
-    });
-
-    fetchedCategories.forEach(cat => {
-        if (!categories.includes(cat) && cat !== 'أخرى') categories.push(cat);
-    });
-
+    preferredCategoriesOrder.forEach(cat => { if (fetchedCategories.includes(cat)) categories.push(cat); });
+    fetchedCategories.forEach(cat => { if (!categories.includes(cat) && cat !== 'أخرى') categories.push(cat); });
     if (fetchedCategories.includes('أخرى') && !categories.includes('أخرى')) categories.push('أخرى');
 
     let buttons = [];
@@ -1140,20 +1117,13 @@ async function showCategories(ctx) {
     usersDb[userId].tempCategories = categories;
     saveDatabase();
 
-    if(ctx.callbackQuery) {
-        return await ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{});
-    } else {
-        return await ctx.reply('اختر الفئة:', keyboard).catch(()=>{});
-    }
-
+    if(ctx.callbackQuery) return await ctx.editMessageText('اختر الفئة:', keyboard).catch(()=>{});
+    else return await ctx.reply('اختر الفئة:', keyboard).catch(()=>{});
   } catch (error) {
     const errMsg = '❌ حدث خطأ مؤقت أثناء جلب الأقسام، يرجى المحاولة مجدداً.';
     const retryBtn = Markup.inlineKeyboard([[Markup.button.callback('🔄 إعادة المحاولة', 'main_categories')]]);
-    if(ctx.callbackQuery) {
-        await ctx.editMessageText(errMsg, retryBtn).catch(()=>{});
-    } else {
-        await ctx.reply(errMsg, retryBtn).catch(()=>{});
-    }
+    if(ctx.callbackQuery) await ctx.editMessageText(errMsg, retryBtn).catch(()=>{});
+    else await ctx.reply(errMsg, retryBtn).catch(()=>{});
   }
 }
 
@@ -1169,11 +1139,7 @@ bot.hears(/طلباتي/, showOrdersMain);
 bot.hears(/الدعم الفني/, showSupport);
 bot.hears(/الخدمات/, showCategories);
 
-bot.action('main_categories', async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{}); 
-    await showCategories(ctx);
-});
-
+bot.action('main_categories', async (ctx) => { ctx.answerCbQuery().catch(()=>{}); await showCategories(ctx); });
 bot.action('main_menu', async (ctx) => {
     ctx.answerCbQuery().catch(()=>{});
     try {
@@ -1207,7 +1173,7 @@ async function showAdminPanel(ctx) {
         totalOrdersCount += (usersDb[id].orders ? usersDb[id].orders.length : 0);
     }
 
-    const pendingCO = customOrders.filter(c => c.status === 'Pending').length; 
+    const pendingCO = customOrders.filter(c => c.status === 'Pending').length; // عدد الطلبات الخاصة المعلقة
 
     const isFlashActive = flashSale && flashSale.active && Date.now() < flashSale.expiresAt;
     let flashStatus = '❌ (متوقف)';
@@ -1875,75 +1841,6 @@ bot.action('admin_broadcast', async (ctx) => {
     await ctx.editMessageText('📢 **إذاعة متطورة للعملاء:**\n\n- للإرسال النصي: أرسل النص مباشرة.\n- للإرسال بصورة وزر: أرسل صورة واكتب في الوصف (الكابشن): <code>النص | اسم الزر | الرابط</code>\n\nأو اكتب <code>إلغاء</code> للرجوع.', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]) }).catch(()=>{}); 
 });
 
-bot.action('admin_pending_deposits', async (ctx) => {
-    ctx.answerCbQuery().catch(()=>{});
-    try {
-        let msg = '';
-        let inlineButtons = [];
-        if (!pendingDeposits || pendingDeposits.length === 0) {
-            msg = '💳 <b>طلبات الشحن المعلقة:</b>\n\nلا توجد طلبات شحن معلقة حالياً.';
-            inlineButtons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
-        } else {
-            msg = '💳 <b>طلبات الشحن المعلقة (' + pendingDeposits.length + '):</b>\n\n';
-            pendingDeposits.forEach((req, idx) => {
-                let methodLabel = '';
-                if (req.method === 'instapay') methodLabel = '🟣 انستاباي';
-                else if (req.method === 'bybit') methodLabel = '🟡 Bybit';
-                else if (req.method === 'usdt') methodLabel = '🟢 USDT';
-                else methodLabel = '🔴 فودافون كاش';
-                
-                msg += `👤 ID: <code>${req.userUid}</code>\n💰 المبلغ: <b>${req.amount} EGP</b>\n💳 الطريقة: <b>${methodLabel}</b>\n📸 <b>(الإثبات مرفق)</b>\n━━━━━━━━━━━━\n`;
-                inlineButtons.push([ Markup.button.callback('✅ موافقة (' + req.amount + 'ج)', `approve_dep_${req.userId}_${req.amount}`), Markup.button.callback('❌ رفض', `reject_dep_${req.userId}`) ]);
-            });
-            inlineButtons.push([Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]);
-        }
-
-        if (ctx.callbackQuery.message && ctx.callbackQuery.message.photo) {
-            await ctx.deleteMessage().catch(()=>{});
-            await ctx.reply(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(inlineButtons) }).catch(()=>{});
-        } else {
-            await ctx.editMessageText(msg, { parse_mode: 'HTML', ...Markup.inlineKeyboard(inlineButtons) }).catch(()=>{});
-        }
-    } catch(e) {}
-});
-
-bot.action(/^approve_dep_(.+)_(.+)$/, async (ctx) => {
-    ctx.answerCbQuery('⏳ جاري شحن الرصيد للعميل...').catch(()=>{});
-    try {
-        const targetUserId = ctx.match[1];
-        const amount = parseFloat(ctx.match[2]);
-        const pendingIndex = pendingDeposits.findIndex(p => p.userId === targetUserId && parseFloat(p.amount) === amount);
-        
-        if (pendingIndex !== -1) {
-            pendingDeposits.splice(pendingIndex, 1);
-            
-            if (usersDb[targetUserId]) {
-                usersDb[targetUserId].balance += amount;
-                usersDb[targetUserId].totalRecharged = (parseFloat(usersDb[targetUserId].totalRecharged || 0) + amount); 
-                usersDb[targetUserId].walletHistory.push({ type: 'شحن رصيد (موافقة أدمن)', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
-                saveDatabase();
-                
-                bot.telegram.sendMessage(targetUserId, `🎉 <b>تم تأكيد الدفع بنجاح!</b>\n💰 تمت إضافة: <b>${amount} EGP</b> لمحفظتك.\n✅ رصيدك الحالي: <b>${usersDb[targetUserId].balance.toFixed(2)} EGP</b>`, { parse_mode: 'HTML' }).catch(()=>{});
-                
-                checkVipUpgrade(targetUserId, targetUserId); 
-
-                const msgText = `✅ <b>تمت الموافقة بنجاح!</b>\n\nتم شحن ${amount} EGP للعميل (ID: ${usersDb[targetUserId].uid})`;
-                const keyboard = { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع لطلبات الشحن', 'admin_pending_deposits')]]) };
-                
-                if (ctx.callbackQuery.message && ctx.callbackQuery.message.photo) {
-                    await ctx.editMessageCaption(msgText, keyboard).catch(()=>{});
-                } else {
-                    await ctx.editMessageText(msgText, keyboard).catch(()=>{});
-                }
-            } else {
-                await ctx.editMessageText('❌ العميل غير موجود.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
-            }
-        } else {
-            await ctx.editMessageText('❌ هذا الطلب غير موجود أو تم التعامل معه مسبقاً.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'admin_pending_deposits')]])).catch(()=>{});
-        }
-    } catch(e) {}
-});
-
 bot.action(/^reject_dep_(.+)$/, async (ctx) => {
     ctx.answerCbQuery('تم الرفض').catch(()=>{});
     try {
@@ -2280,12 +2177,7 @@ bot.on('photo', async (ctx, next) => {
             
             for (let tgId in usersDb) {
                 if (String(usersDb[tgId].uid) === '1001') {
-                    let methodLabel = '';
-                    if (reqData.method === 'instapay') methodLabel = '🟣 انستاباي';
-                    else if (reqData.method === 'bybit') methodLabel = '🟡 Bybit';
-                    else if (reqData.method === 'usdt') methodLabel = '🟢 USDT';
-                    else methodLabel = '🔴 فودافون كاش';
-                    
+                    const methodLabel = reqData.method === 'instapay' ? '🟣 انستاباي' : '🔴 فودافون كاش';
                     bot.telegram.sendPhoto(tgId, fileId, {
                         caption: `🔔 <b>طلب شحن يدوي للمراجعة</b>\n\n👤 المستخدم: <code>${reqData.userUid}</code>\n💰 المبلغ المطلوب: <b>${reqData.amount} EGP</b>\n💳 الطريقة: <b>${methodLabel}</b>`,
                         parse_mode: 'HTML',
@@ -2301,7 +2193,6 @@ bot.on('photo', async (ctx, next) => {
     return await next();
 });
 
-// 🌟 هذا هو الكود الأساسي لاستقبال النصوص ومن ضمنه نظام الشحن المطور الخاص بك 🌟
 bot.on('text', async (ctx, next) => {
   try {
     const userId = String(ctx.from.id); initUser(userId);
@@ -2712,11 +2603,11 @@ bot.on('text', async (ctx, next) => {
                     const targetUser = getUserByUid(targetUid);
                     if (targetUser) {
                         targetUser.user.balance += amount;
-                        targetUser.user.totalRecharged = (parseFloat(targetUser.user.totalRecharged || 0) + amount); 
+                        targetUser.user.totalRecharged = (parseFloat(targetUser.user.totalRecharged || 0) + amount); // تحديث الإجمالي هنا
                         targetUser.user.walletHistory.push({ type: 'شحن من الإدارة', amount: amount, date: new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' }) });
                         delete botStates.adminInput[userId]; saveDatabase();
                         bot.telegram.sendMessage(targetUser.telegramId, `🎉 <b>تم شحن محفظتك من قِبل الإدارة!</b>\n💰 تمت إضافة: <b>${amount} EGP</b>\n💳 رصيدك الحالي: <b>${targetUser.user.balance.toFixed(2)} EGP</b>`, { parse_mode: 'HTML' }).catch(()=>{});
-                        checkVipUpgrade(targetUser.telegramId, targetUser.telegramId); 
+                        checkVipUpgrade(targetUser.telegramId, targetUser.telegramId); // فحص VIP التلقائي
                         return await ctx.reply(`✅ تم شحن رصيد العميل بنجاح!\n👤 العميل: <code>${targetUid}</code>\n💰 المبلغ: <b>${amount} EGP</b>`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
                     } else {
                         return await ctx.reply('❌ لم يتم العثور على العميل.', Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع', 'back_to_admin')]]));
@@ -2976,46 +2867,15 @@ bot.on('text', async (ctx, next) => {
         return await ctx.reply('🔍 نتائج البحث:', Markup.inlineKeyboard(buttons)).catch(()=>{});
     }
 
-    // 🌟 🌟 النظام المطور للشحن واستقبال قيمة الشحن لكل الطرق مع الدولار والتقريب 🌟 🌟
     if (botStates.deposit && botStates.deposit[userId]) {
         const state = botStates.deposit[userId];
         if (state.step === 'WAIT_AMOUNT') {
-            const inputAmount = parseFloat(text);
-            if (isNaN(inputAmount) || inputAmount <= 0) return await ctx.reply('❌ أدخل مبلغاً صحيحاً وموجباً (أرقام فقط):').catch(()=>{});
+            const amount = parseFloat(text);
+            if (isNaN(amount) || amount <= 0) return await ctx.reply('❌ أدخل مبلغاً صحيحاً وموجباً:').catch(()=>{});
+            state.amount = amount; state.step = 'WAIT_RECEIPT'; saveDatabase();
             
-            let finalEgpAmount = inputAmount; 
-            let usdAmountDisplay = null;
-
-            if (state.method === 'bybit' || state.method === 'usdt') {
-                usdAmountDisplay = inputAmount;
-                finalEgpAmount = inputAmount * usdToEgpRate; 
-            }
-
-            finalEgpAmount = parseFloat(finalEgpAmount.toFixed(2));
-
-            state.amount = finalEgpAmount; 
-            state.step = 'WAIT_RECEIPT'; 
-            saveDatabase();
-            
-            let paymentInfo = '';
-            if (state.method === 'instapay') {
-                paymentInfo = `🟣 انستاباي (InstaPay):\n🔗 <code>${instapayAccount}</code>`;
-            } else if (state.method === 'bybit') {
-                paymentInfo = `🟡 Bybit ID:\n🆔 <code>${bybitId}</code>`; 
-            } else if (state.method === 'usdt') {
-                paymentInfo = `🟢 USDT (BEP20):\n🔗 <code>${usdtAddress}</code>`; 
-            } else {
-                paymentInfo = `🔴 فودافون كاش:\n📱 <code>${vodafoneCashNumber}</code>`;
-            }
-            
-            let amountDetailsMsg = '';
-            if (usdAmountDisplay) {
-                amountDetailsMsg = `💵 <b>المبلغ بالدولار:</b> ${usdAmountDisplay} USD\n💱 <b>يعادل بالجنيه:</b> ${finalEgpAmount} EGP\n\nقم بتحويل الدولارات على البيانات التالية:\n`;
-            } else {
-                amountDetailsMsg = `قم بتحويل مبلغ (<b>${finalEgpAmount} EGP</b>) على هذا الحساب:\n`;
-            }
-
-            return await ctx.reply(`💳 <b>الخطوة الأخيرة:</b>\n\n${amountDetailsMsg}${paymentInfo}\n\n📸 <b>الآن: قم بإرسال صورة (سكرين شوت) تؤكد إتمامك للتحويل لكي يتم مراجعتها وإضافة الرصيد.</b>`, { parse_mode: 'HTML' }).catch(()=>{});
+            let paymentInfo = state.method === 'instapay' ? `🟣 انستاباي (InstaPay):\n🔗 <code>${instapayAccount}</code>` : `🔴 فودافون كاش:\n📱 <code>${vodafoneCashNumber}</code>`;
+            return await ctx.reply(`💳 <b>الخطوة الأخيرة:</b>\n\nقم بتحويل مبلغ (<b>${amount} EGP</b>) على هذا الحساب:\n${paymentInfo}\n\n📸 <b>الآن: قم بإرسال صورة (سكرين شوت) تؤكد إتمامك للتحويل لكي يتم مراجعتها وإضافة الرصيد.</b>`, { parse_mode: 'HTML' }).catch(()=>{});
         }
     }
 
