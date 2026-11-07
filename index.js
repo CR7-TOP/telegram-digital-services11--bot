@@ -2866,6 +2866,12 @@ bot.on('text', async (ctx, next) => {
         
         return await ctx.reply('🔍 نتائج البحث:', Markup.inlineKeyboard(buttons)).catch(()=>{});
     }
+        if (state === 'WAIT_NEW_WALLET') {
+            vodafoneCashNumber = text.trim();
+            delete botStates.adminInput[userId]; saveDatabase();
+            logAdminAction(userId, `تغيير رقم فودافون كاش إلى: ${vodafoneCashNumber}`);
+            return await ctx.reply(`✅ <b>تم تغيير رقم فودافون كاش بنجاح!</b>\nالرقم الجديد: <code>${vodafoneCashNumber}</code>`, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔙 رجوع للوحة الأدمن', 'back_to_admin')]]) });
+        }
 
     if (botStates.deposit && botStates.deposit[userId]) {
         const state = botStates.deposit[userId];
